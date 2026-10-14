@@ -2,8 +2,12 @@
 // sticker3d.ts. Stickers reach the warehouse bundled in clear zip bags of 50
 // and go out in 3s and 10s (loose) or whole bags (see PACKS in cart.ts).
 
-/** One vinyl sticker on its backing, in inches (~0.18 mm): a bag of 50 is about 9 mm tall. */
-export const STICKER_THICKNESS_IN = 0.007;
+/**
+ * One sticker in a stack, in inches (~0.3 mm): laminated vinyl on its liner,
+ * plus the air between stickers that never lie quite flat. A bag of 50 is
+ * about 15 mm tall, like the bundles on the shelf at HQ.
+ */
+export const STICKER_THICKNESS_IN = 0.0118;
 export const PER_BAG = 50;
 /** Bags lie side by side this many across, then pile up. */
 export const ACROSS = 4;

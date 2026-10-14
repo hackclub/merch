@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskBounds, packLabel, packLayout, stickerMask, stickerSize } from './stickers';
+import { maskBounds, packLabel, packLayout, PER_BAG, STICKER_THICKNESS_IN, stickerMask, stickerSize } from './stickers';
 
 // A w×h RGBA image filled with bg, with rects painted on top.
 function image(w: number, h: number, bg: number[], rects: { x: number; y: number; w: number; h: number; rgb: number[] }[]) {
@@ -76,6 +76,12 @@ describe('stickerSize', () => {
 	it('assumes about 3 inches across the long side', () => {
 		expect(stickerSize({ width_in: null, height_in: null }, 2)).toEqual({ w: 3, h: 1.5 });
 		expect(stickerSize({ width_in: null, height_in: null }, 0.5)).toEqual({ w: 1.5, h: 3 });
+	});
+});
+
+describe('thickness', () => {
+	it('makes a bag of 50 about 15 mm tall, like the real bundles', () => {
+		expect(PER_BAG * STICKER_THICKNESS_IN * 25.4).toBeCloseTo(15, 0);
 	});
 });
 

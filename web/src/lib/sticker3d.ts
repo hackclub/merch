@@ -41,7 +41,8 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 	scene.environment = pmrem.fromScene(room, 0.04).texture;
 	room.dispose();
 
-	const key = new THREE.DirectionalLight(0xffffff, 1.1);
+	// Softer than the poster view: stickers lie flat, square to the light.
+	const key = new THREE.DirectionalLight(0xffffff, 0.6);
 	key.position.set(-6, 30, 10);
 	key.castShadow = true;
 	key.shadow.mapSize.set(2048, 2048);
@@ -84,10 +85,10 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 	let size = { w: 3, h: 2 };
 	let face: THREE.PlaneGeometry | null = null;
 	// Vinyl with a satin laminate: a soft sheen without washing out the print.
-	const art = new THREE.MeshPhysicalMaterial({ roughness: 0.5, clearcoat: 0.25, clearcoatRoughness: 0.35, envMapIntensity: 0.6, alphaTest: 0.5 });
+	const art = new THREE.MeshPhysicalMaterial({ roughness: 0.5, clearcoat: 0.25, clearcoatRoughness: 0.35, envMapIntensity: 0.45, alphaTest: 0.5 });
 	const backing = new THREE.MeshStandardMaterial({ color: 0xf3f1ec, roughness: 0.9, alphaTest: 0.5 });
 	const plastic = new THREE.MeshPhysicalMaterial({
-		color: 0xffffff, transparent: true, opacity: 0.3, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05, depthWrite: false
+		color: 0xffffff, transparent: true, opacity: 0.16, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05, depthWrite: false
 	});
 	const zip = new THREE.MeshPhysicalMaterial({ color: 0xe9eef2, transparent: true, opacity: 0.55, roughness: 0.3, depthWrite: false });
 	let bagGeo: RoundedBoxGeometry | null = null;
@@ -108,16 +109,16 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 	function stack(n: number, place: (i: number, m: THREE.Matrix4) => void) {
 		const g = new THREE.Group();
 		const tops = new THREE.InstancedMesh(face!, art, n);
-		const backs = new THREE.InstancedMesh(face!, backing, n * 2);
+		const backs = new THREE.InstancedMesh(face!, backing, n * 3);
 		backs.castShadow = true;
 		const m = new THREE.Matrix4();
 		const under = new THREE.Matrix4();
 		for (let i = 0; i < n; i++) {
 			place(i, m);
 			tops.setMatrixAt(i, m);
-			for (const k of [0, 1]) {
-				under.makeScale(1.012, 1, 1.012).setPosition(0, -T * (0.3 + 0.4 * k), 0).premultiply(m);
-				backs.setMatrixAt(i * 2 + k, under);
+			for (const k of [0, 1, 2]) {
+				under.makeScale(1.012, 1, 1.012).setPosition(0, -T * 0.25 * (k + 1), 0).premultiply(m);
+				backs.setMatrixAt(i * 3 + k, under);
 			}
 		}
 		g.add(backs, tops);
