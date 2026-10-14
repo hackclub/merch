@@ -33,8 +33,10 @@
 	const item = $derived(catalog?.items.find((i) => i.id === id));
 	const inCart = $derived(item ? (bag.cart[item.id] ?? 0) : 0);
 	const total = $derived(totalQuantity(bag.cart));
-	// Printed items with a size get a true-to-scale 3D view, shown first.
-	const has3D = $derived(!!item && hasSize(item) && item.images.length > 0);
+	// Printed items with a size get a true-to-scale 3D view, shown first; stickers
+	// show the stack (or bags of 50) you're requesting.
+	const isSticker = $derived(item?.packs === 'sticker');
+	const has3D = $derived(!!item && (hasSize(item) || isSticker) && item.images.length > 0);
 	const shown = $derived(picked ?? (has3D ? '3d' : 0));
 	const tiles = $derived(item ? item.images.length + (has3D ? 1 : 0) : 0);
 	const pickedSize = $derived(item ? bag.sizes[item.id] : undefined);
@@ -75,10 +77,15 @@
 				{#if shown === '3d'}
 					<div class="main three">
 						{#key item.id}
-							<Product3D name={item.name} opts={{
-								front: item.images[0], back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
-								thicknessIn: sheetThickness(item), finish: item.finish
-							}} />
+							{#if isSticker}
+								<Product3D name={item.name} count={inCart}
+									opts={{ kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in }} />
+							{:else}
+								<Product3D name={item.name} opts={{
+									front: item.images[0], back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
+									thicknessIn: sheetThickness(item), finish: item.finish
+								}} />
+							{/if}
 						{/key}
 					</div>
 				{:else}

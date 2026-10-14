@@ -1,13 +1,17 @@
 <script lang="ts">
-	// Interactive 3D view of a printed item (see paper3d.ts): slowly spins like a
-	// store's 3D product view; drag or arrow keys turn it, + / − zoom in to see
-	// the paper. Falls back to the flat front image without WebGL.
+	// Interactive 3D view of a printed item (see paper3d.ts) or a sticker request
+	// (sticker3d.ts): slowly spins like a store's 3D product view; drag or arrow
+	// keys turn it, + / − zoom in to see the paper. Falls back to the flat front
+	// image without WebGL.
 	import { onMount } from 'svelte';
 	import { finishInfo } from './paper';
 	import { sizeLabel } from './scale';
+	import { packLabel } from './stickers';
 	import type { Viewer, ViewerOptions } from './paper3d';
+	import type { StickerOptions, StickerViewer } from './sticker3d';
 
-	let { opts, name }: { opts: ViewerOptions; name: string } = $props();
+	// count: how many stickers are requested; the sticker view grows to match.
+	let { opts, name, count = 0 }: { opts: ViewerOptions | StickerOptions; name: string; count?: number } = $props();
 
 	let canvas = $state<HTMLCanvasElement>();
 	let stage: HTMLDivElement;
@@ -25,7 +29,14 @@
 	let resumeAt = 0;
 	let lastX = 0;
 
-	const finish = $derived(finishInfo(opts.finish).label);
+	const finish = $derived('finish' in opts ? finishInfo(opts.finish).label : '');
+	const label = $derived(
+		'kind' in opts ? packLabel(count) : `${sizeLabel(opts.widthIn, opts.heightIn)}${finish ? ` · ${finish}` : ''}`
+	);
+	$effect(() => {
+		const n = count;
+		(viewer as StickerViewer | null)?.setCount?.(n);
+	});
 
 	onMount(() => {
 		const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -40,11 +51,19 @@
 		const ro = new ResizeObserver(() => viewer?.resize(stage.clientWidth, stage.clientHeight));
 		ro.observe(stage);
 
-		import('./paper3d')
-			.then(({ createViewer }) => {
-				if (disposed) return;
-				viewer = createViewer(canvas!, opts, () => (ready = true));
-				viewer.angle = -0.45;
+		const load =
+			'kind' in opts
+				? import('./sticker3d').then((m) => {
+						const v = m.createStickerViewer(canvas!, opts as StickerOptions, () => (ready = true));
+						v.setCount(count);
+						return v;
+					})
+				: import('./paper3d').then((m) => m.createViewer(canvas!, opts as ViewerOptions, () => (ready = true)));
+		load
+			.then((v) => {
+				if (disposed) return v.dispose();
+				viewer = v;
+				viewer.angle = 'kind' in opts ? -0.25 : -0.45;
 				viewer.resize(stage.clientWidth, stage.clientHeight);
 				const tick = (now: number) => {
 					raf = requestAnimationFrame(tick);
@@ -118,7 +137,7 @@
 		bind:this={stage}
 		role="slider"
 		tabindex="0"
-		aria-label="{name} in 3D: {sizeLabel(opts.widthIn, opts.heightIn)}{finish ? `, ${finish.toLowerCase()}` : ''}, next to a phone for scale. Drag or use the arrow keys to turn it, plus and minus to zoom."
+		aria-label="{name} in 3D: {label.toLowerCase()}, next to a phone for scale. Drag or use the arrow keys to turn it, plus and minus to zoom."
 		aria-valuenow={0}
 		aria-valuetext={showingBack ? 'showing the back' : 'showing the front'}
 		onpointerdown={down}
@@ -145,8 +164,8 @@
 		{/if}
 	</div>
 	<div class="bar">
-		<span class="muted">{sizeLabel(opts.widthIn, opts.heightIn)}{finish ? ` · ${finish}` : ''} · drag to turn</span>
-		{#if opts.back && !failed}
+		<span class="muted">{label} · drag to turn</span>
+		{#if 'back' in opts && opts.back && !failed}
 			<button type="button" class="secondary small" onclick={flip}>{showingBack ? 'Show front' : 'Show back'}</button>
 		{/if}
 	</div>
