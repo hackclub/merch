@@ -1,6 +1,6 @@
 # Dev-only Postgres. One shared instance serves every worktree; each worktree's
 # tests create (and drop) their own throwaway databases, so they never collide.
-name: zach-mail-room
+name: merch
 services:
   postgres:
     image: postgres:18

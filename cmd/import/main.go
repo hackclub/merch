@@ -16,10 +16,10 @@ import (
 	"os"
 	"sort"
 
-	"github.com/hackclub/zach-mail-room/internal/db"
-	"github.com/hackclub/zach-mail-room/internal/importer"
-	"github.com/hackclub/zach-mail-room/internal/store"
-	"github.com/hackclub/zach-mail-room/internal/theseus"
+	"github.com/hackclub/merch/internal/db"
+	"github.com/hackclub/merch/internal/importer"
+	"github.com/hackclub/merch/internal/store"
+	"github.com/hackclub/merch/internal/theseus"
 )
 
 func main() {

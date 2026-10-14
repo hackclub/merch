@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/hackclub/zach-mail-room/internal/swag"
+	"github.com/hackclub/merch/internal/swag"
 )
 
 // Identity is the subset of the Hack Club Auth identity this app uses.

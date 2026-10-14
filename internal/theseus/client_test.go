@@ -41,7 +41,7 @@ func TestCreateOrder(t *testing.T) {
 		}
 		json.NewDecoder(r.Body).Decode(&body)
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(`{"id":"pkg!abc","status":"dispatched","tags":["zach-mail-room"]}`))
+		w.Write([]byte(`{"id":"pkg!abc","status":"dispatched","tags":["merch"]}`))
 	}))
 	defer srv.Close()
 
@@ -49,7 +49,7 @@ func TestCreateOrder(t *testing.T) {
 		RecipientEmail: "orpheus@hackclub.com",
 		Title:          "Hack Club swag",
 		IdempotencyKey: "zmr-request-7",
-		Tags:           []string{"zach-mail-room"},
+		Tags:           []string{"merch"},
 		Address:        Address{FirstName: "O", LastName: "D", Line1: "1 St", City: "C", State: "VT", PostalCode: "05401", Country: "US"},
 		Contents:       []Content{{SKU: "Sti/A", Quantity: 2}},
 	})

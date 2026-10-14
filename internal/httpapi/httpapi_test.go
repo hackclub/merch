@@ -16,14 +16,14 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/hackclub/zach-mail-room/internal/auth"
-	"github.com/hackclub/zach-mail-room/internal/authors"
-	"github.com/hackclub/zach-mail-room/internal/config"
-	"github.com/hackclub/zach-mail-room/internal/db/dbtest"
-	"github.com/hackclub/zach-mail-room/internal/importer"
-	"github.com/hackclub/zach-mail-room/internal/store"
-	"github.com/hackclub/zach-mail-room/internal/swag"
-	"github.com/hackclub/zach-mail-room/internal/theseus"
+	"github.com/hackclub/merch/internal/auth"
+	"github.com/hackclub/merch/internal/authors"
+	"github.com/hackclub/merch/internal/config"
+	"github.com/hackclub/merch/internal/db/dbtest"
+	"github.com/hackclub/merch/internal/importer"
+	"github.com/hackclub/merch/internal/store"
+	"github.com/hackclub/merch/internal/swag"
+	"github.com/hackclub/merch/internal/theseus"
 )
 
 // ---- fakes ----
@@ -94,7 +94,7 @@ func newHarness(t *testing.T) *harness {
 		BaseURL:               "http://app.test",
 		ExtraBaseURLs:         []string{"http://porygon:5173"},
 		AdminEmails:           []string{adminEmail},
-		TheseusOrderTag:       "zach-mail-room",
+		TheseusOrderTag:       "merch",
 		HCBShippingPaymentURL: "https://hcb.hackclub.com/donations/start/swag",
 	}
 	wh := &fakeWarehouse{}
@@ -377,7 +377,7 @@ func TestDomesticRequestFlow(t *testing.T) {
 		t.Fatalf("dispatched = %+v", dispatched)
 	}
 	o := h.wh.orders[0]
-	if o.RecipientEmail != userEmail || o.IdempotencyKey != fmt.Sprintf("zach-mail-room-request-%d", r.ID) || o.Tags[0] != "zach-mail-room" ||
+	if o.RecipientEmail != userEmail || o.IdempotencyKey != fmt.Sprintf("merch-request-%d", r.ID) || o.Tags[0] != "merch" ||
 		o.Contents[0].SKU != "Sti/A" || o.Contents[0].Quantity != 2 || o.Address.Line1 != "1 Main" {
 		t.Fatalf("theseus order = %+v", o)
 	}

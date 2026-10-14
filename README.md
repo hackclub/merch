@@ -1,4 +1,4 @@
-# zach-mail-room
+# merch
 
 Hack Club's mail room: hack clubbers request swag, YSWS authors stock the warehouse with their
 program's printed material, and admins run it all. Fulfillment goes through

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hackclub/zach-mail-room/internal/auth"
-	"github.com/hackclub/zach-mail-room/internal/importer"
-	"github.com/hackclub/zach-mail-room/internal/swag"
+	"github.com/hackclub/merch/internal/auth"
+	"github.com/hackclub/merch/internal/importer"
+	"github.com/hackclub/merch/internal/swag"
 )
 
 func imported(extID, email string) importer.Request {

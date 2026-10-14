@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hackclub/zach-mail-room/internal/auth"
-	"github.com/hackclub/zach-mail-room/internal/db/dbtest"
-	"github.com/hackclub/zach-mail-room/internal/swag"
+	"github.com/hackclub/merch/internal/auth"
+	"github.com/hackclub/merch/internal/db/dbtest"
+	"github.com/hackclub/merch/internal/swag"
 )
 
 var ctx = context.Background()

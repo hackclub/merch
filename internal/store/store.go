@@ -16,8 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/hackclub/zach-mail-room/internal/auth"
-	"github.com/hackclub/zach-mail-room/internal/swag"
+	"github.com/hackclub/merch/internal/auth"
+	"github.com/hackclub/merch/internal/swag"
 )
 
 var (

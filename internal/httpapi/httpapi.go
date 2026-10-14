@@ -20,12 +20,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hackclub/zach-mail-room/internal/auth"
-	"github.com/hackclub/zach-mail-room/internal/authors"
-	"github.com/hackclub/zach-mail-room/internal/config"
-	"github.com/hackclub/zach-mail-room/internal/store"
-	"github.com/hackclub/zach-mail-room/internal/swag"
-	"github.com/hackclub/zach-mail-room/internal/theseus"
+	"github.com/hackclub/merch/internal/auth"
+	"github.com/hackclub/merch/internal/authors"
+	"github.com/hackclub/merch/internal/config"
+	"github.com/hackclub/merch/internal/store"
+	"github.com/hackclub/merch/internal/swag"
+	"github.com/hackclub/merch/internal/theseus"
 )
 
 const (
@@ -544,7 +544,7 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 		Title:          "Hack Club swag",
 		IdempotencyKey: s.Config.TheseusOrderTag + "-request-" + strconv.FormatInt(req.ID, 10),
 		Tags:           []string{s.Config.TheseusOrderTag},
-		Metadata:       map[string]any{"zach_mail_room_request_id": req.ID},
+		Metadata:       map[string]any{"merch_request_id": req.ID},
 		Address: theseus.Address{
 			FirstName: a.FirstName, LastName: a.LastName, Line1: a.Line1, Line2: a.Line2, City: a.City,
 			State: a.State, PostalCode: a.PostalCode, Country: a.Country, Phone: a.Phone,

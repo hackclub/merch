@@ -15,7 +15,7 @@ import (
 	"golang.org/x/text/language"
 	"golang.org/x/text/language/display"
 
-	"github.com/hackclub/zach-mail-room/internal/swag"
+	"github.com/hackclub/merch/internal/swag"
 )
 
 // SKULine is one warehouse SKU and quantity from Fillout's custom_instructions.

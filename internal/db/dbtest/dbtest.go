@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/hackclub/zach-mail-room/internal/db"
+	"github.com/hackclub/merch/internal/db"
 )
 
 // New returns a pool connected to a new, migrated, empty database.

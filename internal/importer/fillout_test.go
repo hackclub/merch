@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hackclub/zach-mail-room/internal/swag"
+	"github.com/hackclub/merch/internal/swag"
 )
 
 // Synthetic rows shaped like real Fillout exports (no real people).

@@ -63,7 +63,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		HCAScopes:               get("HCA_SCOPES", "openid email name slack_id verification_status address phone"),
 		TheseusBaseURL:          strings.TrimRight(get("THESEUS_BASE_URL", "https://mail.hackclub.com"), "/"),
 		TheseusAPIKey:           get("THESEUS_API_KEY", ""),
-		TheseusOrderTag:         get("THESEUS_ORDER_TAG", "zach-mail-room"),
+		TheseusOrderTag:         get("THESEUS_ORDER_TAG", "merch"),
 		AirtableAPIKey:          get("AIRTABLE_API_KEY", ""),
 		AirtableAuthorsBaseID:   get("AIRTABLE_AUTHORS_BASE_ID", "app3A5kJwYqxMLOgh"),
 		AirtableAuthorsTable:    get("AIRTABLE_AUTHORS_TABLE", "YSWS Authors"),

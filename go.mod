@@ -1,4 +1,4 @@
-module github.com/hackclub/zach-mail-room
+module github.com/hackclub/merch
 
 go 1.26.4
 

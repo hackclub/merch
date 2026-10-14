@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/hackclub/zach-mail-room/internal/importer"
+	"github.com/hackclub/merch/internal/importer"
 )
 
 // ImportRequest stores one historical request. It is idempotent on

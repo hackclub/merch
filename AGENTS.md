@@ -1,4 +1,4 @@
-# zach-mail-room — agent guide
+# merch — agent guide
 
 `CLAUDE.md` is a symlink to this file. Edit `AGENTS.md` only.
 
@@ -73,7 +73,7 @@ Its data dir must be on the internal disk. See "Gotchas".
 - The app reads **only env vars** (`internal/config`). It never reads files. `.env.example`
   lists every variable.
 - In dev, `make` sources the **`.env` in the main worktree root**. Right now that's
-  `~/dev/hackclub/zach-mail-room/.env`. `scripts/env-file` finds it through
+  `~/dev/hackclub/merch/.env`. `scripts/env-file` finds it through
   `git rev-parse --git-common-dir`, so every worktree (`~/.paseo/worktrees/...`) shares it.
   Never copy `.env` into a worktree. `ENV_FILE=...` overrides the path.
 - In production (Orchard), set the same variables on the deployment. There is no `.env` file.

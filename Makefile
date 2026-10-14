@@ -47,7 +47,7 @@ build: web ## Build the server binary into bin/
 	CGO_ENABLED=0 go build -o bin/server ./cmd/server
 
 docker: ## Build the production image
-	docker build -t zach-mail-room .
+	docker build -t merch .
 
 import: ## Import historical requests: make import FILES='"a.csv" "b.csv"' [TRACKING=t.csv] [DRY=1]
 	@$(LOAD_ENV) go run ./cmd/import $(if $(DRY),-dry-run) $(if $(TRACKING),-tracking "$(TRACKING)") $(FILES)

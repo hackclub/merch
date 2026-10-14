@@ -1,4 +1,4 @@
-// Command server runs the zach-mail-room web app: JSON API + PWA static files.
+// Command server runs the merch web app: JSON API + PWA static files.
 // All configuration comes from environment variables (see .env.example).
 package main
 
@@ -13,13 +13,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hackclub/zach-mail-room/internal/auth"
-	"github.com/hackclub/zach-mail-room/internal/authors"
-	"github.com/hackclub/zach-mail-room/internal/config"
-	"github.com/hackclub/zach-mail-room/internal/db"
-	"github.com/hackclub/zach-mail-room/internal/httpapi"
-	"github.com/hackclub/zach-mail-room/internal/store"
-	"github.com/hackclub/zach-mail-room/internal/theseus"
+	"github.com/hackclub/merch/internal/auth"
+	"github.com/hackclub/merch/internal/authors"
+	"github.com/hackclub/merch/internal/config"
+	"github.com/hackclub/merch/internal/db"
+	"github.com/hackclub/merch/internal/httpapi"
+	"github.com/hackclub/merch/internal/store"
+	"github.com/hackclub/merch/internal/theseus"
 )
 
 func main() {
