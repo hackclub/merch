@@ -16,7 +16,7 @@
 </script>
 
 <header>
-	<a class="brand" href="/">📬 Mail Room</a>
+	<a class="brand" href="/" aria-label="Hack Club merch"><span class="box">Hack Club</span><span class="sub">merch</span></a>
 	<nav>
 		{#each links.filter((l) => l.show) as l (l.href)}
 			<a href={l.href} class:active={page.url.pathname === l.href}>{l.label}</a>
@@ -27,7 +27,7 @@
 			<span>{session.me.user.name || session.me.user.email}</span>
 			<button class="link" onclick={logout}>Sign out</button>
 		{:else if session.loaded}
-			<a class="button" href="/auth/login" data-sveltekit-reload>Sign in with Hack Club</a>
+			<a class="button" href="/auth/login" data-sveltekit-reload>Sign in<span class="wide"> with Hack Club</span></a>
 		{/if}
 	</div>
 </header>

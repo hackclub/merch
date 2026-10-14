@@ -249,8 +249,7 @@
 	.wrap { display: grid; gap: 0.5rem; }
 	.stage {
 		position: relative; aspect-ratio: 1 / 1.1; max-height: min(70vh, 34rem); min-height: 18rem; width: 100%;
-		background: radial-gradient(ellipse at 50% 85%, #eef1f5 0%, #ffffff 65%);
-		border-radius: 8px; cursor: grab; touch-action: pan-y; user-select: none; overflow: hidden;
+		background: radial-gradient(closest-side at 50% 60%, rgba(255, 255, 255, 0.75), transparent); cursor: grab; touch-action: pan-y; user-select: none; overflow: hidden;
 	}
 	.stage:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 	.stage.dragging { cursor: grabbing; }
@@ -260,7 +259,7 @@
 	.loading { opacity: 0.5; filter: blur(2px); }
 	.controls { position: absolute; right: 0.5rem; top: 0.5rem; display: grid; gap: 0.35rem; }
 	.ctl {
-		width: 2rem; height: 2rem; padding: 0; border-radius: 999px; font-size: 1rem; line-height: 1;
+		width: 2rem; height: 2rem; padding: 0; font-size: 1rem; line-height: 1;
 		background: rgba(255, 255, 255, 0.9); color: var(--dark); border: 1px solid var(--smoke);
 	}
 	.ctl:disabled { opacity: 0.35; }
@@ -268,9 +267,9 @@
 	.small { padding: 0.3rem 0.8rem; font-size: 0.85rem; }
 	.pager {
 		position: absolute; left: 50%; bottom: 0.6rem; transform: translateX(-50%); display: flex; align-items: center; gap: 0.5rem;
-		background: rgba(255, 255, 255, 0.92); border: 1px solid var(--smoke); border-radius: 999px; padding: 0.2rem;
+		background: rgba(255, 255, 255, 0.92); border: 1px solid var(--smoke); padding: 0.2rem;
 	}
-	.pager .ctl { border: none; font-size: 1.3rem; }
+	.pager .ctl { border: none; font-size: 1.3rem; background: none; }
 	.page-label { font-size: 0.85rem; font-weight: 600; min-width: 8.5rem; text-align: center; font-variant-numeric: tabular-nums; }
 	.scrub { width: 100%; accent-color: var(--red); margin: 0; }
 </style>

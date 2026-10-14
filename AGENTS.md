@@ -54,6 +54,15 @@ internal/httpapi/    routes, role middleware, CSRF guard, SPA static serving
 web/                 SvelteKit SPA (adapter-static, ssr=false) + service worker + manifest
 ```
 
+## Visual style
+
+The shop looks like a streetwear store (Supreme, Palace, Stüssy), not a dashboard. Tokens live in
+`web/src/app.css`: Hack Club red is the only accent, Phantom Sans (loaded from assets.hackclub.com)
+for text, `var(--mono)` uppercase for small labels and facts, square corners everywhere, product
+images on borderless `var(--tile)` (#f0f1ec, the sticker photos' own backdrop; other images use
+`mix-blend-mode: multiply` so white backgrounds disappear). Reuse these instead of new colors or
+rounded cards.
+
 ## TDD workflow (required)
 
 1. Write or extend a failing test first. Run it and watch it fail for the right reason.

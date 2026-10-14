@@ -14,8 +14,9 @@
 <style>
 	.sizes { display: flex; gap: 0.35rem; flex-wrap: wrap; }
 	.sizes button {
-		min-width: 2.6rem; height: 2.2rem; padding: 0 0.6rem; border-radius: 8px;
-		background: white; color: var(--dark); border: 2px solid var(--smoke);
+		min-width: 3.25rem; height: 2.75rem; padding: 0 0.75rem;
+		background: white; color: var(--dark); border: 1.5px solid var(--smoke);
 	}
-	.sizes button.picked { border-color: var(--red); color: var(--red); }
+	.sizes button:hover { border-color: var(--dark); }
+	.sizes button.picked { border-color: var(--dark); background: var(--dark); color: white; }
 </style>

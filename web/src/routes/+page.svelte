@@ -64,7 +64,7 @@
 <svelte:head><title>Hack Club Mail Room</title></svelte:head>
 
 <h1>Hack Club swag</h1>
-<p class="muted">
+<p class="muted intro">
 	Pick what you'd like and we'll mail it to you. Shipping inside the US is on us; outside the US we'll ask
 	you to cover shipping through HCB.
 </p>
@@ -77,13 +77,15 @@
 	{/if}
 	<section class="grid">
 		{#each catalog.items as item (item.id)}
-			<div class="card item" class:picked={cart[item.id]}>
+			<div class="item" class:picked={cart[item.id]}>
 				<a href={itemPath(item)} class="item-link">
-					{#if thumbnail(item)}
-						<img src={thumbnail(item)} alt={item.name} loading="lazy" />
-					{:else}
-						<div class="no-image" aria-hidden="true">📦</div>
-					{/if}
+					<div class="tile" class:sticker={item.packs === 'sticker'}>
+						{#if thumbnail(item)}
+							<img src={thumbnail(item)} alt={item.name} loading="lazy" />
+						{:else}
+							<span aria-hidden="true">📦</span>
+						{/if}
+					</div>
 					<h3>{item.name}</h3>
 				</a>
 				{#if item.description}<p class="muted clamp">{item.description}</p>{/if}
@@ -141,13 +143,18 @@
 {/if}
 
 <style>
-	.item { display: flex; flex-direction: column; gap: 0.5rem; }
-	.item.picked { border-color: var(--red); }
+	.intro { max-width: 44rem; line-height: 1.5; }
+	.item { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 	.item-link { color: inherit; text-decoration: none; }
-	.item-link:hover h3 { color: var(--red); }
-	.item h3 { margin: 0.5rem 0 0; }
-	.item p { margin: 0; }
-	.clamp { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-	.no-image { display: grid; place-items: center; aspect-ratio: 1; border-radius: 8px; background: var(--snow); font-size: 3rem; }
+	.tile { display: grid; place-items: center; aspect-ratio: 4 / 5; background: var(--tile); font-size: 3rem; }
+	.tile img { width: 80%; height: 80%; object-fit: contain; mix-blend-mode: multiply; }
+	/* Sticker photos already sit on the tile's grey; multiply would darken it into a box. */
+	.tile.sticker img { mix-blend-mode: normal; }
+	.item.picked .tile { box-shadow: inset 0 0 0 2px var(--red); }
+	.item-link:hover h3 { text-decoration: underline; text-decoration-thickness: 2px; }
+	.item h3 { margin: 0.6rem 0 0; font-size: 0.9rem; letter-spacing: 0.01em; line-height: 1.2; }
+	.item p { margin: 0; font-size: 0.85rem; line-height: 1.4; }
+	.clamp { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 	.summary { margin: 0 0 1rem; padding-left: 1.1rem; }
+	#request { max-width: 56rem; }
 </style>

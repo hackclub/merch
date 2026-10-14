@@ -80,7 +80,7 @@
 
 <svelte:head><title>{item ? `${item.name} · ` : ''}Hack Club Mail Room</title></svelte:head>
 
-<p><a href="/">← All swag</a></p>
+<p class="back label"><a href="/">← All swag</a></p>
 
 {#if error}<p class="error">{error}</p>{/if}
 
@@ -106,7 +106,7 @@
 						{/key}
 					</div>
 				{:else}
-					<a class="main" href={item.images[shown]} target="_blank" rel="noreferrer" title="Open full size">
+					<a class="main" class:sticker={isSticker} href={item.images[shown]} target="_blank" rel="noreferrer" title="Open full size">
 						<img src={item.images[shown]} alt="{item.name}, image {shown + 1} of {item.images.length}" />
 					</a>
 				{/if}
@@ -135,7 +135,7 @@
 			<h1>{item.name}</h1>
 			{#if item.description}<p class="description">{item.description}</p>{/if}
 
-			<ul class="facts muted">
+			<ul class="facts">
 				<li>Up to {item.max_per_request} per request{item.max_per_user != null ? `, ${item.max_per_user} per person` : ''}</li>
 				<li>
 					Free shipping in the US{#if catalog?.settings.international_shipping_fee_cents}; {formatCents(catalog.settings.international_shipping_fee_cents)} flat
@@ -219,48 +219,54 @@
 {/if}
 
 <style>
-	.product { display: grid; gap: 2rem; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: start; }
+	.back { margin: 0 0 1rem; }
+	.back a { text-decoration: none; color: var(--muted); }
+	.back a:hover { color: var(--dark); }
+	.product { display: grid; gap: 2.5rem; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); align-items: start; }
 	@media (max-width: 720px) {
 		.product { grid-template-columns: 1fr; gap: 1.25rem; }
 	}
-	.main {
-		display: block; background: white; border: 1px solid var(--smoke); border-radius: 12px; padding: 1rem;
-		cursor: zoom-in;
-	}
+	.main { display: grid; place-items: center; background: var(--tile); padding: 2rem; cursor: zoom-in; }
 	/* Leave room for the header and the thumbnail strip on short laptop screens. */
-	.main img { display: block; width: 100%; max-height: max(18rem, calc(100vh - 16rem)); object-fit: contain; }
+	.main img { display: block; width: 100%; max-height: max(18rem, calc(100vh - 16rem)); object-fit: contain; mix-blend-mode: multiply; }
+	.main.sticker img { mix-blend-mode: normal; }
 	.placeholder { display: grid; place-items: center; aspect-ratio: 1; font-size: 4rem; cursor: default; }
-	.thumbs { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
-	.thumb {
-		background: white; border: 2px solid var(--smoke); border-radius: 8px; padding: 0.25rem;
-		width: 4.5rem; height: 4.5rem;
-	}
-	.thumb.active { border-color: var(--red); }
-	.thumb img { width: 100%; height: 100%; object-fit: contain; }
-	.main.three { cursor: default; padding: 0.5rem; }
-	.community { margin-top: 2.5rem; }
+	.thumbs { display: flex; gap: 0.4rem; margin-top: 0.4rem; flex-wrap: wrap; }
+	.thumb { background: var(--tile); border: 0; padding: 0.3rem; width: 4.5rem; height: 4.5rem; box-shadow: inset 0 0 0 2px transparent; }
+	.thumb.active { box-shadow: inset 0 0 0 2px var(--dark); }
+	.thumb img { width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; }
+	.main.three { cursor: default; padding: 0; }
+	.community { margin-top: 3.5rem; }
 	.community h2 { margin-bottom: 0.25rem; }
-	.photos { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); margin-top: 1rem; }
-	.photos figure { margin: 0; background: white; border: 1px solid var(--smoke); border-radius: 12px; overflow: hidden; }
+	.photos { display: grid; gap: 0.5rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); margin-top: 1rem; }
+	.photos figure { margin: 0; }
 	.photos img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
-	.photos figcaption { display: grid; gap: 0.2rem; padding: 0.6rem 0.75rem 0.75rem; font-size: 0.9rem; }
+	.photos figcaption { display: grid; gap: 0.2rem; padding: 0.5rem 0 0.75rem; font-size: 0.9rem; }
 	.three-thumb { position: relative; perspective: 120px; }
 	.three-thumb img { transform: rotateY(-28deg) scale(0.85); }
 	.three-thumb span {
 		position: absolute; right: 0.2rem; bottom: 0.2rem; background: var(--red); color: white;
-		font-size: 0.65rem; font-weight: 800; padding: 0.05rem 0.3rem; border-radius: 4px;
+		font-family: var(--mono); font-size: 0.6rem; padding: 0.05rem 0.3rem;
 	}
-	.info h1 { margin-bottom: 0.5rem; }
-	.description { white-space: pre-line; line-height: 1.5; }
-	.facts { padding-left: 1.1rem; line-height: 1.6; }
-	.size-label { margin: 1rem 0 0.4rem; }
+	.info { position: sticky; top: 5.5rem; }
+	@media (max-width: 720px) {
+		.info { position: static; }
+	}
+	.info h1 { margin-bottom: 0.75rem; font-size: 1.75rem; }
+	.description { white-space: pre-line; line-height: 1.55; }
+	.facts { list-style: none; padding: 0; margin: 1.25rem 0; border-top: 1px solid var(--smoke); }
+	.facts li {
+		padding: 0.65rem 0; border-bottom: 1px solid var(--smoke); font-family: var(--mono); font-size: 0.75rem;
+		text-transform: uppercase; letter-spacing: 0.02em; color: #55555d; line-height: 1.45;
+	}
+	.size-label { margin: 1.25rem 0 0.5rem; font-family: var(--mono); font-size: 0.75rem; text-transform: uppercase; }
 	.stock strong { color: var(--dark); }
 	.nowrap { white-space: nowrap; }
 	.comes-with {
 		display: grid; grid-template-columns: auto 1fr; gap: 0.75rem; align-items: center; margin: 1rem 0;
-		padding: 0.75rem; border: 1px dashed var(--smoke); border-radius: 10px; background: white;
+		padding: 0.75rem; border: 1.5px dashed var(--smoke); background: white;
 	}
-	.comes-with img { width: 4.5rem; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 4px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); transform: rotate(-4deg); }
+	.comes-with img { width: 4.5rem; aspect-ratio: 3 / 2; object-fit: cover; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); transform: rotate(-4deg); }
 	.comes-with p { margin: 0; line-height: 1.4; }
-	.buy { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 1rem 0 0.5rem; }
+	.buy { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 1.25rem 0 0.5rem; }
 </style>

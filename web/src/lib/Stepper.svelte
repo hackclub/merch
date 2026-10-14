@@ -27,8 +27,10 @@
 </div>
 
 <style>
-	.stepper { display: inline-flex; align-items: center; gap: 0.35rem; }
-	.stepper button { width: 2.2rem; height: 2.2rem; padding: 0; font-size: 1.1rem; line-height: 1; }
+	.stepper { display: inline-flex; align-self: flex-start; align-items: stretch; border: 1.5px solid var(--smoke); height: 2.6rem; }
+	.stepper button { width: 2.5rem; padding: 0; font-size: 1.1rem; line-height: 1; background: white; color: var(--dark); }
+	.stepper button:disabled { opacity: 0.25; }
+	.stepper :is(input, select) { border: 0; font-family: var(--mono); font-size: 0.85rem; }
 	.stepper input { width: 3.5rem; text-align: center; appearance: textfield; -moz-appearance: textfield; }
 	.stepper select { width: auto; min-width: 4.5rem; }
 	.stepper input::-webkit-inner-spin-button { appearance: none; -webkit-appearance: none; }
