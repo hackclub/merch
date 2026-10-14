@@ -27,6 +27,8 @@
 	}
 </script>
 
+<svelte:head><title>My requests · Hack Club Mail Room</title></svelte:head>
+
 <h1>My requests</h1>
 {#if !session.me?.user}
 	<p><a class="button" href="/auth/login" data-sveltekit-reload>Sign in with Hack Club</a></p>

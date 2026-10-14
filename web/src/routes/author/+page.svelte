@@ -30,6 +30,8 @@
 	}
 </script>
 
+<svelte:head><title>YSWS author · Hack Club Mail Room</title></svelte:head>
+
 <h1>Stock the warehouse</h1>
 {#if !session.me?.roles.author}
 	<p class="muted">

@@ -57,6 +57,8 @@
 	}
 </script>
 
+<svelte:head><title>Hack Club Mail Room</title></svelte:head>
+
 <h1>Hack Club swag</h1>
 <p class="muted">
 	Pick what you'd like and we'll mail it to you. Shipping inside the US is on us; outside the US we'll ask

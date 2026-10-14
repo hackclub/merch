@@ -109,7 +109,8 @@
 		display: block; background: white; border: 1px solid var(--smoke); border-radius: 12px; padding: 1rem;
 		cursor: zoom-in;
 	}
-	.main img { display: block; width: 100%; max-height: 75vh; object-fit: contain; }
+	/* Leave room for the header and the thumbnail strip on short laptop screens. */
+	.main img { display: block; width: 100%; max-height: max(18rem, calc(100vh - 16rem)); object-fit: contain; }
 	.placeholder { display: grid; place-items: center; aspect-ratio: 1; font-size: 4rem; cursor: default; }
 	.thumbs { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
 	.thumb {

@@ -107,6 +107,8 @@
 		}, `Saved submission #${s.id}`);
 </script>
 
+<svelte:head><title>Admin · Hack Club Mail Room</title></svelte:head>
+
 <h1>Admin</h1>
 {#if !session.me?.roles.admin}
 	<p class="error">Admins only.</p>
@@ -165,8 +167,8 @@
 				{#each items as it (it.id)}
 					<tr>
 						<td>
-							<input bind:value={it.name} /><div class="muted">{it.sku}{#if it.visible} · <a href={itemPath(it)}>view page</a>{/if}</div>
-							<textarea bind:value={it.description} rows="3" placeholder="description (shown on the product page)"></textarea>
+							<input bind:value={it.name} /><div class="muted">{it.sku}{#if it.visible}&nbsp;· <a href={itemPath(it)}>view page</a>{/if}</div>
+							<textarea bind:value={it.description} rows="4" placeholder="description (shown on the product page)"></textarea>
 							<div class="gallery">
 								{#each it.images as src, i (src)}
 									<figure>
@@ -257,10 +259,12 @@
 {/if}
 
 <style>
-	.gallery { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+	.gallery { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.5rem; }
 	.gallery figure { margin: 0; width: 5rem; }
 	.gallery img { width: 5rem; height: 5rem; object-fit: contain; background: var(--snow); border: 1px solid var(--smoke); border-radius: 6px; }
-	.gallery figcaption { display: flex; justify-content: space-between; }
+	.gallery figcaption { display: flex; justify-content: space-around; margin-top: 0.15rem; }
+	.gallery figcaption button { color: var(--dark); font-size: 0.95rem; }
+	.gallery figcaption button:disabled { color: var(--smoke); }
 	.add-image {
 		display: grid; place-items: center; width: 5rem; height: 5rem; border: 2px dashed var(--smoke);
 		border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 0.8rem; text-align: center;
