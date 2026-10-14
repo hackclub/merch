@@ -112,17 +112,21 @@ func TestStockFor(t *testing.T) {
 		{SKU: "Swa/Cap/S", InStock: 4, UnitCost: "5.00"},
 	}
 	for _, tc := range []struct {
-		sku  string
+		skus []string
 		want Stock
 	}{
-		{"Sti/A", Stock{InStock: 100, MinCost: "0.25", MaxCost: "0.25"}},
-		{"Swa/Shirt/HC", Stock{InStock: 309, MinCost: "13.8166", MaxCost: "14.2682"}},
-		{"Swa/Cap", Stock{InStock: 7, MinCost: "5", MaxCost: "5"}},
-		{"Sti/Gone", Stock{}},
-		{"Swa/Shirt/H", Stock{}}, // only the SKU itself and "<sku>/…" children count
+		{[]string{"Sti/A"}, Stock{InStock: 100, MinCost: "0.25", MaxCost: "0.25"}},
+		// explicit variant SKUs
+		{[]string{"Swa/Shirt/HC/S", "Swa/Shirt/HC/XL", "Swa/Shirt/HC/XXL"}, Stock{InStock: 214, MinCost: "13.967", MaxCost: "14.2682"}},
+		// a parent SKU with no variants listed: its "<sku>/…" children
+		{[]string{"Swa/Shirt/HC"}, Stock{InStock: 309, MinCost: "13.8166", MaxCost: "14.2682"}},
+		{[]string{"Swa/Cap"}, Stock{InStock: 7, MinCost: "5", MaxCost: "5"}},
+		{[]string{"Sti/Gone"}, Stock{}},
+		{[]string{"Swa/Shirt/H"}, Stock{}}, // only the SKU itself and "<sku>/…" children count
+		{nil, Stock{}},
 	} {
-		if got := StockFor(skus, tc.sku); got != tc.want {
-			t.Errorf("StockFor(%q) = %+v, want %+v", tc.sku, got, tc.want)
+		if got := StockFor(skus, tc.skus...); got != tc.want {
+			t.Errorf("StockFor(%q) = %+v, want %+v", tc.skus, got, tc.want)
 		}
 	}
 }

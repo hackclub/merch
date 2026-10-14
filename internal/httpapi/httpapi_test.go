@@ -74,6 +74,7 @@ func (f *fakeWarehouse) ListSKUs(context.Context) ([]theseus.SKU, error) {
 		{SKU: "Swa/Shirt/HC/S", Name: "Shirt S", InStock: 92, Enabled: true, UnitCost: "13.967"},
 		{SKU: "Swa/Shirt/HC/M", Name: "Shirt M", InStock: 95, Enabled: true, UnitCost: "13.8166"},
 		{SKU: "Swa/Shirt/HC/XL", Name: "Shirt XL", InStock: 122, Enabled: true, UnitCost: "14.2682"},
+		{SKU: "Swa/Hood/Small", Name: "Hoodie S", InStock: 4, Enabled: true, UnitCost: "30"},
 	}, nil
 }
 
@@ -397,6 +398,10 @@ func TestItemStockComesFromWarehouse(t *testing.T) {
 		InStock     int     `json:"in_stock"`
 		UnitCost    *string `json:"unit_cost"`
 		UnitCostMax *string `json:"unit_cost_max"`
+		Variants    []struct {
+			SKU     string `json:"sku"`
+			InStock int    `json:"in_stock"`
+		} `json:"variants"`
 	}
 	var got stock
 	if code := h.do(anon, "GET", fmt.Sprintf("/api/items/%d/stock", listed.ID), nil, &got); code != 200 ||
@@ -410,6 +415,17 @@ func TestItemStockComesFromWarehouse(t *testing.T) {
 	if code := h.do(anon, "GET", fmt.Sprintf("/api/items/%d/stock", shirt.ID), nil, &got); code != 200 || got.InStock != 309 ||
 		got.UnitCost == nil || *got.UnitCost != "13.8166" || got.UnitCostMax == nil || *got.UnitCostMax != "14.2682" {
 		t.Fatalf("sized stock = %d %+v", code, got)
+	}
+	// Listed sizes count by their own SKUs, and each size gets its count.
+	hoodie, err := h.store.CreateItem(context.Background(), swag.Item{SKU: "Swa/Hood", Name: "Hoodie", Visible: true, MaxPerRequest: 1,
+		Variants: []swag.Variant{{Label: "S", SKU: "Swa/Hood/Small"}, {Label: "M", SKU: "Swa/Hood/Medium"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = stock{}
+	if code := h.do(anon, "GET", fmt.Sprintf("/api/items/%d/stock", hoodie.ID), nil, &got); code != 200 || got.InStock != 4 ||
+		len(got.Variants) != 2 || got.Variants[0].SKU != "Swa/Hood/Small" || got.Variants[0].InStock != 4 || got.Variants[1].InStock != 0 {
+		t.Fatalf("variant stock = %d %+v", code, got)
 	}
 	// The warehouse only lists in-stock SKUs; a missing one is out of stock.
 	got = stock{}
@@ -583,7 +599,7 @@ func TestAdminManagesItemsAndSettings(t *testing.T) {
 
 	var skus struct{ SKUs []theseus.SKU }
 	h.do(admin, "GET", "/api/admin/warehouse/skus", nil, &skus)
-	if len(skus.SKUs) != 5 || skus.SKUs[0].SKU != "Sti/A" {
+	if len(skus.SKUs) != 6 || skus.SKUs[0].SKU != "Sti/A" {
 		t.Fatalf("skus = %+v", skus)
 	}
 }

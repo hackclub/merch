@@ -343,12 +343,28 @@ func (s *server) itemStock(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "the warehouse didn't answer; try again soon")
 		return
 	}
-	st := theseus.StockFor(skus, it.SKU)
+	type variantStock struct {
+		SKU     string `json:"sku"`
+		Label   string `json:"label"`
+		InStock int    `json:"in_stock"`
+	}
 	out := struct {
-		InStock     int     `json:"in_stock"`
-		UnitCost    *string `json:"unit_cost"`
-		UnitCostMax *string `json:"unit_cost_max"` // set when sizes cost different amounts
-	}{InStock: st.InStock}
+		InStock     int            `json:"in_stock"`
+		UnitCost    *string        `json:"unit_cost"`
+		UnitCostMax *string        `json:"unit_cost_max"` // set when sizes cost different amounts
+		Variants    []variantStock `json:"variants"`      // per size, in the item's order
+	}{Variants: []variantStock{}}
+	// A sized item's stock is its sizes' SKUs; otherwise its own SKU.
+	want := []string{it.SKU}
+	if len(it.Variants) > 0 {
+		want = want[:0]
+		for _, v := range it.Variants {
+			want = append(want, v.SKU)
+			out.Variants = append(out.Variants, variantStock{v.SKU, v.Label, theseus.StockFor(skus, v.SKU).InStock})
+		}
+	}
+	st := theseus.StockFor(skus, want...)
+	out.InStock = st.InStock
 	if st.MinCost != "" {
 		out.UnitCost = &st.MinCost
 	}

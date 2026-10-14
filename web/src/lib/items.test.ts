@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatUnitCost, itemIdFromParam, unitCostLabel, itemPath, moveImage, thumbnail } from './items';
+import { formatUnitCost, itemIdFromParam, sizeStockLabel, unitCostLabel, itemPath, moveImage, thumbnail } from './items';
 import type { Item } from './types';
 
 const poster: Item = {
@@ -58,8 +58,19 @@ describe('formatUnitCost', () => {
 
 describe('unitCostLabel', () => {
 	it('shows one cost, or a range when sizes cost different amounts', () => {
-		expect(unitCostLabel({ in_stock: 5, unit_cost: '0.3682', unit_cost_max: null })).toBe('$0.3682 each');
-		expect(unitCostLabel({ in_stock: 309, unit_cost: '13.8166', unit_cost_max: '14.2682' })).toBe('$13.8166–$14.2682 each');
-		expect(unitCostLabel({ in_stock: 0, unit_cost: null, unit_cost_max: null })).toBe('');
+		expect(unitCostLabel({ in_stock: 5, unit_cost: '0.3682', unit_cost_max: null, variants: [] })).toBe('$0.3682 each');
+		expect(unitCostLabel({ in_stock: 309, unit_cost: '13.8166', unit_cost_max: '14.2682', variants: [] })).toBe('$13.8166–$14.2682 each');
+		expect(unitCostLabel({ in_stock: 0, unit_cost: null, unit_cost_max: null, variants: [] })).toBe('');
+	});
+});
+
+describe('sizeStockLabel', () => {
+	it('lists each size with its count, or nothing for one-size items', () => {
+		const variants = [
+			{ sku: 'Swa/Shirt/HC/S', label: 'S', in_stock: 92 },
+			{ sku: 'Swa/Shirt/HC/XL', label: 'XL', in_stock: 1122 }
+		];
+		expect(sizeStockLabel({ in_stock: 1214, unit_cost: null, unit_cost_max: null, variants })).toBe('S 92 · XL 1,122');
+		expect(sizeStockLabel({ in_stock: 5, unit_cost: null, unit_cost_max: null, variants: [] })).toBe('');
 	});
 });

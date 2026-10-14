@@ -45,3 +45,7 @@ export function unitCostLabel(stock: ItemStock): string {
 	const hi = formatUnitCost(stock.unit_cost_max);
 	return `${hi ? `${lo}–${hi}` : lo} each`;
 }
+
+/** "S 92 · M 95 · L 123", for items that come in sizes; "" otherwise. */
+export const sizeStockLabel = (stock: ItemStock): string =>
+	stock.variants.map((v) => `${v.label} ${v.in_stock.toLocaleString('en-US')}`).join(' · ');

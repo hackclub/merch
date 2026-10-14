@@ -4,7 +4,7 @@
 	import { api, ApiError, formatCents } from '$lib/api';
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
 	import { pruneCart, pruneSizes, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
-	import { itemIdFromParam, unitCostLabel } from '$lib/items';
+	import { itemIdFromParam, sizeStockLabel, unitCostLabel } from '$lib/items';
 	import { hasSize } from '$lib/scale';
 	import SizePreview from '$lib/SizePreview.svelte';
 	import { session } from '$lib/session.svelte';
@@ -111,7 +111,9 @@
 				<li>Ships from the Hack Club warehouse</li>
 				{#if stock}
 					<li class="stock">
-						<strong>{stock.in_stock.toLocaleString('en-US')}</strong> in stock{unitCostLabel(stock) ? ` · ${unitCostLabel(stock)}` : ''}
+						<strong>{stock.in_stock.toLocaleString('en-US')}</strong> in stock{sizeStockLabel(stock) ? ` (${sizeStockLabel(stock)})` : ''}{#if unitCostLabel(stock)}{' · '}<span class="nowrap"
+								>{unitCostLabel(stock)}</span
+							>{/if}
 					</li>
 				{/if}
 			</ul>
@@ -175,5 +177,6 @@
 	.facts { padding-left: 1.1rem; line-height: 1.6; }
 	.size-label { margin: 1rem 0 0.4rem; }
 	.stock strong { color: var(--dark); }
+	.nowrap { white-space: nowrap; }
 	.buy { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 1rem 0 0.5rem; }
 </style>

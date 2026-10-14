@@ -165,14 +165,14 @@ type Stock struct {
 	MaxCost string
 }
 
-// StockFor totals the SKU itself, or, for a sized item listed under a parent
-// SKU ("Swa/Shirt/HC"), every "<sku>/…" child. ListSKUs omits out-of-stock
-// SKUs, so a missing SKU has none.
-func StockFor(skus []SKU, sku string) Stock {
+// StockFor totals the given SKUs, each with its "<sku>/…" children, so a
+// parent SKU ("Swa/Shirt/HC") counts every size under it. ListSKUs omits
+// out-of-stock SKUs, so a missing SKU has none.
+func StockFor(skus []SKU, want ...string) Stock {
 	var st Stock
 	lo, hi := math.Inf(1), math.Inf(-1)
 	for _, k := range skus {
-		if k.SKU != sku && !strings.HasPrefix(k.SKU, sku+"/") {
+		if !matchesAny(k.SKU, want) {
 			continue
 		}
 		st.InStock += k.InStock
@@ -188,4 +188,13 @@ func StockFor(skus []SKU, sku string) Stock {
 		}
 	}
 	return st
+}
+
+func matchesAny(sku string, want []string) bool {
+	for _, w := range want {
+		if sku == w || strings.HasPrefix(sku, w+"/") {
+			return true
+		}
+	}
+	return false
 }
