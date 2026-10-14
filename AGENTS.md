@@ -111,7 +111,12 @@ Start every task by syncing, because worktrees are often created from an old com
 
 ```sh
 git fetch origin && git rebase origin/main   # before you read or change code
+(cd web && npm ci)                           # new worktrees have no node_modules
 ```
+
+`make check` fails with `svelte-kit: command not found` when `web/node_modules` is missing.
+Don't pipe `make check test` into `tail`/`grep` in an `&&` chain. The pipe hides the exit
+code, and you'll commit on a red build.
 
 Land in small slices, as soon as each one is green. Don't save up one big change. A long
 session with several asks (for example "give me a link" → product pages → 3D preview) should
