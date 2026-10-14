@@ -742,6 +742,7 @@ func TestItemPrintDetailsAreValidated(t *testing.T) {
 		"unknown finish":  {Finish: "velvet"},
 		"zero thickness":  {ThicknessIn: f(0)},
 		"thick as a book": {ThicknessIn: f(2)},
+		"unknown packs":   {Packs: "crate"},
 		"photo url":       {Photos: []swag.Photo{{URL: "javascript:alert(1)"}}},
 		"long caption":    {Photos: []swag.Photo{{URL: "https://cdn.example/a.jpg", Caption: strings.Repeat("x", 301)}}},
 	} {
@@ -750,9 +751,9 @@ func TestItemPrintDetailsAreValidated(t *testing.T) {
 			t.Errorf("%s = %d, want 422", name, code)
 		}
 	}
-	it.Finish, it.ThicknessIn = "matte", f(0.008)
+	it.Finish, it.ThicknessIn, it.Packs = "matte", f(0.008), "sticker"
 	var upd swag.Item
-	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || upd.Finish != "matte" || *upd.ThicknessIn != 0.008 {
+	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || upd.Finish != "matte" || *upd.ThicknessIn != 0.008 || upd.Packs != "sticker" {
 		t.Fatalf("good print details = %d %+v", code, upd)
 	}
 }

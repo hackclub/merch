@@ -192,31 +192,51 @@ func TestCanTransition(t *testing.T) {
 }
 
 func TestPackQuantity(t *testing.T) {
-	for q, want := range map[int]bool{
-		5: true, 10: true, 15: true, 20: true, 25: true, 50: true, 100: true, 150: true, 1000: true,
-		0: false, 1: false, 4: false, 7: false, 30: false, 45: false, 75: false, 125: false,
+	for _, c := range []struct {
+		packs string
+		q     int
+		want  bool
+	}{
+		{"postcard", 5, true}, {"postcard", 10, true}, {"postcard", 25, true}, {"postcard", 50, true}, {"postcard", 150, true}, {"postcard", 1000, true},
+		{"postcard", 0, false}, {"postcard", 1, false}, {"postcard", 3, false}, {"postcard", 30, false}, {"postcard", 75, false}, {"postcard", 125, false},
+		{"sticker", 3, true}, {"sticker", 10, true}, {"sticker", 50, true}, {"sticker", 100, true}, {"sticker", 150, true},
+		{"sticker", 0, false}, {"sticker", 1, false}, {"sticker", 5, false}, {"sticker", 20, false}, {"sticker", 25, false}, {"sticker", 60, false},
 	} {
-		if got := PackQuantity(q); got != want {
-			t.Errorf("PackQuantity(%d) = %v, want %v", q, got, want)
+		if got := PackQuantity(c.packs, c.q); got != c.want {
+			t.Errorf("PackQuantity(%q, %d) = %v, want %v", c.packs, c.q, got, c.want)
 		}
+	}
+}
+
+func TestPackSizes(t *testing.T) {
+	if got := PackSizes("sticker"); got != "3, 10, then multiples of 50" {
+		t.Errorf("PackSizes(sticker) = %q", got)
+	}
+	if got := PackSizes("postcard"); got != "5, 10, 15, 20, 25, then multiples of 50" {
+		t.Errorf("PackSizes(postcard) = %q", got)
 	}
 }
 
 func TestValidatePacks(t *testing.T) {
 	cat := catalog()
-	cat[5] = Item{ID: 5, SKU: "Pri/Wel/4x6/1st", Name: "Postcard", Visible: true, MaxPerRequest: 200, SoldInPacks: true}
-	in := func(q int) ValidateInput {
-		return ValidateInput{Settings: settings(), Catalog: cat, Lines: []Line{{ItemID: 5, Quantity: q}, {ItemID: 1, Quantity: 3}}, Now: now}
+	cat[5] = Item{ID: 5, SKU: "Pri/Wel/4x6/1st", Name: "Postcard", Visible: true, MaxPerRequest: 200, Packs: "postcard"}
+	cat[6] = Item{ID: 6, SKU: "Sti/Sti/Kaw/1st", Name: "Kawaii sticker", Visible: true, MaxPerRequest: 150, Packs: "sticker"}
+	in := func(id int64, q int) ValidateInput {
+		return ValidateInput{Settings: settings(), Catalog: cat, Lines: []Line{{ItemID: id, Quantity: q}, {ItemID: 1, Quantity: 3}}, Now: now}
 	}
 	// A pack counts as one item toward the per-request total (5 here).
-	for _, q := range []int{5, 25, 50, 150} {
-		if err := Validate(in(q)); err != nil {
-			t.Errorf("%d postcards: %v", q, err)
+	for id, qs := range map[int64][]int{5: {5, 25, 50, 150}, 6: {3, 10, 50, 150}} {
+		for _, q := range qs {
+			if err := Validate(in(id, q)); err != nil {
+				t.Errorf("item %d × %d: %v", id, q, err)
+			}
 		}
 	}
-	for _, q := range []int{1, 7, 30, 75} {
-		if err := Validate(in(q)); !errors.Is(err, ErrBadQuantity) {
-			t.Errorf("%d postcards: err = %v, want ErrBadQuantity", q, err)
+	for id, qs := range map[int64][]int{5: {1, 3, 7, 30, 75}, 6: {1, 5, 25, 75}} {
+		for _, q := range qs {
+			if err := Validate(in(id, q)); !errors.Is(err, ErrBadQuantity) {
+				t.Errorf("item %d × %d: err = %v, want ErrBadQuantity", id, q, err)
+			}
 		}
 	}
 }

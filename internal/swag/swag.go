@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -58,10 +59,10 @@ type Item struct {
 	ThicknessIn *float64 `json:"thickness_in"`
 	// Real-world photos people have posted of it.
 	Photos []Photo `json:"photos"`
-	// SoldInPacks limits quantities to PackQuantity steps (postcards: 5, 10…25,
-	// then 50, 100, 150…). A pack line counts as one item toward the
-	// per-request total.
-	SoldInPacks bool `json:"sold_in_packs"`
+	// Packs names how the item is packed (see Packs; "" = any quantity).
+	// Quantities are limited to PackQuantity steps, and a pack line counts as
+	// one item toward the per-request total.
+	Packs string `json:"packs"`
 
 	// Variants are the sizes of an item, each its own warehouse SKU. When an
 	// item has variants, every request line for it must pick one; limits still
@@ -162,8 +163,8 @@ func Validate(in ValidateInput) error {
 		} else if l.SKU != "" && l.SKU != item.SKU {
 			return fmt.Errorf("%w: %s doesn't come in sizes", ErrBadVariant, item.Name)
 		}
-		if item.SoldInPacks && !PackQuantity(l.Quantity) {
-			return fmt.Errorf("%w: %s comes in 5, 10, 15, 20, 25, then multiples of 50", ErrBadQuantity, item.Name)
+		if item.Packs != "" && !PackQuantity(item.Packs, l.Quantity) {
+			return fmt.Errorf("%w: %s comes in %s", ErrBadQuantity, item.Name, PackSizes(item.Packs))
 		}
 		if l.Quantity > item.MaxPerRequest {
 			return fmt.Errorf("%w: at most %d %s per request", ErrItemLimit, item.MaxPerRequest, item.Name)
@@ -171,7 +172,7 @@ func Validate(in ValidateInput) error {
 		if item.MaxPerUser != nil && in.PriorQuantities[l.ItemID]+l.Quantity > *item.MaxPerUser {
 			return fmt.Errorf("%w: at most %d %s per person", ErrItemLimit, *item.MaxPerUser, item.Name)
 		}
-		if item.SoldInPacks {
+		if item.Packs != "" {
 			total++
 		} else {
 			total += l.Quantity
@@ -183,13 +184,26 @@ func Validate(in ValidateInput) error {
 	return nil
 }
 
-// PackQuantity reports whether q is an allowed quantity for an item sold in
-// packs: 5 to 25 in steps of 5, then multiples of 50.
-func PackQuantity(q int) bool {
-	if q <= 25 {
-		return q > 0 && q%5 == 0
+// Packs lists the small pack sizes for each kind of pack; past the last one,
+// packs come in multiples of 50. web/src/lib/cart.ts mirrors this.
+var Packs = map[string][]int{
+	"postcard": {5, 10, 15, 20, 25},
+	"sticker":  {3, 10},
+}
+
+// PackQuantity reports whether q is an allowed quantity for an item in the
+// given packs: one of its small sizes, or a multiple of 50.
+func PackQuantity(packs string, q int) bool {
+	return slices.Contains(Packs[packs], q) || (q > 0 && q%50 == 0)
+}
+
+// PackSizes describes the allowed quantities, e.g. "3, 10, then multiples of 50".
+func PackSizes(packs string) string {
+	var b strings.Builder
+	for _, n := range Packs[packs] {
+		fmt.Fprintf(&b, "%d, ", n)
 	}
-	return q%50 == 0
+	return b.String() + "then multiples of 50"
 }
 
 // IsInternational reports whether shipping to country (alpha-2) needs the

@@ -8,28 +8,31 @@ export type Sizes = Record<number, string>;
 
 export const emptyCart = (): Cart => ({});
 
-/** Quantities an item sold in packs comes in, up to max: 5 to 25 by fives, then multiples of 50 (mirrors swag.PackQuantity). */
-export function packQuantities(max: number): number[] {
-	const out: number[] = [];
-	for (let q = 5; q <= max; q += q < 25 ? 5 : q === 25 ? 25 : 50) out.push(q);
+/** Small pack sizes per kind of pack; past the last, multiples of 50 (mirrors swag.Packs). */
+export const PACKS: Record<string, number[]> = { postcard: [5, 10, 15, 20, 25], sticker: [3, 10] };
+
+/** Quantities a pack kind comes in, up to max: its small sizes, then multiples of 50. */
+export function packQuantities(packs: string, max: number): number[] {
+	const out = (PACKS[packs] ?? []).filter((q) => q <= max);
+	for (let q = 50; q <= max; q += 50) out.push(q);
 	return out;
 }
 
 /** The quantities to offer for an item (0 = none), or undefined when any count up to the max is fine. */
 export const quantityOptions = (item: Item): number[] | undefined =>
-	item.sold_in_packs ? [0, ...packQuantities(item.max_per_request)] : undefined;
+	item.packs ? [0, ...packQuantities(item.packs, item.max_per_request)] : undefined;
 
-/** Snaps a pack quantity to the largest allowed size not above it; 1–4 round up to 5. */
+/** Snaps a pack quantity to the largest allowed size not above it; below the smallest pack rounds up to it. */
 function snapPack(item: Item, q: number): number {
 	if (q <= 0) return 0;
-	const sizes = packQuantities(item.max_per_request);
-	return sizes.filter((s) => s <= Math.max(q, 5)).at(-1) ?? 0;
+	const sizes = packQuantities(item.packs, item.max_per_request);
+	return sizes.filter((s) => s <= Math.max(q, sizes[0] ?? 0)).at(-1) ?? 0;
 }
 
 export function setQuantity(cart: Cart, item: Item, qty: number): Cart {
 	const next = { ...cart };
 	const n = Math.max(Math.floor(qty) || 0, 0);
-	const q = item.sold_in_packs ? snapPack(item, n) : Math.min(n, item.max_per_request);
+	const q = item.packs ? snapPack(item, n) : Math.min(n, item.max_per_request);
 	if (q === 0) delete next[item.id];
 	else next[item.id] = q;
 	return next;
@@ -53,7 +56,7 @@ export function cartErrors(cart: Cart, maxItemsPerRequest: number, items: Item[]
 	const total = totalQuantity(cart);
 	if (total === 0) return ['Pick at least one item.'];
 	// A pack counts as one item toward the per-request total, as on the server.
-	const packed = items.filter((i) => i.sold_in_packs && cart[i.id]).reduce((n, i) => n + cart[i.id] - 1, 0);
+	const packed = items.filter((i) => i.packs && cart[i.id]).reduce((n, i) => n + cart[i.id] - 1, 0);
 	if (maxItemsPerRequest > 0 && total - packed > maxItemsPerRequest)
 		return [`You can request at most ${maxItemsPerRequest} items at a time.`];
 	return items.filter((i) => cart[i.id] && i.variants.length && !offers(i, sizes[i.id])).map((i) => `Pick a size for ${i.name}.`);

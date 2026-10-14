@@ -159,8 +159,8 @@ func TestItemImages(t *testing.T) {
 	if err != nil || upd.Finish != "linen" || *upd.ThicknessIn != 0.016 || len(upd.Photos) != 1 || upd.Photos[0] != it.Photos[0] {
 		t.Fatalf("UpdateItem print details = %+v, %v", upd, err)
 	}
-	it.SoldInPacks = true
-	if upd, err = s.UpdateItem(ctx, it); err != nil || !upd.SoldInPacks {
+	it.Packs = "sticker"
+	if upd, err = s.UpdateItem(ctx, it); err != nil || upd.Packs != "sticker" {
 		t.Fatalf("UpdateItem packs = %+v, %v", upd, err)
 	}
 	upd, err = s.AddItemPhoto(ctx, it.ID, swag.Photo{URL: "https://cdn.example/stack.jpg", Credit: "Ryaan"})

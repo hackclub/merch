@@ -3,22 +3,33 @@ import { cartErrors, cartLines, emptyCart, packQuantities, parseCart, parseSizes
 import type { Item } from './types';
 
 const items: Item[] = [
-	{ id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], sold_in_packs: false },
-	{ id: 2, sku: 'Swa/Sox', name: 'Socks', description: '', images: [], visible: true, sort_order: 1, max_per_request: 1, max_per_user: 1, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], sold_in_packs: false },
+	{ id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], packs: '' },
+	{ id: 2, sku: 'Swa/Sox', name: 'Socks', description: '', images: [], visible: true, sort_order: 1, max_per_request: 1, max_per_user: 1, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], packs: '' },
 	{
-		id: 3, sku: 'Swa/Shirt/HC', name: 'T-shirt', description: '', images: [], visible: true, sort_order: 2, max_per_request: 1, max_per_user: null, width_in: null, height_in: null, finish: '', thickness_in: null, photos: [], sold_in_packs: false,
+		id: 3, sku: 'Swa/Shirt/HC', name: 'T-shirt', description: '', images: [], visible: true, sort_order: 2, max_per_request: 1, max_per_user: null, width_in: null, height_in: null, finish: '', thickness_in: null, photos: [], packs: '',
 		variants: [{ label: 'S', sku: 'Swa/Shirt/HC/S' }, { label: 'M', sku: 'Swa/Shirt/HC/M' }]
 	}
 ];
 
-const postcard: Item = { ...items[0], id: 4, sku: 'Pri/Wel/4x6/1st', name: 'Postcard', max_per_request: 150, sold_in_packs: true };
+const postcard: Item = { ...items[0], id: 4, sku: 'Pri/Wel/4x6/1st', name: 'Postcard', max_per_request: 150, packs: 'postcard' };
+const sticker: Item = { ...items[0], id: 5, sku: 'Sti/Sti/Kaw/1st', name: 'Kawaii sticker', max_per_request: 150, packs: 'sticker' };
 
 describe('packs', () => {
 	it('lists 5 to 25 by fives, then multiples of 50, up to the max', () => {
-		expect(packQuantities(150)).toEqual([5, 10, 15, 20, 25, 50, 100, 150]);
-		expect(packQuantities(60)).toEqual([5, 10, 15, 20, 25, 50]);
-		expect(packQuantities(4)).toEqual([]);
+		expect(packQuantities('postcard', 150)).toEqual([5, 10, 15, 20, 25, 50, 100, 150]);
+		expect(packQuantities('postcard', 60)).toEqual([5, 10, 15, 20, 25, 50]);
+		expect(packQuantities('postcard', 4)).toEqual([]);
 		expect(quantityOptions(postcard)).toEqual([0, 5, 10, 15, 20, 25, 50, 100, 150]);
+	});
+
+	it('lists stickers as 3, 10, then multiples of 50', () => {
+		expect(packQuantities('sticker', 200)).toEqual([3, 10, 50, 100, 150, 200]);
+		expect(packQuantities('sticker', 49)).toEqual([3, 10]);
+		expect(quantityOptions(sticker)).toEqual([0, 3, 10, 50, 100, 150]);
+		let c = setQuantity(emptyCart(), sticker, 1);
+		expect(c[5]).toBe(3);
+		c = setQuantity(c, sticker, 25);
+		expect(c[5]).toBe(10);
 		expect(quantityOptions(items[0])).toBeUndefined();
 	});
 

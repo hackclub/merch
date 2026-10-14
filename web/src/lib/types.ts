@@ -16,7 +16,7 @@ export type Item = {
 	finish: string; // '' | 'matte' | 'gloss' | 'linen' | 'uncoated'
 	thickness_in: number | null;
 	photos: Photo[]; // real-world pictures people posted
-	sold_in_packs: boolean; // quantities 5, 10, 15, 20, 25, then multiples of 50
+	packs: string; // '' (any quantity) | 'postcard' (5, 10…25) | 'sticker' (3, 10), then multiples of 50
 };
 
 export type Variant = { label: string; sku: string };
