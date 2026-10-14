@@ -43,11 +43,32 @@ type Item struct {
 	// Physical size in inches, for printed items; both nil when it doesn't apply.
 	WidthIn  *float64 `json:"width_in"`
 	HeightIn *float64 `json:"height_in"`
+	// Variants are the sizes of an item, each its own warehouse SKU. When an
+	// item has variants, every request line for it must pick one; limits still
+	// apply to the item as a whole.
+	Variants []Variant `json:"variants"`
+}
+
+// Variant is one size of an item (e.g. "M" -> "Swa/Shirt/HC/M").
+type Variant struct {
+	Label string `json:"label"`
+	SKU   string `json:"sku"`
+}
+
+// Variant returns the item's variant with the given SKU.
+func (it Item) Variant(sku string) (Variant, bool) {
+	for _, v := range it.Variants {
+		if v.SKU == sku {
+			return v, true
+		}
+	}
+	return Variant{}, false
 }
 
 type Line struct {
-	ItemID   int64 `json:"item_id"`
-	Quantity int   `json:"quantity"`
+	ItemID   int64  `json:"item_id"`
+	Quantity int    `json:"quantity"`
+	SKU      string `json:"sku,omitempty"` // the chosen variant's SKU; required when the item has variants
 }
 
 type Address struct {
@@ -68,6 +89,7 @@ var (
 	ErrBadQuantity    = errors.New("quantity must be at least 1")
 	ErrUnknownItem    = errors.New("item is not available")
 	ErrDuplicateItem  = errors.New("item listed twice")
+	ErrBadVariant     = errors.New("pick a size")
 	ErrItemLimit      = errors.New("item limit exceeded")
 	ErrTooManyItems   = errors.New("too many items in one request")
 	ErrCooldown       = errors.New("you requested swag recently; try again later")
@@ -113,6 +135,13 @@ func Validate(in ValidateInput) error {
 			return ErrDuplicateItem
 		}
 		seen[l.ItemID] = true
+		if len(item.Variants) > 0 {
+			if _, ok := item.Variant(l.SKU); !ok {
+				return fmt.Errorf("%w for %s", ErrBadVariant, item.Name)
+			}
+		} else if l.SKU != "" && l.SKU != item.SKU {
+			return fmt.Errorf("%w: %s doesn't come in sizes", ErrBadVariant, item.Name)
+		}
 		if l.Quantity > item.MaxPerRequest {
 			return fmt.Errorf("%w: at most %d %s per request", ErrItemLimit, item.MaxPerRequest, item.Name)
 		}

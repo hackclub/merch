@@ -415,7 +415,7 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 
 func isRuleErr(err error) bool {
 	for _, e := range []error{swag.ErrRequestsClosed, swag.ErrNoItems, swag.ErrBadQuantity, swag.ErrUnknownItem,
-		swag.ErrDuplicateItem, swag.ErrItemLimit, swag.ErrTooManyItems, swag.ErrCooldown, swag.ErrBadAddress} {
+		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrTooManyItems, swag.ErrCooldown, swag.ErrBadAddress} {
 		if errors.Is(err, e) {
 			return true
 		}
@@ -633,7 +633,25 @@ func validItem(it swag.Item) string {
 			return "images must be http(s) URLs"
 		}
 	}
+	labels, skus := map[string]bool{}, map[string]bool{}
+	for _, v := range it.Variants {
+		switch {
+		case strings.TrimSpace(v.Label) == "" || strings.TrimSpace(v.SKU) == "":
+			return "every size needs a label and a warehouse SKU"
+		case labels[v.Label] || skus[v.SKU]:
+			return "sizes must have different labels and SKUs"
+		}
+		labels[v.Label], skus[v.SKU] = true, true
+	}
 	return ""
+}
+
+// conflictMsg explains which SKU clashed with an existing item.
+func conflictMsg(err error) string {
+	if strings.Contains(err.Error(), "size of another item") {
+		return err.Error()
+	}
+	return "an item with that SKU is already listed"
 }
 
 func (s *server) adminCreateItem(w http.ResponseWriter, r *http.Request, v viewer) {
@@ -647,7 +665,7 @@ func (s *server) adminCreateItem(w http.ResponseWriter, r *http.Request, v viewe
 	}
 	created, err := s.Store.CreateItem(r.Context(), it)
 	if errors.Is(err, store.ErrConflict) {
-		writeErr(w, http.StatusConflict, "an item with that SKU is already listed")
+		writeErr(w, http.StatusConflict, conflictMsg(err))
 		return
 	} else if err != nil {
 		s.serverErr(w, err)
@@ -675,7 +693,7 @@ func (s *server) adminUpdateItem(w http.ResponseWriter, r *http.Request, v viewe
 	case errors.Is(err, store.ErrNotFound):
 		writeErr(w, http.StatusNotFound, "item not found")
 	case errors.Is(err, store.ErrConflict):
-		writeErr(w, http.StatusConflict, "an item with that SKU is already listed")
+		writeErr(w, http.StatusConflict, conflictMsg(err))
 	case err != nil:
 		s.serverErr(w, err)
 	default:

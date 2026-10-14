@@ -16,6 +16,12 @@ Secrets live in env vars only.
 | YSWS author | Their HCA email matches `Hack Club Auth Email` in the **YSWS Authors** table of the Unified YSWS Projects DB (Airtable `app3A5kJwYqxMLOgh`) | Submit print-ready material (stickers, posters…) to be printed and stocked in the warehouse. |
 | Admin | Email is in `ADMIN_EMAILS` (admins are also authors) | Manage global limits, list warehouse SKUs as items, set visibility and order, review requests (mark paid → ship → tracking), and review author submissions. |
 
+Items can come in **sizes** (`items.variants`, e.g. the red Hack Club T-shirt `Swa/Shirt/HC` with
+S/M/L/XL → `Swa/Shirt/HC/<size>`). Each size ships its own warehouse SKU; limits count the item as a
+whole. Request lines store the exact SKU shipped (`swag_request_items.sku`, `variant`). A SKU belongs
+to one item: saving sizes folds any item listed under a size's SKU (e.g. imported per-size shirts)
+into the sized item, history included, and the importer attaches size SKUs to the sized item.
+
 Request status machine (`internal/swag`): `awaiting_payment → pending → dispatched`. From
 `awaiting_payment` or `pending`, a request can also go to `rejected` or `cancelled`. Rejected and
 cancelled requests don't count toward limits or cooldowns.

@@ -522,6 +522,54 @@ func TestAdminManagesItemsAndSettings(t *testing.T) {
 	}
 }
 
+func TestSizedItemFlow(t *testing.T) {
+	h := newHarness(t)
+	admin, user := h.client(adminEmail), h.client(userEmail)
+	sizes := []swag.Variant{{Label: "S", SKU: "Swa/Shirt/HC/S"}, {Label: "M", SKU: "Swa/Shirt/HC/M"}}
+
+	for i, bad := range [][]swag.Variant{
+		{{Label: "", SKU: "Swa/Shirt/HC/S"}},
+		{{Label: "S", SKU: ""}},
+		{{Label: "S", SKU: "a"}, {Label: "S", SKU: "b"}},
+		{{Label: "S", SKU: "a"}, {Label: "M", SKU: "a"}},
+	} {
+		if code := h.do(admin, "POST", "/api/admin/items", swag.Item{SKU: "Swa/Shirt/HC", Name: "T-shirt", MaxPerRequest: 1, Variants: bad}, nil); code != 422 {
+			t.Errorf("bad variants %d = %d, want 422", i, code)
+		}
+	}
+	var shirt swag.Item
+	if code := h.do(admin, "POST", "/api/admin/items", swag.Item{SKU: "Swa/Shirt/HC", Name: "T-shirt", MaxPerRequest: 1, Visible: true, Variants: sizes}, &shirt); code != 201 {
+		t.Fatalf("create sized item = %d", code)
+	}
+	var errBody map[string]string
+	if code := h.do(admin, "POST", "/api/admin/items", swag.Item{SKU: "Swa/Shirt/Two", Name: "x", MaxPerRequest: 1, Variants: sizes[:1]}, &errBody); code != 409 || !strings.Contains(errBody["error"], "Swa/Shirt/HC/S") {
+		t.Fatalf("size claimed twice = %d %v", code, errBody)
+	}
+
+	var cat struct{ Items []swag.Item }
+	h.do(user, "GET", "/api/catalog", nil, &cat)
+	if len(cat.Items) != 1 || len(cat.Items[0].Variants) != 2 {
+		t.Fatalf("catalog = %+v", cat)
+	}
+
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"address": usAddr, "lines": []swag.Line{{ItemID: shirt.ID, Quantity: 1}}}, &errBody); code != 422 || !strings.Contains(errBody["error"], "size") {
+		t.Fatalf("no size = %d %v", code, errBody)
+	}
+	var r store.Request
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"address": usAddr, "lines": []swag.Line{{ItemID: shirt.ID, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}}, &r); code != 201 {
+		t.Fatalf("create = %d", code)
+	}
+	if len(r.Lines) != 1 || r.Lines[0].SKU != "Swa/Shirt/HC/M" || r.Lines[0].Variant != "M" {
+		t.Fatalf("lines = %+v", r.Lines)
+	}
+	if code := h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/dispatch", r.ID), map[string]any{}, nil); code != 200 {
+		t.Fatalf("dispatch = %d", code)
+	}
+	if c := h.wh.orders[0].Contents; len(c) != 1 || c[0].SKU != "Swa/Shirt/HC/M" {
+		t.Fatalf("theseus contents = %+v, want the chosen size's SKU", c)
+	}
+}
+
 func TestAdminUploadsItemImages(t *testing.T) {
 	h := newHarness(t)
 	admin := h.client(adminEmail)

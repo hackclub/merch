@@ -22,6 +22,9 @@ func catalog() map[int64]Item {
 		1: {ID: 1, SKU: "Sti/Pck/1", Name: "Sticker pack", Visible: true, MaxPerRequest: 3},
 		2: {ID: 2, SKU: "Swa/Sox/1", Name: "Socks", Visible: true, MaxPerRequest: 1, MaxPerUser: intp(1)},
 		3: {ID: 3, SKU: "Swa/Hid/1", Name: "Hidden hoodie", Visible: false, MaxPerRequest: 1},
+		4: {ID: 4, SKU: "Swa/Shirt/HC", Name: "T-shirt", Visible: true, MaxPerRequest: 1, Variants: []Variant{
+			{Label: "S", SKU: "Swa/Shirt/HC/S"}, {Label: "M", SKU: "Swa/Shirt/HC/M"},
+		}},
 	}
 }
 
@@ -50,20 +53,23 @@ func TestValidateErrors(t *testing.T) {
 		in   ValidateInput
 		want error
 	}{
-		{"closed", ValidateInput{Settings: closed, Catalog: catalog(), Lines: []Line{{1, 1}}}, ErrRequestsClosed},
+		{"closed", ValidateInput{Settings: closed, Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrRequestsClosed},
 		{"empty", ValidateInput{Settings: settings(), Catalog: catalog()}, ErrNoItems},
-		{"zero qty", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{1, 0}}}, ErrBadQuantity},
-		{"unknown item", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{99, 1}}}, ErrUnknownItem},
-		{"hidden item", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{3, 1}}}, ErrUnknownItem},
-		{"duplicate line", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{1, 1}, {1, 1}}}, ErrDuplicateItem},
-		{"over per-request", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{1, 4}}}, ErrItemLimit},
-		{"over per-user lifetime", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{2, 1}}, PriorQuantities: map[int64]int{2: 1}}, ErrItemLimit},
+		{"zero qty", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 0}}}, ErrBadQuantity},
+		{"unknown item", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 99, Quantity: 1}}}, ErrUnknownItem},
+		{"hidden item", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 3, Quantity: 1}}}, ErrUnknownItem},
+		{"duplicate line", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}, {ItemID: 1, Quantity: 1}}}, ErrDuplicateItem},
+		{"over per-request", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 4}}}, ErrItemLimit},
+		{"over per-user lifetime", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 2, Quantity: 1}}, PriorQuantities: map[int64]int{2: 1}}, ErrItemLimit},
 		{"over total", func() ValidateInput {
 			s := settings()
 			s.MaxItemsPerRequest = 2
-			return ValidateInput{Settings: s, Catalog: catalog(), Lines: []Line{{1, 2}, {2, 1}}}
+			return ValidateInput{Settings: s, Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 2}, {ItemID: 2, Quantity: 1}}}
 		}(), ErrTooManyItems},
-		{"cooldown", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{1, 1}}, LastRequestAt: &last, Now: now}, ErrCooldown},
+		{"size missing", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 4, Quantity: 1}}}, ErrBadVariant},
+		{"size unknown", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/XXL"}}}, ErrBadVariant},
+		{"size on sizeless item", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1, SKU: "Swa/Shirt/HC/S"}}}, ErrBadVariant},
+		{"cooldown", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}}, LastRequestAt: &last, Now: now}, ErrCooldown},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -78,11 +84,36 @@ func TestValidateErrors(t *testing.T) {
 	}
 
 	t.Run("cooldown elapsed", func(t *testing.T) {
-		err := Validate(ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{1, 1}}, LastRequestAt: &oldEnough, Now: now})
+		err := Validate(ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}}, LastRequestAt: &oldEnough, Now: now})
 		if err != nil {
 			t.Fatalf("err = %v", err)
 		}
 	})
+}
+
+func TestValidateVariants(t *testing.T) {
+	err := Validate(ValidateInput{
+		Settings: settings(),
+		Catalog:  catalog(),
+		Lines:    []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}, {ItemID: 1, Quantity: 1, SKU: "Sti/Pck/1"}},
+		Now:      now,
+	})
+	if err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+}
+
+func TestLineSKU(t *testing.T) {
+	cat := catalog()
+	if v, ok := cat[4].Variant("Swa/Shirt/HC/M"); !ok || v.Label != "M" {
+		t.Errorf("Variant(M) = %+v, %v", v, ok)
+	}
+	if _, ok := cat[4].Variant("Swa/Shirt/HC"); ok {
+		t.Error("the parent SKU is not a variant")
+	}
+	if _, ok := cat[1].Variant(""); ok {
+		t.Error("sizeless items have no variants")
+	}
 }
 
 func TestIsInternational(t *testing.T) {

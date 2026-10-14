@@ -2,12 +2,13 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { api, ApiError, formatCents } from '$lib/api';
-	import { bag, setCart } from '$lib/bag.svelte';
-	import { pruneCart, setQuantity, totalQuantity } from '$lib/cart';
+	import { bag, setCart, setSizes } from '$lib/bag.svelte';
+	import { pruneCart, pruneSizes, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
 	import { itemIdFromParam } from '$lib/items';
 	import { hasSize } from '$lib/scale';
 	import SizePreview from '$lib/SizePreview.svelte';
 	import { session } from '$lib/session.svelte';
+	import SizePicker from '$lib/SizePicker.svelte';
 	import Stepper from '$lib/Stepper.svelte';
 	import type { Catalog } from '$lib/types';
 
@@ -19,6 +20,7 @@
 		try {
 			catalog = await api.get<Catalog>('/api/catalog');
 			setCart(pruneCart(bag.cart, catalog.items));
+			setSizes(pruneSizes(bag.sizes, catalog.items));
 		} catch (e) {
 			error = e instanceof ApiError ? e.message : 'Could not load this item.';
 		}
@@ -31,6 +33,8 @@
 	// The true-to-scale 3D view is the gallery's last tile, after the photos.
 	const has3D = $derived(!!item && hasSize(item) && item.images.length > 0);
 	const tiles = $derived(item ? item.images.length + (has3D ? 1 : 0) : 0);
+	const pickedSize = $derived(item ? bag.sizes[item.id] : undefined);
+	const needsSize = $derived(!!item?.variants.length && !sizeLabel(item, pickedSize));
 	// Reset the gallery when moving between items.
 	$effect(() => {
 		id;
@@ -99,15 +103,19 @@
 			{:else if !session.me?.user}
 				<p><a class="button" href="/auth/login" data-sveltekit-reload>Sign in with Hack Club to request this</a></p>
 			{:else}
+				{#if item.variants.length}
+					<p class="size-label">Size{#if pickedSize}: <strong>{sizeLabel(item, pickedSize)}</strong>{/if}</p>
+					<SizePicker variants={item.variants} value={pickedSize} onchange={(sku) => setSizes({ ...bag.sizes, [item.id]: sku })} />
+				{/if}
 				<div class="buy">
 					<Stepper value={inCart} max={item.max_per_request} onchange={(n) => setCart(setQuantity(bag.cart, item, n))} />
 					{#if inCart === 0}
-						<button onclick={() => setCart(setQuantity(bag.cart, item, 1))}>Add to request</button>
+						<button disabled={needsSize} onclick={() => setCart(setQuantity(bag.cart, item, 1))}>{needsSize ? 'Pick a size' : 'Add to request'}</button>
 					{/if}
 				</div>
 				{#if total > 0}
 					<p class="ok">
-						{inCart > 0 ? `${inCart} in your request.` : ''}
+						{inCart > 0 ? `${inCart}${pickedSize ? ` (${sizeLabel(item, pickedSize)})` : ''} in your request.` : ''}
 						<a href="/#request">Review request ({total} item{total === 1 ? '' : 's'}) →</a>
 					</p>
 				{/if}
@@ -147,5 +155,6 @@
 	.info h1 { margin-bottom: 0.5rem; }
 	.description { white-space: pre-line; line-height: 1.5; }
 	.facts { padding-left: 1.1rem; line-height: 1.6; }
+	.size-label { margin: 1rem 0 0.4rem; }
 	.buy { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 1rem 0 0.5rem; }
 </style>

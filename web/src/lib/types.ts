@@ -12,7 +12,10 @@ export type Item = {
 	max_per_user: number | null;
 	width_in: number | null; // physical size in inches, for printed items
 	height_in: number | null;
+	variants: Variant[]; // sizes, each its own warehouse SKU; empty = one size
 };
+
+export type Variant = { label: string; sku: string };
 
 export type Settings = {
 	requests_open: boolean;
@@ -38,7 +41,7 @@ export type Address = {
 	phone_number: string;
 };
 
-export type Line = { item_id: number; quantity: number };
+export type Line = { item_id: number; quantity: number; sku?: string };
 
 export type RequestStatus = 'awaiting_payment' | 'pending' | 'dispatched' | 'rejected' | 'cancelled';
 
@@ -60,7 +63,7 @@ export type SwagRequest = {
 	airtable_record_id?: string;
 	internal_note?: string; // admin-only
 	created_at: string;
-	lines: { item_id: number; sku: string; name: string; quantity: number }[];
+	lines: { item_id: number; sku: string; name: string; variant?: string; quantity: number }[];
 	payment_url?: string;
 };
 

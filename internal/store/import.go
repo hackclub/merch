@@ -38,27 +38,38 @@ func (s *Store) ImportRequest(ctx context.Context, in importer.Request, itemName
 		return false, err
 	}
 
-	qty := map[int64]int{}
-	var order []int64
+	// A SKU that is a size of a listed item (e.g. Swa/Shirt/HC/M) attaches to
+	// that item; otherwise it attaches to, or becomes, the item with that SKU.
+	type line struct {
+		itemID       int64
+		sku, variant string
+	}
+	qty := map[line]int{}
+	var order []line
 	for _, l := range in.Lines {
 		name := itemNames[l.SKU]
 		if name == "" {
 			name = l.SKU
 		}
-		var itemID int64
+		k := line{sku: l.SKU}
 		err := tx.QueryRow(ctx, `
-			WITH ins AS (
-				INSERT INTO items (sku, name, visible, max_per_request) VALUES ($1, $2, FALSE, 1)
-				ON CONFLICT (sku) DO NOTHING RETURNING id
-			)
-			SELECT id FROM ins UNION ALL SELECT id FROM items WHERE sku = $1 LIMIT 1`, l.SKU, name).Scan(&itemID)
+			SELECT o.id, v->>'label' FROM items o, jsonb_array_elements(o.variants) v WHERE v->>'sku' = $1 LIMIT 1`,
+			l.SKU).Scan(&k.itemID, &k.variant)
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = tx.QueryRow(ctx, `
+				WITH ins AS (
+					INSERT INTO items (sku, name, visible, max_per_request) VALUES ($1, $2, FALSE, 1)
+					ON CONFLICT (sku) DO NOTHING RETURNING id
+				)
+				SELECT id FROM ins UNION ALL SELECT id FROM items WHERE sku = $1 LIMIT 1`, l.SKU, name).Scan(&k.itemID)
+		}
 		if err != nil {
 			return false, err
 		}
-		if _, seen := qty[itemID]; !seen {
-			order = append(order, itemID)
+		if _, seen := qty[k]; !seen {
+			order = append(order, k)
 		}
-		qty[itemID] += l.Quantity
+		qty[k] += l.Quantity
 	}
 
 	a := in.Address
@@ -72,9 +83,9 @@ func (s *Store) ImportRequest(ctx context.Context, in importer.Request, itemName
 	if err != nil {
 		return false, mapErr(err)
 	}
-	for _, itemID := range order {
-		if _, err := tx.Exec(ctx, `INSERT INTO swag_request_items (request_id, item_id, quantity) VALUES ($1, $2, $3)`,
-			reqID, itemID, qty[itemID]); err != nil {
+	for _, k := range order {
+		if _, err := tx.Exec(ctx, `INSERT INTO swag_request_items (request_id, item_id, quantity, sku, variant) VALUES ($1, $2, $3, $4, $5)`,
+			reqID, k.itemID, qty[k], k.sku, k.variant); err != nil {
 			return false, err
 		}
 	}

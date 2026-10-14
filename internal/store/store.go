@@ -134,16 +134,19 @@ func (s *Store) UpdateSettings(ctx context.Context, st swag.Settings) error {
 
 // ---- items ----
 
-const itemCols = `id, sku, name, description, images, visible, sort_order, max_per_request, max_per_user, width_in, height_in`
+const itemCols = `id, sku, name, description, images, visible, sort_order, max_per_request, max_per_user, width_in, height_in, variants`
 
 func scanItem(row pgx.Row) (swag.Item, error) {
 	var it swag.Item
-	err := row.Scan(&it.ID, &it.SKU, &it.Name, &it.Description, &it.Images, &it.Visible, &it.SortOrder, &it.MaxPerRequest, &it.MaxPerUser, &it.WidthIn, &it.HeightIn)
+	err := row.Scan(&it.ID, &it.SKU, &it.Name, &it.Description, &it.Images, &it.Visible, &it.SortOrder, &it.MaxPerRequest, &it.MaxPerUser, &it.WidthIn, &it.HeightIn, &it.Variants)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return it, ErrNotFound
 	}
 	if it.Images == nil {
 		it.Images = []string{}
+	}
+	if it.Variants == nil {
+		it.Variants = []swag.Variant{}
 	}
 	return it, mapErr(err)
 }
@@ -161,19 +164,63 @@ func (s *Store) GetItem(ctx context.Context, id int64) (swag.Item, error) {
 }
 
 func (s *Store) CreateItem(ctx context.Context, it swag.Item) (swag.Item, error) {
-	return scanItem(s.pool.QueryRow(ctx, `
-		INSERT INTO items (sku, name, description, images, visible, sort_order, max_per_request, max_per_user, width_in, height_in)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING `+itemCols,
-		it.SKU, it.Name, it.Description, nonNil(it.Images), it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser, it.WidthIn, it.HeightIn))
+	return s.saveItem(ctx, it, false, `
+		INSERT INTO items (sku, name, description, images, visible, sort_order, max_per_request, max_per_user, width_in, height_in, variants)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING `+itemCols)
 }
 
 func (s *Store) UpdateItem(ctx context.Context, it swag.Item) (swag.Item, error) {
-	return scanItem(s.pool.QueryRow(ctx, `
-		UPDATE items SET sku = $2, name = $3, description = $4, images = $5, visible = $6,
-			sort_order = $7, max_per_request = $8, max_per_user = $9, width_in = $10, height_in = $11, updated_at = now()
-		WHERE id = $1 RETURNING `+itemCols,
-		it.ID, it.SKU, it.Name, it.Description, nonNil(it.Images), it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser,
-		it.WidthIn, it.HeightIn))
+	return s.saveItem(ctx, it, true, `
+		UPDATE items SET sku = $1, name = $2, description = $3, images = $4, visible = $5,
+			sort_order = $6, max_per_request = $7, max_per_user = $8, width_in = $9, height_in = $10, variants = $11, updated_at = now()
+		WHERE id = $12 RETURNING `+itemCols)
+}
+
+// saveItem writes an item and keeps every warehouse SKU on one item: a SKU
+// already sold as another item's size is a conflict, and an item listed under
+// one of this item's size SKUs (e.g. imported per-size shirts) is folded into
+// this item, request history included.
+func (s *Store) saveItem(ctx context.Context, it swag.Item, update bool, q string) (swag.Item, error) {
+	if it.Variants == nil {
+		it.Variants = []swag.Variant{}
+	}
+	skus := []string{it.SKU}
+	for _, v := range it.Variants {
+		skus = append(skus, v.SKU)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return it, err
+	}
+	defer tx.Rollback(ctx)
+	var taken string
+	err = tx.QueryRow(ctx, `
+		SELECT v->>'sku' FROM items o, jsonb_array_elements(o.variants) v
+		WHERE o.id <> $1 AND v->>'sku' = ANY($2) LIMIT 1`, it.ID, skus).Scan(&taken)
+	if err == nil {
+		return it, fmt.Errorf("%w: %s is a size of another item", ErrConflict, taken)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return it, err
+	}
+	args := []any{it.SKU, it.Name, it.Description, nonNil(it.Images), it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser, it.WidthIn, it.HeightIn, it.Variants}
+	if update {
+		args = append(args, it.ID)
+	}
+	saved, err := scanItem(tx.QueryRow(ctx, q, args...))
+	if err != nil {
+		return saved, err
+	}
+	for _, v := range saved.Variants {
+		if _, err := tx.Exec(ctx, `
+			UPDATE swag_request_items SET item_id = $1, variant = $3
+			WHERE sku = $2 AND item_id IN (SELECT id FROM items WHERE id = $1 OR sku = $2)`, saved.ID, v.SKU, v.Label); err != nil {
+			return saved, mapErr(err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM items WHERE sku = $2 AND id <> $1`, saved.ID, v.SKU); err != nil {
+			return saved, mapErr(err)
+		}
+	}
+	return saved, tx.Commit(ctx)
 }
 
 // AddItemImage appends an image URL to the end of an item's gallery.
@@ -195,8 +242,9 @@ func nonNil(ss []string) []string {
 
 type RequestLine struct {
 	ItemID   int64  `json:"item_id"`
-	SKU      string `json:"sku"`
+	SKU      string `json:"sku"` // the warehouse SKU shipped (the size's SKU for sized items)
 	Name     string `json:"name"`
+	Variant  string `json:"variant,omitempty"` // size label, e.g. "M"
 	Quantity int    `json:"quantity"`
 }
 
@@ -284,8 +332,16 @@ func (s *Store) CreateRequest(ctx context.Context, nr NewRequest, check UsageChe
 		return nil, mapErr(err)
 	}
 	for _, l := range nr.Lines {
-		if _, err := tx.Exec(ctx, `INSERT INTO swag_request_items (request_id, item_id, quantity) VALUES ($1, $2, $3)`, id, l.ItemID, l.Quantity); err != nil {
+		tag, err := tx.Exec(ctx, `
+			INSERT INTO swag_request_items (request_id, item_id, quantity, sku, variant)
+			SELECT $1, i.id, $3, coalesce(nullif($4, ''), i.sku),
+				coalesce((SELECT v->>'label' FROM jsonb_array_elements(i.variants) v WHERE v->>'sku' = $4 LIMIT 1), '')
+			FROM items i WHERE i.id = $2`, id, l.ItemID, l.Quantity, l.SKU)
+		if err != nil {
 			return nil, mapErr(err)
+		}
+		if tag.RowsAffected() == 0 {
+			return nil, fmt.Errorf("item %d: %w", l.ItemID, ErrNotFound)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -353,9 +409,9 @@ func (s *Store) attachLines(ctx context.Context, reqs []*Request) error {
 		r.Lines = []RequestLine{}
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT ri.request_id, ri.item_id, i.sku, i.name, ri.quantity
+		SELECT ri.request_id, ri.item_id, ri.sku, i.name, ri.variant, ri.quantity
 		FROM swag_request_items ri JOIN items i ON i.id = ri.item_id
-		WHERE ri.request_id = ANY($1) ORDER BY i.sort_order, i.name`, ids)
+		WHERE ri.request_id = ANY($1) ORDER BY i.sort_order, i.name, ri.sku`, ids)
 	if err != nil {
 		return err
 	}
@@ -363,7 +419,7 @@ func (s *Store) attachLines(ctx context.Context, reqs []*Request) error {
 	for rows.Next() {
 		var rid int64
 		var l RequestLine
-		if err := rows.Scan(&rid, &l.ItemID, &l.SKU, &l.Name, &l.Quantity); err != nil {
+		if err := rows.Scan(&rid, &l.ItemID, &l.SKU, &l.Name, &l.Variant, &l.Quantity); err != nil {
 			return err
 		}
 		byID[rid].Lines = append(byID[rid].Lines, l)

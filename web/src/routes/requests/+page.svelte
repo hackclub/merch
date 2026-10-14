@@ -42,7 +42,7 @@
 				<span class="muted">{new Date(r.created_at).toLocaleDateString()}</span>
 			</div>
 			<ul>
-				{#each r.lines as l}<li>{l.quantity} × {l.name}</li>{/each}
+				{#each r.lines as l}<li>{l.quantity} × {l.name}{l.variant ? ` (${l.variant})` : ''}</li>{/each}
 			</ul>
 			{#if r.status === 'awaiting_payment'}
 				<p>

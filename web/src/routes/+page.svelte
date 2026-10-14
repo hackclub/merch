@@ -3,10 +3,11 @@
 	import { goto } from '$app/navigation';
 	import { api, ApiError, formatCents, isInternational } from '$lib/api';
 	import { blankAddress, prefillAddress } from '$lib/address';
-	import { bag, setCart } from '$lib/bag.svelte';
-	import { cartErrors, cartLines, emptyCart, pruneCart, setQuantity, totalQuantity } from '$lib/cart';
+	import { bag, setCart, setSizes } from '$lib/bag.svelte';
+	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
 	import { itemPath, thumbnail } from '$lib/items';
 	import { session } from '$lib/session.svelte';
+	import SizePicker from '$lib/SizePicker.svelte';
 	import Stepper from '$lib/Stepper.svelte';
 	import type { Address, Catalog, SwagRequest } from '$lib/types';
 
@@ -21,6 +22,7 @@
 		try {
 			catalog = await api.get<Catalog>('/api/catalog');
 			setCart(pruneCart(bag.cart, catalog.items));
+			setSizes(pruneSizes(bag.sizes, catalog.items));
 			// "Review request" links from product pages land here as /#request.
 			if (location.hash === '#request') {
 				await tick();
@@ -32,7 +34,8 @@
 	});
 
 	const cart = $derived(bag.cart);
-	const problems = $derived(catalog ? cartErrors(cart, catalog.settings.max_items_per_request) : []);
+	const sizes = $derived(bag.sizes);
+	const problems = $derived(catalog ? cartErrors(cart, catalog.settings.max_items_per_request, catalog.items, sizes) : []);
 	const intl = $derived(isInternational(address.country));
 
 	async function submit(e: SubmitEvent) {
@@ -43,10 +46,11 @@
 		try {
 			const r = await api.post<SwagRequest>('/api/requests', {
 				address: { ...address, country: address.country.trim().toUpperCase() },
-				lines: cartLines(cart, catalog.items),
+				lines: cartLines(cart, catalog.items, sizes),
 				note
 			});
 			setCart(emptyCart());
+			setSizes({});
 			if (r.payment_url) window.location.href = r.payment_url;
 			else goto('/requests');
 		} catch (e) {
@@ -84,6 +88,10 @@
 				</a>
 				{#if item.description}<p class="muted clamp">{item.description}</p>{/if}
 				{#if session.me?.user && catalog.settings.requests_open}
+					{#if item.variants.length}
+						<SizePicker variants={item.variants} value={sizes[item.id]} label="Size of {item.name}"
+							onchange={(sku) => { setSizes({ ...sizes, [item.id]: sku }); if (!cart[item.id]) setCart(setQuantity(cart, item, 1)); }} />
+					{/if}
 					<Stepper value={cart[item.id] ?? 0} max={item.max_per_request} label="Quantity of {item.name}"
 						onchange={(n) => setCart(setQuantity(cart, item, n))} />
 				{/if}
@@ -100,7 +108,8 @@
 			<h2>Where should we send it?</h2>
 			<ul class="summary">
 				{#each catalog.items.filter((i) => cart[i.id]) as i (i.id)}
-					<li>{cart[i.id]} × <a href={itemPath(i)}>{i.name}</a></li>
+					<li>{cart[i.id]} × <a href={itemPath(i)}>{i.name}</a>{#if i.variants.length}
+						({sizeLabel(i, sizes[i.id]) || 'pick a size'}){/if}</li>
 				{/each}
 			</ul>
 			<div class="form-grid">

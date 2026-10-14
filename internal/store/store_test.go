@@ -157,6 +157,95 @@ func TestItemImages(t *testing.T) {
 	}
 }
 
+var shirtSizes = []swag.Variant{{Label: "S", SKU: "Swa/Shirt/HC/S"}, {Label: "M", SKU: "Swa/Shirt/HC/M"}, {Label: "L", SKU: "Swa/Shirt/HC/L"}}
+
+func TestItemVariants(t *testing.T) {
+	s := newStore(t)
+	plain := mkItem(t, s, "Sti/A", true)
+	if plain.Variants == nil || len(plain.Variants) != 0 {
+		t.Fatalf("new item variants = %#v, want empty non-nil", plain.Variants)
+	}
+	shirt, err := s.CreateItem(ctx, swag.Item{SKU: "Swa/Shirt/HC", Name: "T-shirt", Visible: true, MaxPerRequest: 1, Variants: shirtSizes})
+	if err != nil || !slices.Equal(shirt.Variants, shirtSizes) {
+		t.Fatalf("CreateItem variants = %+v, %v", shirt.Variants, err)
+	}
+	shirt.Variants = shirtSizes[:2]
+	if upd, err := s.UpdateItem(ctx, shirt); err != nil || !slices.Equal(upd.Variants, shirtSizes[:2]) {
+		t.Fatalf("UpdateItem variants = %+v, %v", upd.Variants, err)
+	}
+
+	// A SKU belongs to one item: no second item can claim a size another item sells.
+	if _, err := s.CreateItem(ctx, swag.Item{SKU: "Swa/Shirt/Other", Name: "x", MaxPerRequest: 1, Variants: shirtSizes[1:2]}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("variant taken by another item: err = %v", err)
+	}
+	if _, err := s.CreateItem(ctx, swag.Item{SKU: "Swa/Shirt/HC/M", Name: "x", MaxPerRequest: 1}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("item SKU that is another item's size: err = %v", err)
+	}
+}
+
+func TestVariantRequestLines(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "ident!1", "a@x.com")
+	shirt, _ := s.CreateItem(ctx, swag.Item{SKU: "Swa/Shirt/HC", Name: "T-shirt", Visible: true, MaxPerRequest: 1, Variants: shirtSizes})
+	sticker := mkItem(t, s, "Sti/A", true)
+	r, err := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Status: swag.StatusPending,
+		Lines: []swag.Line{{ItemID: shirt.ID, Quantity: 1, SKU: "Swa/Shirt/HC/M"}, {ItemID: sticker.ID, Quantity: 2}}}, noCheck)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []RequestLine{
+		{ItemID: sticker.ID, SKU: "Sti/A", Name: "Sti/A", Quantity: 2},
+		{ItemID: shirt.ID, SKU: "Swa/Shirt/HC/M", Name: "T-shirt", Variant: "M", Quantity: 1},
+	}
+	if !slices.Equal(r.Lines, want) {
+		t.Fatalf("lines = %+v, want %+v", r.Lines, want)
+	}
+	s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Status: swag.StatusPending, Lines: []swag.Line{{ItemID: shirt.ID, Quantity: 1, SKU: "Swa/Shirt/HC/L"}}},
+		func(prior map[int64]int, _ *time.Time) error {
+			if prior[shirt.ID] != 1 {
+				t.Errorf("sizes count toward the item's limit: prior = %v", prior)
+			}
+			return nil
+		})
+}
+
+// Listing per-size warehouse SKUs as separate items (as the importer does) and
+// then giving one item those sizes folds the others into it, history included.
+func TestVariantsAbsorbPerSizeItems(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "ident!1", "a@x.com")
+	m := mkItem(t, s, "Swa/Shirt/HC/M", false)
+	small := mkItem(t, s, "Swa/Shirt/HC/S", false)
+	keep := mkItem(t, s, "Sti/A", true)
+	old, _ := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Status: swag.StatusPending,
+		Lines: []swag.Line{{ItemID: m.ID, Quantity: 1}, {ItemID: small.ID, Quantity: 1}, {ItemID: keep.ID, Quantity: 1}}}, noCheck)
+
+	m.SKU, m.Name, m.Variants = "Swa/Shirt/HC", "T-shirt", shirtSizes
+	shirt, err := s.UpdateItem(ctx, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetItem(ctx, small.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("absorbed item should be gone: %v", err)
+	}
+	got, _ := s.GetRequest(ctx, old.ID)
+	want := []RequestLine{
+		{ItemID: keep.ID, SKU: "Sti/A", Name: "Sti/A", Quantity: 1},
+		{ItemID: shirt.ID, SKU: "Swa/Shirt/HC/M", Name: "T-shirt", Variant: "M", Quantity: 1},
+		{ItemID: shirt.ID, SKU: "Swa/Shirt/HC/S", Name: "T-shirt", Variant: "S", Quantity: 1},
+	}
+	if !slices.Equal(got.Lines, want) {
+		t.Fatalf("lines = %+v, want %+v", got.Lines, want)
+	}
+	s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Status: swag.StatusPending, Lines: []swag.Line{{ItemID: shirt.ID, Quantity: 1, SKU: "Swa/Shirt/HC/L"}}},
+		func(prior map[int64]int, _ *time.Time) error {
+			if prior[shirt.ID] != 2 {
+				t.Errorf("absorbed history counts toward the item: prior = %v", prior)
+			}
+			return nil
+		})
+}
+
 func TestCreateRequestPassesUsageToValidator(t *testing.T) {
 	s := newStore(t)
 	u := mkUser(t, s, "ident!1", "a@x.com")

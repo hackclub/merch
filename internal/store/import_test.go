@@ -110,3 +110,20 @@ func TestSetTrackingByAirtableID(t *testing.T) {
 		t.Fatalf("request = %+v", all[0])
 	}
 }
+
+func TestImportAttachesSizesToVariantItems(t *testing.T) {
+	s := newStore(t)
+	shirt, _ := s.CreateItem(ctx, swag.Item{SKU: "Swa/Shirt/HC", Name: "T-shirt", MaxPerRequest: 1, Variants: shirtSizes})
+	in := imported("sub-1", "a@example.com")
+	in.Lines = []importer.SKULine{{SKU: "Swa/Shirt/HC/L", Quantity: 1}}
+	if _, err := s.ImportRequest(ctx, in, nil); err != nil {
+		t.Fatal(err)
+	}
+	all, _ := s.ListRequests(ctx, "")
+	if l := all[0].Lines; len(l) != 1 || l[0].ItemID != shirt.ID || l[0].SKU != "Swa/Shirt/HC/L" || l[0].Variant != "L" {
+		t.Fatalf("lines = %+v", l)
+	}
+	if items, _ := s.ListItems(ctx, false); len(items) != 1 {
+		t.Fatalf("a size of a listed item must not become its own item: %d items", len(items))
+	}
+}

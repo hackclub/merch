@@ -69,7 +69,7 @@
 	}
 
 	// ---- items ----
-	const listedSKUs = $derived(new Set(items.map((i) => i.sku)));
+	const listedSKUs = $derived(new Set(items.flatMap((i) => [i.sku, ...i.variants.map((v) => v.sku)])));
 	const saveItem = (it: Item) =>
 		guard(async () => {
 			await api.put(`/api/admin/items/${it.id}`, it);
@@ -139,7 +139,7 @@
 							{#if r.source !== 'app'}<span class="badge" title={r.airtable_record_id}>imported · {r.source}</span>{/if}</td>
 						<td>{r.user_email}{#if r.note}<div class="muted">“{r.note}”</div>{/if}
 							{#if r.internal_note}<details><summary class="muted">internal note</summary><pre style="white-space: pre-wrap">{r.internal_note}</pre></details>{/if}</td>
-						<td>{#each r.lines as l}<div>{l.quantity} × {l.name} <span class="muted">{l.sku}</span></div>{/each}</td>
+						<td>{#each r.lines as l}<div>{l.quantity} × {l.name}{l.variant ? ` (${l.variant})` : ''} <span class="muted">{l.sku}</span></div>{/each}</td>
 						<td>{r.address.first_name} {r.address.last_name}<br />{r.address.city}, {r.address.state} {r.address.country}</td>
 						<td>
 							<span class="badge {r.status}">{statusLabel[r.status]}</span>
@@ -187,6 +187,18 @@
 								</label>
 							</div>
 							<div class="muted">First image is the thumbnail. Reorder or remove, then Save.</div>
+							<details open={it.variants.length > 0}>
+								<summary class="muted">Sizes ({it.variants.length || 'one size'})</summary>
+								{#each it.variants as v, i}
+									<div class="row size-row">
+										<input bind:value={v.label} placeholder="label (M)" style="width: 5rem" />
+										<input bind:value={v.sku} placeholder="warehouse SKU" />
+										<button class="link" title="Remove size" onclick={() => (it.variants = it.variants.filter((_, j) => j !== i))}>✕</button>
+									</div>
+								{/each}
+								<button class="link" onclick={() => (it.variants = [...it.variants, { label: '', sku: '' }])}>+ Size</button>
+								<div class="muted">Each size ships its own SKU; limits count all sizes together. Saving folds items listed under these SKUs into this one.</div>
+							</details>
 						</td>
 						<td>
 							<label>Per request <input type="number" min="1" bind:value={it.max_per_request} /></label>
@@ -278,6 +290,7 @@
 		display: grid; place-items: center; width: 5rem; height: 5rem; border: 2px dashed var(--smoke);
 		border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 0.8rem; text-align: center;
 	}
+	.size-row { margin-top: 0.35rem; flex-wrap: nowrap; }
 	.add-image.busy { cursor: progress; }
 	.size { flex-wrap: nowrap; font-weight: 400; }
 	.size input { width: 4.5rem; }
