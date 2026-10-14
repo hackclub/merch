@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api, ApiError, fileToBase64, formatCents, statusLabel } from '$lib/api';
-	import { itemPath, moveImage } from '$lib/items';
+	import { byFilename, itemPath, moveImage } from '$lib/items';
 	import { session } from '$lib/session.svelte';
 	import type { Item, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
 
@@ -87,6 +87,18 @@
 				it.images = upd.images;
 			}
 		}, `Uploaded ${files.length} image${files.length === 1 ? '' : 's'} to ${it.name}`);
+		uploading = null;
+	}
+	// Booklet pages upload in filename order (page-2 before page-10), one at a time.
+	async function uploadPages(it: Item, files: FileList | null) {
+		if (!files?.length) return;
+		uploading = it.id;
+		await guard(async () => {
+			for (const f of byFilename(files)) {
+				const upd = await api.post<Item>(`/api/admin/items/${it.id}/pages`, { filename: f.name, data: await fileToBase64(f) });
+				it.pages = upd.pages;
+			}
+		}, `Added ${files.length} page${files.length === 1 ? '' : 's'} to ${it.name}`);
 		uploading = null;
 	}
 	async function uploadPhoto(it: Item, files: FileList | null) {
@@ -211,6 +223,30 @@
 								<button class="link" onclick={() => (it.variants = [...it.variants, { label: '', sku: '' }])}>+ Size</button>
 								<div class="muted">Each size ships its own SKU; limits count all sizes together. Saving folds items listed under these SKUs into this one.</div>
 							</details>
+							<details class="photos-edit" open={it.pages.length > 0}>
+								<summary>Booklet pages ({it.pages.length})</summary>
+								<label>Binding
+									<select bind:value={it.binding}>
+										<option value="">Not a booklet</option>
+										<option value="staple">Stapled (saddle-stitched)</option>
+										<option value="perfect">Square spine (perfect bound)</option>
+									</select></label>
+								{#if it.pages.length}
+									<div class="pages">
+										{#each it.pages.slice(0, 8) as src, i (src)}<img {src} alt="Page {i + 1}" />{/each}
+										{#if it.pages.length > 8}<span class="muted">+{it.pages.length - 8} more</span>{/if}
+									</div>
+								{/if}
+								<div class="row">
+									<label class="button small-btn" class:busy={uploading === it.id}>
+										{uploading === it.id ? 'Uploading…' : '+ Pages'}
+										<input type="file" accept="image/png,image/jpeg,image/webp" multiple hidden disabled={uploading !== null}
+											onchange={(e) => { uploadPages(it, e.currentTarget.files); e.currentTarget.value = ''; }} />
+									</label>
+									{#if it.pages.length}<button class="link" onclick={() => (it.pages = [])}>Remove all pages</button>{/if}
+								</div>
+								<div class="muted">One image per page, front cover first and back cover last. With a binding and a printed size, the 3D view opens and flips through them.</div>
+							</details>
 							<details class="photos-edit" open={it.photos.length > 0}>
 								<summary>Real-world photos ({it.photos.length})</summary>
 								{#each it.photos as p, i (p.url)}
@@ -238,6 +274,9 @@
 									<option value="postcard">Postcards: 5–25 by 5s, then 50s</option>
 									<option value="sticker">Stickers: 3, 10, then 50s</option>
 								</select></label>
+							<label>Ships with (warehouse SKUs, one per unit)
+								<input value={it.ships_with.join(', ')} placeholder="e.g. Pri/M25/4x6/1st"
+									oninput={(e) => (it.ships_with = e.currentTarget.value.split(',').map((x) => x.trim()).filter(Boolean))} /></label>
 							<label>Per person, ever (blank = no cap)
 								<input type="number" min="0" value={it.max_per_user ?? ''}
 									oninput={(e) => (it.max_per_user = e.currentTarget.value === '' ? null : +e.currentTarget.value)} /></label>
@@ -342,6 +381,8 @@
 	.size { flex-wrap: nowrap; font-weight: 400; }
 	.size input { width: 4.5rem; }
 	.photos-edit { margin-top: 0.5rem; }
+	.pages { display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap; margin: 0.4rem 0; }
+	.pages img { height: 3rem; border-radius: 2px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); }
 	.photos-edit summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
 	.photo-row { display: grid; grid-template-columns: 4rem 1fr auto; gap: 0.5rem; align-items: center; margin: 0.4rem 0; }
 	.photo-row img { width: 4rem; height: 3rem; object-fit: cover; border-radius: 4px; }

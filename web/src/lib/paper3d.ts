@@ -27,9 +27,63 @@ export type Viewer = {
 };
 
 const PHONE_DEPTH = 0.31;
-const LEAN = THREE.MathUtils.degToRad(-4); // prints lean back a touch, like they're propped up
+export const LEAN = THREE.MathUtils.degToRad(-4); // prints lean back a touch, like they're propped up
 
 export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onReady: () => void): Viewer {
+	const { widthIn: w, heightIn: h } = opts;
+	const sceneW = w + GAP_IN + PHONE.w;
+	const sceneH = Math.max(h, PHONE.h);
+	const stage = createStage(canvas, sceneW, sceneH);
+	const { scene, renderer } = stage;
+
+	// Everything is laid out left to right, then centered on x = 0.
+	const left = -sceneW / 2;
+
+	const sheet = createSheet(opts, renderer, onReady);
+	sheet.pivot.position.set(left + w / 2, 0, 0);
+	scene.add(sheet.pivot);
+
+	const phone = createPhone();
+	phone.position.set(left + w + GAP_IN + PHONE.w / 2, PHONE.h / 2, 0);
+	scene.add(phone);
+
+	const viewer: Viewer = {
+		angle: 0,
+		zoom: 1,
+		resize: stage.resize,
+		render() {
+			sheet.pivot.rotation.y = viewer.angle;
+			// Frame the whole scene at zoom 1; zooming moves toward the print's center.
+			const zoomed = 1 - viewer.zoom; // 0 at full view
+			const x = THREE.MathUtils.lerp(0, left + w / 2, Math.min(1, zoomed * 1.6));
+			stage.frame(x, sceneW, sceneH, viewer.zoom);
+			stage.render();
+		},
+		dispose() {
+			sheet.dispose();
+			stage.dispose();
+		}
+	};
+	return viewer;
+}
+
+export type Stage = {
+	scene: THREE.Scene;
+	renderer: THREE.WebGLRenderer;
+	camera: THREE.PerspectiveCamera;
+	resize(width: number, height: number): void;
+	/** Points the camera at x (mid-height) so a sceneW × sceneH area fills the view at zoom 1. */
+	frame(x: number, sceneW: number, sceneH: number, zoom: number): void;
+	render(): void;
+	dispose(): void;
+};
+
+/**
+ * A photo studio: renderer, a soft environment, a key light with a contact
+ * shadow on an invisible floor, and a camera. Light and shadow are sized for
+ * a scene of about sceneW × sceneH inches standing around x = 0.
+ */
+export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: number): Stage {
 	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 	renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -44,10 +98,6 @@ export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onR
 	const room = new RoomEnvironment();
 	scene.environment = pmrem.fromScene(room, 0.04).texture;
 	room.dispose();
-
-	const { widthIn: w, heightIn: h, thicknessIn: t } = opts;
-	const sceneW = w + GAP_IN + PHONE.w;
-	const sceneH = Math.max(h, PHONE.h);
 
 	// Soft studio key light from above and slightly in front, so the shadow pools
 	// under things (a contact shadow) instead of stretching across the floor.
@@ -70,14 +120,82 @@ export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onR
 	floor.receiveShadow = true;
 	scene.add(floor);
 
-	// Everything is laid out left to right, then centered on x = 0.
-	const left = -sceneW / 2;
+	const camera = new THREE.PerspectiveCamera(26, 1, 0.05, 2000);
+	const target = new THREE.Vector3();
+	return {
+		scene,
+		renderer,
+		camera,
+		resize(width, height) {
+			renderer.setSize(width, height, false);
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
+		},
+		frame(x, w, h, zoom) {
+			const vfov = THREE.MathUtils.degToRad(camera.fov) / 2;
+			const fitH = (h * 0.56) / Math.tan(vfov);
+			const fitW = (w * 0.56) / (Math.tan(vfov) * camera.aspect);
+			const dist = Math.max(fitH, fitW) * zoom;
+			target.set(x, h * 0.5, 0);
+			camera.position.set(target.x + dist * 0.05, target.y + dist * 0.16, dist);
+			camera.lookAt(target);
+		},
+		render() {
+			renderer.render(scene, camera);
+		},
+		dispose() {
+			scene.traverse((o) => {
+				if (o instanceof THREE.Mesh) {
+					o.geometry.dispose();
+					for (const m of [o.material].flat()) {
+						for (const v of Object.values(m)) if (v instanceof THREE.Texture) v.dispose();
+						m.dispose();
+					}
+				}
+			});
+			scene.environment?.dispose();
+			pmrem.dispose();
+			renderer.dispose();
+		}
+	};
+}
 
-	// ---- the print ----
+/** Loads art onto a material, cropped to fill a w × h face like a print shop would. */
+export function loadArt(
+	renderer: THREE.WebGLRenderer,
+	url: string,
+	aspect: number,
+	done: (tex: THREE.Texture | null) => void,
+	mirror = false
+) {
+	new THREE.TextureLoader().setCrossOrigin('anonymous').load(
+		url,
+		(tex) => {
+			tex.colorSpace = THREE.SRGBColorSpace;
+			tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+			const img = tex.image as { width: number; height: number };
+			const c = coverCrop(img.width / img.height, aspect);
+			// A mirrored copy is for the back of a two-sided plane, seen from behind.
+			tex.repeat.set(mirror ? -c.repeatX : c.repeatX, c.repeatY);
+			tex.offset.set(mirror ? c.offsetX + c.repeatX : c.offsetX, c.offsetY);
+			done(tex);
+		},
+		undefined,
+		() => done(null)
+	);
+}
+
+/**
+ * A printed sheet with real thickness: front and back art on the paper's
+ * surface, standing on its bottom edge and leaning back a touch. Turn it with
+ * pivot.rotation.y.
+ */
+export function createSheet(opts: ViewerOptions, renderer: THREE.WebGLRenderer, onReady: () => void) {
+	const { widthIn: w, heightIn: h, thicknessIn: t } = opts;
 	const info = finishInfo(opts.finish);
 	const surface = paperSurface(info.weave, info.grain);
 	surface.normal.repeat.set(w / surface.tileIn, h / surface.tileIn);
-	const loader = new THREE.TextureLoader().setCrossOrigin('anonymous');
+	let pending = 0;
 	const face = (url: string | undefined) => {
 		const m = new THREE.MeshPhysicalMaterial({
 			color: 0xffffff,
@@ -89,47 +207,36 @@ export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onR
 		});
 		if (url) {
 			pending++;
-			loader.load(
-				url,
-				(tex) => {
-					tex.colorSpace = THREE.SRGBColorSpace;
-					tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-					const img = tex.image as { width: number; height: number };
-					const c = coverCrop(img.width / img.height, w / h);
-					tex.repeat.set(c.repeatX, c.repeatY);
-					tex.offset.set(c.offsetX, c.offsetY);
+			loadArt(renderer, url, w / h, (tex) => {
+				if (tex) {
 					m.map = tex;
 					m.needsUpdate = true;
-					if (--pending === 0) onReady();
-				},
-				undefined,
-				() => {
-					if (--pending === 0) onReady();
 				}
-			);
+				if (--pending === 0) onReady();
+			});
 		}
 		return m;
 	};
-	let pending = 0;
-	// Paper's core shows on the edges: a warm off-white.
-	const edge = new THREE.MeshStandardMaterial({ color: 0xf2eee6, roughness: 0.95 });
 	// BoxGeometry face order: +x, -x, +y, -y, +z (front), -z (back).
-	const frontMat = face(opts.front);
-	const backMat = face(opts.back);
-	const sheet = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), [edge, edge, edge, edge, frontMat, backMat]);
+	const edge = paperEdge();
+	const sheet = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), [edge, edge, edge, edge, face(opts.front), face(opts.back)]);
 	sheet.castShadow = true;
 	sheet.position.y = h / 2;
 	// Pivot at the bottom edge so the lean looks propped rather than floating.
-	const sheetPivot = new THREE.Group();
-	sheetPivot.position.set(left + w / 2, 0, 0);
-	const sheetLean = new THREE.Group();
-	sheetLean.rotation.x = LEAN;
-	sheetLean.add(sheet);
-	sheetPivot.add(sheetLean);
-	scene.add(sheetPivot);
+	const pivot = new THREE.Group();
+	const lean = new THREE.Group();
+	lean.rotation.x = LEAN;
+	lean.add(sheet);
+	pivot.add(lean);
 	if (pending === 0) queueMicrotask(onReady);
+	return { pivot, dispose: () => surface.normal.dispose() };
+}
 
-	// ---- the phone, for scale ----
+/** Paper's core shows on the edges: a warm off-white. */
+export const paperEdge = () => new THREE.MeshStandardMaterial({ color: 0xf2eee6, roughness: 0.95 });
+
+/** A dark phone standing at the same lean, turned a little toward the viewer, for scale. */
+export function createPhone(): THREE.Group {
 	const phone = new THREE.Group();
 	const body = new THREE.Mesh(
 		new RoundedBoxGeometry(PHONE.w, PHONE.h, PHONE_DEPTH, 6, 0.42),
@@ -147,51 +254,8 @@ export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onR
 	);
 	island.position.set(0, PHONE.h / 2 - 0.22, PHONE_DEPTH / 2 + 0.012);
 	phone.add(body, screen, island);
-	phone.position.set(left + w + GAP_IN + PHONE.w / 2, PHONE.h / 2, 0);
 	phone.rotation.set(LEAN, THREE.MathUtils.degToRad(-12), 0);
-	scene.add(phone);
-
-	// ---- camera ----
-	const camera = new THREE.PerspectiveCamera(26, 1, 0.05, 2000);
-	const target = new THREE.Vector3();
-	const viewer: Viewer = {
-		angle: 0,
-		zoom: 1,
-		resize(width, height) {
-			renderer.setSize(width, height, false);
-			camera.aspect = width / height;
-			camera.updateProjectionMatrix();
-		},
-		render() {
-			sheetPivot.rotation.y = viewer.angle;
-			// Frame the whole scene at zoom 1; zooming moves toward the print's center.
-			const vfov = THREE.MathUtils.degToRad(camera.fov) / 2;
-			const fitH = (sceneH * 0.56) / Math.tan(vfov);
-			const fitW = (sceneW * 0.56) / (Math.tan(vfov) * camera.aspect);
-			const dist = Math.max(fitH, fitW) * viewer.zoom;
-			const zoomed = 1 - viewer.zoom; // 0 at full view
-			target.set(THREE.MathUtils.lerp(0, left + w / 2, Math.min(1, zoomed * 1.6)), sceneH * 0.5, 0);
-			camera.position.set(target.x + dist * 0.05, target.y + dist * 0.16, dist);
-			camera.lookAt(target);
-			renderer.render(scene, camera);
-		},
-		dispose() {
-			scene.traverse((o) => {
-				if (o instanceof THREE.Mesh) {
-					o.geometry.dispose();
-					for (const m of [o.material].flat()) {
-						for (const v of Object.values(m)) if (v instanceof THREE.Texture) v.dispose();
-						m.dispose();
-					}
-				}
-			});
-			surface.normal.dispose();
-			scene.environment?.dispose();
-			pmrem.dispose();
-			renderer.dispose();
-		}
-	};
-	return viewer;
+	return phone;
 }
 
 /**
@@ -199,7 +263,7 @@ export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onR
  * noise for every paper, plus linen's embossed crosshatch. Each tile covers
  * half an inch.
  */
-function paperSurface(weave: boolean, grain: number) {
+export function paperSurface(weave: boolean, grain: number) {
 	const N = 512;
 	const height = new Float32Array(N * N);
 	// Deterministic noise so the paper looks the same every visit.

@@ -110,6 +110,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("PUT /api/admin/items/{id}", s.requireAdmin(s.adminUpdateItem))
 	mux.Handle("POST /api/admin/items/{id}/images", s.requireAdmin(s.adminUploadItemImage))
 	mux.Handle("POST /api/admin/items/{id}/photos", s.requireAdmin(s.adminUploadItemPhoto))
+	mux.Handle("POST /api/admin/items/{id}/pages", s.requireAdmin(s.adminUploadItemPage))
 	mux.Handle("GET /api/admin/warehouse/skus", s.requireAdmin(s.adminSKUs))
 	mux.Handle("GET /api/admin/settings", s.requireAdmin(s.adminSettings))
 	mux.Handle("PUT /api/admin/settings", s.requireAdmin(s.adminUpdateSettings))
@@ -317,8 +318,22 @@ func (s *server) catalog(w http.ResponseWriter, r *http.Request) {
 		s.serverErr(w, err)
 		return
 	}
+	// What listed items ship with (the magazine's card), so their pages can
+	// show it; these are often hidden items.
+	var with []string
+	for _, it := range items {
+		with = append(with, it.ShipsWith...)
+	}
+	includes := []swag.Item{}
+	if len(with) > 0 {
+		if includes, err = s.Store.ItemsBySKU(r.Context(), with); err != nil {
+			s.serverErr(w, err)
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items": items,
+		"items":    items,
+		"includes": includes,
 		"settings": map[string]any{
 			"requests_open":                    st.RequestsOpen,
 			"max_items_per_request":            st.MaxItemsPerRequest,
@@ -623,9 +638,23 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 		writeErr(w, http.StatusConflict, "request is "+string(req.Status)+"; only pending requests can be dispatched")
 		return
 	}
-	contents := make([]theseus.Content, len(req.Lines))
+	lines := make([]swag.Shipped, len(req.Lines))
+	shipsWith := map[int64][]string{}
 	for i, l := range req.Lines {
-		contents[i] = theseus.Content{SKU: l.SKU, Quantity: l.Quantity}
+		lines[i] = swag.Shipped{ItemID: l.ItemID, SKU: l.SKU, Quantity: l.Quantity}
+		if _, seen := shipsWith[l.ItemID]; seen {
+			continue
+		}
+		it, err := s.Store.GetItem(r.Context(), l.ItemID)
+		if err != nil {
+			s.serverErr(w, err)
+			return
+		}
+		shipsWith[l.ItemID] = it.ShipsWith
+	}
+	var contents []theseus.Content
+	for _, c := range swag.Shipment(lines, shipsWith) {
+		contents = append(contents, theseus.Content{SKU: c.SKU, Quantity: c.Quantity})
 	}
 	a := req.Address
 	order, err := s.Warehouse.CreateOrder(r.Context(), theseus.OrderInput{
@@ -714,6 +743,18 @@ func validItem(it swag.Item) string {
 		return "packs must be postcard or sticker"
 	case it.ThicknessIn != nil && !(*it.ThicknessIn > 0 && *it.ThicknessIn <= 0.5):
 		return "thickness must be between 0 and 0.5 inches"
+	case !swag.Bindings[it.Binding]:
+		return "binding must be staple or perfect"
+	}
+	for _, u := range it.Pages {
+		if !isHTTPURL(u) {
+			return "pages must be http(s) URLs"
+		}
+	}
+	for _, sku := range it.ShipsWith {
+		if strings.TrimSpace(sku) == "" || sku == it.SKU {
+			return "ships_with must list other warehouse SKUs"
+		}
 	}
 	for _, p := range it.Photos {
 		if msg := validPhoto(p); msg != "" {
@@ -815,6 +856,15 @@ func (s *server) adminUploadItemImage(w http.ResponseWriter, r *http.Request, v 
 		return
 	}
 	s.respondItem(w)(s.Store.AddItemImage(r.Context(), id, url))
+}
+
+// adminUploadItemPage adds a page to the end of a booklet's flip-through.
+func (s *server) adminUploadItemPage(w http.ResponseWriter, r *http.Request, v viewer) {
+	id, url, _, ok := s.uploadItemImage(w, r)
+	if !ok {
+		return
+	}
+	s.respondItem(w)(s.Store.AddItemPage(r.Context(), id, url))
 }
 
 // adminUploadItemPhoto adds a real-world photo (with caption and credit) to

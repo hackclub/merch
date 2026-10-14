@@ -33,6 +33,11 @@ type Settings struct {
 // Finishes are the paper surfaces the 3D preview knows how to render.
 var Finishes = map[string]bool{"": true, "matte": true, "gloss": true, "linen": true, "uncoated": true}
 
+// Bindings are how a multi-page printed item is bound, for the 3D flip-through:
+// "" is a single sheet, "staple" is saddle-stitched (folded sheets, stapled on
+// the fold) and "perfect" is a glued square spine, like a paperback.
+var Bindings = map[string]bool{"": true, "staple": true, "perfect": true}
+
 // Photo is a real-world picture of an item, credited to whoever took it.
 type Photo struct {
 	URL     string `json:"url"`
@@ -63,6 +68,14 @@ type Item struct {
 	// Quantities are limited to PackQuantity steps, and a pack line counts as
 	// one item toward the per-request total.
 	Packs string `json:"packs"`
+
+	// Binding (see Bindings) and Pages, the page images of a booklet in reading
+	// order: front cover first, back cover last.
+	Binding string   `json:"binding"`
+	Pages   []string `json:"pages"`
+	// ShipsWith lists warehouse SKUs packed with every unit of this item, like
+	// the intro card that goes with each magazine.
+	ShipsWith []string `json:"ships_with"`
 
 	// Variants are the sizes of an item, each its own warehouse SKU. When an
 	// item has variants, every request line for it must pick one; limits still
@@ -253,4 +266,34 @@ func CanTransition(from, to Status) bool {
 		}
 	}
 	return false
+}
+
+// Shipped is a warehouse SKU going out in a box, and the request item it's for.
+type Shipped struct {
+	ItemID   int64
+	SKU      string
+	Quantity int
+}
+
+// Shipment is everything that goes in the box: each requested line, followed
+// by what its item always ships with (one per unit). Repeated SKUs are merged
+// into their first line, so the warehouse sees each SKU once.
+func Shipment(lines []Shipped, shipsWith map[int64][]string) []Shipped {
+	var out []Shipped
+	at := map[string]int{}
+	add := func(s Shipped) {
+		if i, ok := at[s.SKU]; ok {
+			out[i].Quantity += s.Quantity
+			return
+		}
+		at[s.SKU] = len(out)
+		out = append(out, s)
+	}
+	for _, l := range lines {
+		add(l)
+		for _, sku := range shipsWith[l.ItemID] {
+			add(Shipped{ItemID: l.ItemID, SKU: sku, Quantity: l.Quantity})
+		}
+	}
+	return out
 }

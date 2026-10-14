@@ -17,6 +17,9 @@ export type Item = {
 	thickness_in: number | null;
 	photos: Photo[]; // real-world pictures people posted
 	packs: string; // '' (any quantity) | 'postcard' (5, 10…25) | 'sticker' (3, 10), then multiples of 50
+	binding: string; // '' (a single sheet) | 'staple' | 'perfect': booklets open in 3D
+	pages: string[]; // a booklet's page images in reading order, front cover first
+	ships_with: string[]; // warehouse SKUs packed with every unit (the magazine's card)
 };
 
 export type Variant = { label: string; sku: string };
@@ -31,6 +34,7 @@ export type Settings = {
 
 export type Catalog = {
 	items: Item[];
+	includes: Item[]; // what listed items ship with, often hidden items
 	settings: Settings & { hcb_payment_url: string };
 };
 

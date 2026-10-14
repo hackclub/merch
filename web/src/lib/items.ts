@@ -17,7 +17,18 @@ export function itemIdFromParam(param: string): number | null {
 	return id > 0 ? id : null;
 }
 
-export const thumbnail = (item: Item): string => item.images[0] ?? '';
+export const thumbnail = (item: Item): string => item.images[0] ?? item.pages[0] ?? '';
+
+/** Booklets with page images open in 3D and flip through. */
+export const isBooklet = (item: Item) => item.binding !== '' && item.pages.length >= 2;
+
+/** Page files in the order people number them: page-2 before page-10. */
+export const byFilename = <T extends { name: string }>(files: Iterable<T>): T[] =>
+	[...files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+/** The items an item ships with (looked up by SKU), in the order it lists them. */
+export const shipsWith = (item: Item, includes: Item[]): Item[] =>
+	item.ships_with.flatMap((sku) => includes.filter((i) => i.sku === sku));
 
 /** Returns a copy of images with images[i] moved one place left (-1) or right (+1). */
 export function moveImage(images: string[], i: number, delta: -1 | 1): string[] {

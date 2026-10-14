@@ -2,6 +2,7 @@ package swag
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 )
@@ -238,5 +239,38 @@ func TestValidatePacks(t *testing.T) {
 				t.Errorf("item %d × %d: err = %v, want ErrBadQuantity", id, q, err)
 			}
 		}
+	}
+}
+
+func TestShipment(t *testing.T) {
+	// The magazine always ships with its intro card, one per magazine; a card
+	// requested on its own merges into the same contents line.
+	shipsWith := map[int64][]string{7: {"Pri/M25/4x6/1st"}}
+	got := Shipment([]Shipped{
+		{ItemID: 1, SKU: "Sti/Pck/1", Quantity: 3},
+		{ItemID: 7, SKU: "Pri/Bok/M25/1st", Quantity: 2},
+		{ItemID: 8, SKU: "Pri/M25/4x6/1st", Quantity: 1},
+	}, shipsWith)
+	want := []Shipped{
+		{ItemID: 1, SKU: "Sti/Pck/1", Quantity: 3},
+		{ItemID: 7, SKU: "Pri/Bok/M25/1st", Quantity: 2},
+		{ItemID: 7, SKU: "Pri/M25/4x6/1st", Quantity: 3},
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Shipment = %+v, want %+v", got, want)
+	}
+	if got := Shipment([]Shipped{{ItemID: 1, SKU: "Sti/Pck/1", Quantity: 1}}, nil); len(got) != 1 {
+		t.Fatalf("plain shipment = %+v", got)
+	}
+}
+
+func TestBindings(t *testing.T) {
+	for _, b := range []string{"", "staple", "perfect"} {
+		if !Bindings[b] {
+			t.Errorf("binding %q should be valid", b)
+		}
+	}
+	if Bindings["spiral"] {
+		t.Error("spiral isn't rendered")
 	}
 }

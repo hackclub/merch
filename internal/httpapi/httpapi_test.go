@@ -988,3 +988,80 @@ func TestAllowedEmailsLimitSignIn(t *testing.T) {
 		}
 	}
 }
+
+func TestMagazineShipsWithItsCard(t *testing.T) {
+	h := newHarness(t)
+	admin := h.client(adminEmail)
+	card := h.mkItem("Pri/M25/4x6/1st", false)
+	card.Images = []string{"https://cdn.example/card.jpg"}
+	h.do(admin, "PUT", fmt.Sprintf("/api/admin/items/%d", card.ID), card, nil)
+	mag := h.mkItem("Pri/Bok/M25/1st", true)
+	mag.ShipsWith = []string{"Pri/M25/4x6/1st"}
+	if code := h.do(admin, "PUT", fmt.Sprintf("/api/admin/items/%d", mag.ID), mag, &mag); code != 200 || !slices.Equal(mag.ShipsWith, []string{"Pri/M25/4x6/1st"}) {
+		t.Fatalf("save ships_with = %d %+v", code, mag)
+	}
+
+	// The catalog carries what each listed item comes with, even when that's hidden.
+	var cat struct {
+		Items    []swag.Item
+		Includes []swag.Item
+	}
+	h.do(h.client(""), "GET", "/api/catalog", nil, &cat)
+	if len(cat.Items) != 1 || len(cat.Includes) != 1 || cat.Includes[0].SKU != "Pri/M25/4x6/1st" || cat.Includes[0].Images[0] != "https://cdn.example/card.jpg" {
+		t.Fatalf("catalog = %+v", cat)
+	}
+
+	var r store.Request
+	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"address": usAddr, "lines": []swag.Line{{ItemID: mag.ID, Quantity: 2}}}, &r)
+	if code := h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/dispatch", r.ID), map[string]any{}, nil); code != 200 {
+		t.Fatalf("dispatch = %d", code)
+	}
+	want := []theseus.Content{{SKU: "Pri/Bok/M25/1st", Quantity: 2}, {SKU: "Pri/M25/4x6/1st", Quantity: 2}}
+	if got := h.wh.orders[0].Contents; !slices.Equal(got, want) {
+		t.Fatalf("contents = %+v, want %+v", got, want)
+	}
+}
+
+func TestBookletDetailsAreValidated(t *testing.T) {
+	h := newHarness(t)
+	admin := h.client(adminEmail)
+	it := h.mkItem("Pri/Bok/Mini25/1st", true)
+	path := fmt.Sprintf("/api/admin/items/%d", it.ID)
+	for name, bad := range map[string]swag.Item{
+		"unknown binding":   {Binding: "spiral"},
+		"page url":          {Pages: []string{"javascript:alert(1)"}},
+		"blank ships_with":  {ShipsWith: []string{" "}},
+		"ships with itself": {ShipsWith: []string{"Pri/Bok/Mini25/1st"}},
+	} {
+		bad.SKU, bad.Name, bad.MaxPerRequest = it.SKU, it.Name, it.MaxPerRequest
+		if code := h.do(admin, "PUT", path, bad, nil); code != 422 {
+			t.Errorf("%s = %d, want 422", name, code)
+		}
+	}
+	it.Binding, it.Pages = "staple", []string{"https://cdn.example/p1.jpg", "https://cdn.example/p2.jpg"}
+	var upd swag.Item
+	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || upd.Binding != "staple" || !slices.Equal(upd.Pages, it.Pages) || upd.ShipsWith == nil {
+		t.Fatalf("good booklet = %d %+v", code, upd)
+	}
+}
+
+func TestAdminUploadsItemPages(t *testing.T) {
+	h := newHarness(t)
+	it := h.mkItem("Pri/Bok/Mini25/1st", true)
+	var buf bytes.Buffer
+	png.Encode(&buf, image.NewNRGBA(image.Rect(0, 0, 30, 30)))
+	path := fmt.Sprintf("/api/admin/items/%d/pages", it.ID)
+	var upd swag.Item
+	for _, name := range []string{"cover.png", "page 2.png"} {
+		body := map[string]string{"filename": name, "data": base64.StdEncoding.EncodeToString(buf.Bytes())}
+		if code := h.do(h.client(adminEmail), "POST", path, body, &upd); code != 200 {
+			t.Fatalf("page upload = %d", code)
+		}
+	}
+	if want := []string{"https://cdn.example/1/cover.jpg", "https://cdn.example/2/page-2.jpg"}; !slices.Equal(upd.Pages, want) || len(upd.Images) != 0 {
+		t.Fatalf("pages = %v images = %v", upd.Pages, upd.Images)
+	}
+	if code := h.do(h.client(userEmail), "POST", path, map[string]string{"filename": "x.png"}, nil); code != 403 {
+		t.Fatalf("non-admin page upload = %d", code)
+	}
+}

@@ -1,9 +1,12 @@
 <script lang="ts">
 	// Interactive 3D view of a printed item (see paper3d.ts) or a sticker request
 	// (sticker3d.ts): slowly spins like a store's 3D product view; drag or arrow
-	// keys turn it, + / − zoom in to see the paper. Falls back to the flat front
-	// image without WebGL.
+	// keys turn it, + / − zoom in to see the paper. Booklets (book3d.ts) also
+	// open: drag, arrow keys or the slider turn their pages. Falls back to the
+	// flat front image without WebGL.
 	import { onMount } from 'svelte';
+	import { settle, spreadLabel } from './book';
+	import type { BookOptions, BookViewer } from './book3d';
 	import { finishInfo } from './paper';
 	import { sizeLabel } from './scale';
 	import { packLabel } from './stickers';
@@ -11,7 +14,9 @@
 	import type { StickerOptions, StickerViewer } from './sticker3d';
 
 	// count: how many stickers are requested; the sticker view grows to match.
-	let { opts, name, count = 0 }: { opts: ViewerOptions | StickerOptions; name: string; count?: number } = $props();
+	// book: a booklet's pages, which open and flip through.
+	let { opts, name, count = 0, book }: { opts: ViewerOptions | StickerOptions; name: string; count?: number; book?: BookOptions } =
+		$props();
 
 	let canvas = $state<HTMLCanvasElement>();
 	let stage: HTMLDivElement;
@@ -22,6 +27,14 @@
 	let dragging = $state(false);
 	let showingBack = $state(false);
 	let zoomLevel = $state(0); // index into ZOOMS
+	// Booklets: the spread we're heading to (0 = closed on the cover), and the
+	// one we're nearest, for the label.
+	let goal = $state(0);
+	let near = $state(0);
+	let turning = false; // dragging pages rather than spinning the book
+	let dragFrom = { x: 0, position: 0 };
+	const leaves = $derived(book ? Math.ceil(book.pages.length / 2) : 0);
+	const isOpen = $derived(goal > 0);
 
 	const ZOOMS = [1, 0.5, 0.22];
 	const SPIN = 0.45; // radians per second
@@ -51,8 +64,9 @@
 		const ro = new ResizeObserver(() => viewer?.resize(stage.clientWidth, stage.clientHeight));
 		ro.observe(stage);
 
-		const load =
-			'kind' in opts
+		const load = book
+			? import('./book3d').then((m) => m.createBookViewer(canvas!, book, () => (ready = true)))
+			: 'kind' in opts
 				? import('./sticker3d').then((m) => {
 						const v = m.createStickerViewer(canvas!, opts as StickerOptions, () => (ready = true));
 						v.setCount(count);
@@ -70,6 +84,17 @@
 					const dt = Math.min(0.05, (now - last) / 1000);
 					last = now;
 					if (!viewer || !visible || document.hidden) return;
+					const bv = book ? (viewer as BookViewer) : null;
+					if (bv && !turning) {
+						// Turn toward the goal: quickly at first, never slower than a leaf a second.
+						const d = goal - bv.position;
+						bv.position += Math.sign(d) * Math.min(Math.abs(d), Math.max(Math.abs(d) * dt * 5, dt * 1.6));
+					}
+					if (bv && (goal > 0 || bv.position > 0.001)) {
+						// Open books face you squarely.
+						target = Math.round(viewer.angle / (2 * Math.PI)) * 2 * Math.PI;
+					}
+					if (bv) near = Math.round(bv.position);
 					if (target !== null) {
 						viewer.angle += (target - viewer.angle) * Math.min(1, dt * 7);
 						if (Math.abs(target - viewer.angle) < 0.002) target = null;
@@ -99,20 +124,43 @@
 		dragging = true;
 		target = null;
 		lastX = e.clientX;
+		// An open book's pages follow your finger; a closed one turns around.
+		turning = !!book && isOpen;
+		dragFrom = { x: e.clientX, position: (viewer as BookViewer | null)?.position ?? 0 };
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	}
 	function move(e: PointerEvent) {
 		if (!dragging || !viewer) return;
-		viewer.angle += (e.clientX - lastX) * 0.012;
+		if (turning) {
+			// Dragging across most of a page turns one leaf.
+			const perLeaf = stage.clientWidth * 0.4;
+			const bv = viewer as BookViewer;
+			bv.position = Math.min(leaves, Math.max(0, dragFrom.position + (dragFrom.x - e.clientX) / perLeaf));
+		} else {
+			viewer.angle += (e.clientX - lastX) * 0.012;
+		}
 		lastX = e.clientX;
 	}
-	function up() {
+	function up(e: PointerEvent) {
 		dragging = false;
+		if (turning && viewer) {
+			const bv = viewer as BookViewer;
+			goal = settle(bv.position, Math.sign(bv.position - dragFrom.position));
+		} else if (book && !isOpen && Math.abs(e.clientX - dragFrom.x) < 4) {
+			goal = 1; // a tap on the closed book opens it
+		}
+		turning = false;
 		pause();
 	}
+	const turnTo = (k: number) => {
+		goal = Math.min(leaves, Math.max(0, k));
+		pause();
+	};
 	function key(e: KeyboardEvent) {
 		if (!viewer) return;
-		if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+		if (book && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+			turnTo(goal + (e.key === 'ArrowLeft' ? -1 : 1));
+		} else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
 			target = (target ?? viewer.angle) + (e.key === 'ArrowLeft' ? -0.35 : 0.35);
 		} else if (e.key === '+' || e.key === '=') zoomLevel = Math.min(ZOOMS.length - 1, zoomLevel + 1);
 		else if (e.key === '-') zoomLevel = Math.max(0, zoomLevel - 1);
@@ -137,9 +185,13 @@
 		bind:this={stage}
 		role="slider"
 		tabindex="0"
-		aria-label="{name} in 3D: {label.toLowerCase()}, next to a phone for scale. Drag or use the arrow keys to turn it, plus and minus to zoom."
-		aria-valuenow={0}
-		aria-valuetext={showingBack ? 'showing the back' : 'showing the front'}
+		aria-label={book
+			? `${name} in 3D: ${sizeLabel(book.widthIn, book.heightIn)}, ${book.pages.length} pages. Left and right arrow keys turn the pages, plus and minus zoom.`
+			: `${name} in 3D: ${label.toLowerCase()}, next to a phone for scale. Drag or use the arrow keys to turn it, plus and minus to zoom.`}
+		aria-valuenow={book ? near : 0}
+		aria-valuemin={0}
+		aria-valuemax={book ? leaves : 0}
+		aria-valuetext={book ? spreadLabel(near, book.pages.length) : showingBack ? 'showing the back' : 'showing the front'}
 		onpointerdown={down}
 		onpointermove={move}
 		onpointerup={up}
@@ -158,15 +210,37 @@
 					onpointerdown={(e) => e.stopPropagation()} onclick={() => (zoomLevel++, pause())}>+</button>
 				<button type="button" class="ctl" aria-label="Zoom out" disabled={zoomLevel === 0}
 					onpointerdown={(e) => e.stopPropagation()} onclick={() => (zoomLevel--, pause())}>−</button>
-				<button type="button" class="ctl" aria-label={spinning ? 'Stop spinning' : 'Spin'}
-					onpointerdown={(e) => e.stopPropagation()} onclick={() => (spinning = !spinning)}>{spinning ? '❚❚' : '⟳'}</button>
+				{#if !isOpen}
+					<button type="button" class="ctl" aria-label={spinning ? 'Stop spinning' : 'Spin'}
+						onpointerdown={(e) => e.stopPropagation()} onclick={() => (spinning = !spinning)}>{spinning ? '❚❚' : '⟳'}</button>
+				{/if}
 			</div>
+			{#if book && ready}
+				<div class="pager" role="group" aria-label="Turn the pages">
+					<button type="button" class="ctl" aria-label="Previous page" disabled={goal === 0}
+						onpointerdown={(e) => e.stopPropagation()} onclick={() => turnTo(goal - 1)}>‹</button>
+					<span class="page-label">{spreadLabel(near, book.pages.length)}</span>
+					<button type="button" class="ctl" aria-label="Next page" disabled={goal === leaves}
+						onpointerdown={(e) => e.stopPropagation()} onclick={() => turnTo(goal + 1)}>›</button>
+				</div>
+			{/if}
 		{/if}
 	</div>
+	{#if book && !failed}
+		<input class="scrub" type="range" min="0" max={leaves} step="1" value={goal} aria-label="Jump to a page"
+			oninput={(e) => turnTo(+e.currentTarget.value)} />
+	{/if}
 	<div class="bar">
-		<span class="muted">{label} · drag to turn</span>
-		{#if 'back' in opts && opts.back && !failed}
-			<button type="button" class="secondary small" onclick={flip}>{showingBack ? 'Show front' : 'Show back'}</button>
+		{#if book}
+			<span class="muted">{sizeLabel(book.widthIn, book.heightIn)} · {book.pages.length} pages{book.binding === 'staple' ? ', stapled' : ''} · {isOpen ? 'drag to turn the page' : 'tap to open'}</span>
+			{#if !failed}
+				<button type="button" class="secondary small" onclick={() => turnTo(isOpen ? 0 : 1)}>{isOpen ? 'Close it' : 'Look inside'}</button>
+			{/if}
+		{:else}
+			<span class="muted">{label} · drag to turn</span>
+			{#if 'back' in opts && opts.back && !failed}
+				<button type="button" class="secondary small" onclick={flip}>{showingBack ? 'Show front' : 'Show back'}</button>
+			{/if}
 		{/if}
 	</div>
 </div>
@@ -192,4 +266,11 @@
 	.ctl:disabled { opacity: 0.35; }
 	.bar { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 	.small { padding: 0.3rem 0.8rem; font-size: 0.85rem; }
+	.pager {
+		position: absolute; left: 50%; bottom: 0.6rem; transform: translateX(-50%); display: flex; align-items: center; gap: 0.5rem;
+		background: rgba(255, 255, 255, 0.92); border: 1px solid var(--smoke); border-radius: 999px; padding: 0.2rem;
+	}
+	.pager .ctl { border: none; font-size: 1.3rem; }
+	.page-label { font-size: 0.85rem; font-weight: 600; min-width: 8.5rem; text-align: center; font-variant-numeric: tabular-nums; }
+	.scrub { width: 100%; accent-color: var(--red); margin: 0; }
 </style>

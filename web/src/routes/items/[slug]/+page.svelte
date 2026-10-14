@@ -4,7 +4,8 @@
 	import { api, ApiError, formatCents } from '$lib/api';
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
 	import { pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
-	import { itemIdFromParam, sizeStockLabel, unitCostLabel } from '$lib/items';
+	import { isBooklet, itemIdFromParam, itemPath, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
+	import type { BookOptions } from '$lib/book3d';
 	import { sheetThickness, finishInfo } from '$lib/paper';
 	import Product3D from '$lib/Product3D.svelte';
 	import { hasSize } from '$lib/scale';
@@ -34,9 +35,25 @@
 	const inCart = $derived(item ? (bag.cart[item.id] ?? 0) : 0);
 	const total = $derived(totalQuantity(bag.cart));
 	// Printed items with a size get a true-to-scale 3D view, shown first; stickers
-	// show the stack (or bags of 50) you're requesting.
+	// show the stack (or bags of 50) you're requesting. Booklets open in it and
+	// flip through their pages.
 	const isSticker = $derived(item?.packs === 'sticker');
-	const has3D = $derived(!!item && (hasSize(item) || isSticker) && item.images.length > 0);
+	const booklet = $derived(!!item && isBooklet(item));
+	const has3D = $derived(!!item && (hasSize(item) || isSticker) && (item.images.length > 0 || booklet));
+	const comesWith = $derived(item && catalog ? shipsWith(item, catalog.includes ?? []) : []);
+	const book = $derived<BookOptions | undefined>(
+		item && booklet && hasSize(item)
+			? {
+					pages: item.pages, widthIn: item.width_in!, heightIn: item.height_in!, finish: item.finish, binding: item.binding,
+					// Without a measured thickness, about 0.1 mm per page.
+					thicknessIn: item.thickness_in ?? item.pages.length * 0.004,
+					extras: comesWith.filter((i) => hasSize(i) && i.images.length).map((i) => ({
+						front: i.images[0], back: i.images[1], widthIn: i.width_in!, heightIn: i.height_in!,
+						thicknessIn: sheetThickness(i), finish: i.finish
+					}))
+				}
+			: undefined
+	);
 	const shown = $derived(picked ?? (has3D ? '3d' : 0));
 	const tiles = $derived(item ? item.images.length + (has3D ? 1 : 0) : 0);
 	const pickedSize = $derived(item ? bag.sizes[item.id] : undefined);
@@ -73,7 +90,7 @@
 {:else if item}
 	<div class="product">
 		<div class="gallery">
-			{#if item.images.length}
+			{#if item.images.length || has3D}
 				{#if shown === '3d'}
 					<div class="main three">
 						{#key item.id}
@@ -81,8 +98,8 @@
 								<Product3D name={item.name} count={inCart}
 									opts={{ kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in }} />
 							{:else}
-								<Product3D name={item.name} opts={{
-									front: item.images[0], back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
+								<Product3D name={item.name} {book} opts={{
+									front: thumbnail(item), back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
 									thicknessIn: sheetThickness(item), finish: item.finish
 								}} />
 							{/if}
@@ -97,8 +114,8 @@
 					<div class="thumbs">
 						{#if has3D}
 							<button type="button" class="thumb three-thumb" class:active={shown === '3d'}
-								aria-label="Show it in 3D, to scale" onclick={() => (picked = '3d')}>
-								<img src={item.images[0]} alt="" loading="lazy" />
+								aria-label={booklet ? 'Flip through it in 3D' : 'Show it in 3D, to scale'} onclick={() => (picked = '3d')}>
+								<img src={thumbnail(item)} alt="" loading="lazy" />
 								<span>3D</span>
 							</button>
 						{/if}
@@ -124,7 +141,12 @@
 					Free shipping in the US{#if catalog?.settings.international_shipping_fee_cents}; {formatCents(catalog.settings.international_shipping_fee_cents)} flat
 						shipping elsewhere{/if}
 				</li>
-				{#if finish}
+				{#if book}
+					<li>
+						{item.pages.length} pages, {item.binding === 'staple' ? 'stapled' : 'with a square spine'}, about
+						{(book.thicknessIn * 25.4).toFixed(0)} mm thick{finish ? `; ${finish.toLowerCase()} cover` : ''}
+					</li>
+				{:else if finish}
 					<li>Printed on {finish.toLowerCase()}, about {(sheetThickness(item) * 25.4).toFixed(1)} mm thick</li>
 				{/if}
 				<li>Ships from the Hack Club warehouse</li>
@@ -136,6 +158,19 @@
 					</li>
 				{/if}
 			</ul>
+
+			{#if comesWith.length}
+				<div class="comes-with">
+					{#each comesWith as extra (extra.id)}
+						{#if thumbnail(extra)}<img src={thumbnail(extra)} alt="" />{/if}
+						<p>
+							<strong>Comes with the {extra.name}</strong><br />
+							<span class="muted">One in the envelope with every copy{extra.visible ? '' : ', no need to add it'}.
+								{#if extra.visible}<a href={itemPath(extra)}>See it</a>{/if}</span>
+						</p>
+					{/each}
+				</div>
+			{/if}
 
 			{#if !catalog?.settings.requests_open}
 				<p class="error">Requests are closed right now. Check back soon!</p>
@@ -221,5 +256,11 @@
 	.size-label { margin: 1rem 0 0.4rem; }
 	.stock strong { color: var(--dark); }
 	.nowrap { white-space: nowrap; }
+	.comes-with {
+		display: grid; grid-template-columns: auto 1fr; gap: 0.75rem; align-items: center; margin: 1rem 0;
+		padding: 0.75rem; border: 1px dashed var(--smoke); border-radius: 10px; background: white;
+	}
+	.comes-with img { width: 4.5rem; aspect-ratio: 3 / 2; object-fit: cover; border-radius: 4px; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); transform: rotate(-4deg); }
+	.comes-with p { margin: 0; line-height: 1.4; }
 	.buy { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 1rem 0 0.5rem; }
 </style>

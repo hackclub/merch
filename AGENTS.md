@@ -278,6 +278,11 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   surface (`finish`: matte, gloss, linen, uncoated), next to a phone at the same scale.
   `photos` holds real-world pictures people posted (`{url, caption, credit}`), shown as
   "In the wild" on the product page.
+  Booklets (`binding` = `staple` or `perfect`) open in the 3D view and flip through
+  `items.pages` (page images, front cover first; `web/src/lib/book3d.ts`). The magazines'
+  pages come from the public PDFs on magazine.hackclub.com, split into single pages.
+  `ships_with` lists SKUs added to the warehouse order once per unit (the Magazine 2025
+  always ships with its intro card, `Pri/M25/4x6/1st`), and the product page shows them.
 - **Print source files** for warehouse SKUs: the Marketing warehouse Airtable
   (`appK53aN0fz3sgJ4w`, table `warehouse_skus`) has `re_order_instructions`, e.g. "Order
   VP_MJR069GX on zach@hackclub.com Vistaprint". The Vistaprint order-confirmation email links a

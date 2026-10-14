@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { formatUnitCost, itemIdFromParam, sizeStockLabel, unitCostLabel, itemPath, moveImage, thumbnail } from './items';
+import { byFilename, formatUnitCost, isBooklet, itemIdFromParam, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, thumbnail } from './items';
 import type { Item } from './types';
 
 const poster: Item = {
 	id: 681, sku: 'Pri/HPd/11x/1st', name: '11x17 Hackpad Poster (Double-Sided)', description: '',
 	images: ['https://cdn.example/front.jpg', 'https://cdn.example/back.jpg'],
-	visible: true, sort_order: 1, max_per_request: 1, max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, photos: [], packs: ''
+	visible: true, sort_order: 1, max_per_request: 1, max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: []
 };
 
 describe('item URLs', () => {
@@ -27,6 +27,31 @@ describe('thumbnail', () => {
 	it('is the first image, or empty', () => {
 		expect(thumbnail(poster)).toBe('https://cdn.example/front.jpg');
 		expect(thumbnail({ ...poster, images: [] })).toBe('');
+	});
+
+	it('falls back to a booklet\'s cover', () => {
+		expect(thumbnail({ ...poster, images: [], pages: ['https://cdn.example/cover.jpg'] })).toBe('https://cdn.example/cover.jpg');
+	});
+});
+
+describe('booklets', () => {
+	const mini = { ...poster, binding: 'staple', pages: ['https://cdn.example/p1.jpg', 'https://cdn.example/p2.jpg'] };
+
+	it('flips through only when bound and given pages', () => {
+		expect(isBooklet(mini)).toBe(true);
+		expect(isBooklet({ ...mini, binding: '' })).toBe(false);
+		expect(isBooklet({ ...mini, pages: [mini.pages[0]] })).toBe(false);
+	});
+
+	it('orders uploaded page files by their numbers', () => {
+		const files = ['mag-10.jpg', 'mag-2.jpg', 'mag-1.jpg'].map((name) => ({ name }));
+		expect(byFilename(files).map((f) => f.name)).toEqual(['mag-1.jpg', 'mag-2.jpg', 'mag-10.jpg']);
+	});
+
+	it('finds what an item ships with by SKU', () => {
+		const card = { ...poster, id: 9, sku: 'Pri/M25/4x6/1st' };
+		const mag = { ...poster, ships_with: ['Pri/M25/4x6/1st', 'Gone/1'] };
+		expect(shipsWith(mag, [poster, card])).toEqual([card]);
 	});
 });
 
