@@ -5,8 +5,8 @@
 /** One vinyl sticker on its backing, in inches (~0.18 mm): a bag of 50 is about 9 mm tall. */
 export const STICKER_THICKNESS_IN = 0.007;
 export const PER_BAG = 50;
-/** Bags pile this high before a new pile starts. */
-export const PILE = 3;
+/** Bags lie side by side this many across, then pile up. */
+export const ACROSS = 4;
 
 /**
  * Which pixels of a sticker's product photo are the sticker: everything except
@@ -73,7 +73,7 @@ export function stickerSize(it: { width_in: number | null; height_in: number | n
 export type Layout = {
 	/** Stickers laid out loose, fanned so you can count them. */
 	loose: number;
-	/** Bags of 50, piled PILE high; piles stand side by side. */
+	/** Bags of 50, side by side ACROSS wide, then piled on top. */
 	bags: { pile: number; level: number }[];
 };
 
@@ -83,7 +83,7 @@ export function packLayout(q: number): Layout {
 	const n = Math.floor(q / PER_BAG);
 	return {
 		loose: q % PER_BAG,
-		bags: Array.from({ length: n }, (_, i) => ({ pile: Math.floor(i / PILE), level: i % PILE }))
+		bags: Array.from({ length: n }, (_, i) => ({ pile: i % ACROSS, level: Math.floor(i / ACROSS) }))
 	};
 }
 

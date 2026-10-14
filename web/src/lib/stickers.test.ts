@@ -87,13 +87,14 @@ describe('packLayout', () => {
 		expect(packLayout(3)).toEqual({ loose: 3, bags: [] });
 		expect(packLayout(10)).toEqual({ loose: 10, bags: [] });
 	});
-	it('bags 50s, piling them up and starting new piles', () => {
+	it('lays bags of 50 side by side, four across, then piles them up', () => {
 		expect(packLayout(50).bags).toEqual([{ pile: 0, level: 0 }]);
+		expect(packLayout(150).bags).toEqual([{ pile: 0, level: 0 }, { pile: 1, level: 0 }, { pile: 2, level: 0 }]);
 		const { loose, bags } = packLayout(300);
 		expect(loose).toBe(0);
 		expect(bags).toHaveLength(6);
-		expect(bags.filter((b) => b.pile === 0)).toHaveLength(3);
-		expect(bags.at(-1)).toEqual({ pile: 1, level: 2 });
+		expect(bags.filter((b) => b.pile === 0)).toHaveLength(2);
+		expect(bags.at(-1)).toEqual({ pile: 1, level: 1 });
 	});
 	it('keeps any leftover loose next to the bags', () => {
 		expect(packLayout(60)).toEqual({ loose: 10, bags: [{ pile: 0, level: 0 }] });

@@ -7,7 +7,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { Viewer } from './paper3d';
 import { GAP_IN, PHONE } from './scale';
-import { maskBounds, packLayout, PER_BAG, PILE, STICKER_THICKNESS_IN as T, stickerMask, stickerSize } from './stickers';
+import { ACROSS, maskBounds, packLayout, PER_BAG, STICKER_THICKNESS_IN as T, stickerMask, stickerSize } from './stickers';
 
 export type StickerOptions = {
 	kind: 'stickers';
@@ -98,6 +98,7 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 	// Bags on the table, oldest first; each remembers when it started falling.
 	let bags: { group: THREE.Group; y: number; born: number }[] = [];
 	let loose: THREE.Group | null = null;
+	let levels = 0; // how high the bags are piled
 	let extent = 3; // half-width of what's on the turntable, for framing
 	let shownExtent = 3;
 
@@ -155,12 +156,14 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 		if (!ready) return;
 		const plan = packLayout(count);
 		const bagW = size.w + 2 * BAG_MARGIN;
-		const piles = plan.bags.length ? plan.bags.at(-1)!.pile + 1 : 0;
+		const piles = Math.min(plan.bags.length, ACROSS);
+		levels = Math.ceil(plan.bags.length / ACROSS);
 		const looseW = plan.loose ? size.w * (1 + 0.32 * (Math.min(plan.loose, 5) - 1)) : 0;
 		const totalW = piles * bagW + Math.max(0, piles - 1) * PILE_GAP + (looseW && piles ? PILE_GAP : 0) + looseW;
 		let x = -totalW / 2;
 
 		// Keep bags that are still requested (so only new ones fall in).
+		let fresh = 0;
 		for (const b of bags.splice(plan.bags.length)) dispose(b.group);
 		plan.bags.forEach((p, i) => {
 			if (!bags[i]) {
@@ -168,7 +171,7 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 				// A slight twist per bag, like they were dropped on the table.
 				group.rotation.y = Math.sin(i * 2.3) * 0.07;
 				turntable.add(group);
-				bags[i] = { group, y: 0, born: now + p.level * 120 };
+				bags[i] = { group, y: 0, born: now + fresh++ * 120 }; // one after another
 			}
 			bags[i].y = p.level * BAG_H;
 			bags[i].group.position.x = x + p.pile * (bagW + PILE_GAP) + bagW / 2;
@@ -285,7 +288,7 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 			const cx = (phone.position.x + PHONE.w / 2 - r) / 2;
 			const vfov = THREE.MathUtils.degToRad(camera.fov) / 2;
 			const fitW = (sceneW * 0.6) / (Math.tan(vfov) * camera.aspect);
-			const fitD = (sceneD * Math.sin(ELEVATION) * 0.5 + PILE * BAG_H) / Math.tan(vfov);
+			const fitD = (sceneD * Math.sin(ELEVATION) * 0.5 + levels * BAG_H) / Math.tan(vfov);
 			const dist = Math.max(fitW, fitD) * viewer.zoom;
 			const zoomed = 1 - viewer.zoom;
 			target.set(THREE.MathUtils.lerp(cx, 0, Math.min(1, zoomed * 1.6)), 0.2, 0);
