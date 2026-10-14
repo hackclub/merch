@@ -95,3 +95,7 @@ export type WarehouseSKU = {
 	inbound: number | null;
 	unit_cost: string;
 };
+
+/** Live warehouse numbers for a listed item (GET /api/items/{id}/stock). unit_cost_max is set
+ * when the item's sizes cost different amounts; unit_cost is then the lowest. */
+export type ItemStock = { in_stock: number; unit_cost: string | null; unit_cost_max: string | null };

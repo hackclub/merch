@@ -1,4 +1,4 @@
-import type { Item } from './types';
+import type { Item, ItemStock } from './types';
 
 const slugify = (s: string) =>
 	s
@@ -26,4 +26,22 @@ export function moveImage(images: string[], i: number, delta: -1 | 1): string[] 
 	const next = [...images];
 	[next[i], next[j]] = [next[j], next[i]];
 	return next;
+}
+
+/** Warehouse unit cost ("0.0832" dollars) as "$0.0832"; at least cents, never rounded away. */
+export function formatUnitCost(cost: string | null): string {
+	const n = Number(cost);
+	if (!cost || !Number.isFinite(n)) return '';
+	const decimals = Math.max(2, cost.split('.')[1]?.length ?? 0);
+	return new Intl.NumberFormat('en-US', {
+		style: 'currency', currency: 'USD', minimumFractionDigits: decimals, maximumFractionDigits: decimals
+	}).format(n);
+}
+
+/** "$0.37 each", or "$13.82–$14.27 each" when an item's sizes cost different amounts. */
+export function unitCostLabel(stock: ItemStock): string {
+	const lo = formatUnitCost(stock.unit_cost);
+	if (!lo) return '';
+	const hi = formatUnitCost(stock.unit_cost_max);
+	return `${hi ? `${lo}–${hi}` : lo} each`;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { itemIdFromParam, itemPath, moveImage, thumbnail } from './items';
+import { formatUnitCost, itemIdFromParam, unitCostLabel, itemPath, moveImage, thumbnail } from './items';
 import type { Item } from './types';
 
 const poster: Item = {
@@ -38,5 +38,28 @@ describe('moveImage', () => {
 		expect(moveImage(imgs, 0, -1)).toEqual(['a', 'b', 'c']);
 		expect(moveImage(imgs, 2, 1)).toEqual(['a', 'b', 'c']);
 		expect(imgs).toEqual(['a', 'b', 'c']);
+	});
+});
+
+describe('formatUnitCost', () => {
+	it('shows dollars with at least cents, keeping sub-cent precision', () => {
+		expect(formatUnitCost('0.25')).toBe('$0.25');
+		expect(formatUnitCost('3')).toBe('$3.00');
+		expect(formatUnitCost('0.0832')).toBe('$0.0832');
+		expect(formatUnitCost('1250.5')).toBe('$1,250.50');
+	});
+
+	it('is empty when the warehouse has no cost', () => {
+		expect(formatUnitCost(null)).toBe('');
+		expect(formatUnitCost('')).toBe('');
+		expect(formatUnitCost('n/a')).toBe('');
+	});
+});
+
+describe('unitCostLabel', () => {
+	it('shows one cost, or a range when sizes cost different amounts', () => {
+		expect(unitCostLabel({ in_stock: 5, unit_cost: '0.3682', unit_cost_max: null })).toBe('$0.3682 each');
+		expect(unitCostLabel({ in_stock: 309, unit_cost: '13.8166', unit_cost_max: '14.2682' })).toBe('$13.8166–$14.2682 each');
+		expect(unitCostLabel({ in_stock: 0, unit_cost: null, unit_cost_max: null })).toBe('');
 	});
 });

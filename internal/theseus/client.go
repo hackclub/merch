@@ -10,8 +10,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -152,4 +155,37 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// Stock is the warehouse's total for one item. Costs are the lowest and
+// highest unit cost among its SKUs, as the API's decimal strings ("" if none).
+type Stock struct {
+	InStock int
+	MinCost string
+	MaxCost string
+}
+
+// StockFor totals the SKU itself, or, for a sized item listed under a parent
+// SKU ("Swa/Shirt/HC"), every "<sku>/…" child. ListSKUs omits out-of-stock
+// SKUs, so a missing SKU has none.
+func StockFor(skus []SKU, sku string) Stock {
+	var st Stock
+	lo, hi := math.Inf(1), math.Inf(-1)
+	for _, k := range skus {
+		if k.SKU != sku && !strings.HasPrefix(k.SKU, sku+"/") {
+			continue
+		}
+		st.InStock += k.InStock
+		c, err := strconv.ParseFloat(k.UnitCost, 64)
+		if err != nil {
+			continue
+		}
+		if c < lo {
+			lo, st.MinCost = c, k.UnitCost
+		}
+		if c > hi {
+			hi, st.MaxCost = c, k.UnitCost
+		}
+	}
+	return st
 }

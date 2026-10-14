@@ -100,3 +100,29 @@ func TestGetOrder(t *testing.T) {
 		t.Fatalf("order = %+v", o)
 	}
 }
+
+func TestStockFor(t *testing.T) {
+	skus := []SKU{
+		{SKU: "Sti/A", InStock: 100, UnitCost: "0.25"},
+		{SKU: "Sti/AB", InStock: 7, UnitCost: "9"},
+		{SKU: "Swa/Shirt/HC/S", InStock: 92, UnitCost: "13.967"},
+		{SKU: "Swa/Shirt/HC/M", InStock: 95, UnitCost: "13.8166"},
+		{SKU: "Swa/Shirt/HC/XL", InStock: 122, UnitCost: "14.2682"},
+		{SKU: "Swa/Cap/L", InStock: 3, UnitCost: "5"},
+		{SKU: "Swa/Cap/S", InStock: 4, UnitCost: "5.00"},
+	}
+	for _, tc := range []struct {
+		sku  string
+		want Stock
+	}{
+		{"Sti/A", Stock{InStock: 100, MinCost: "0.25", MaxCost: "0.25"}},
+		{"Swa/Shirt/HC", Stock{InStock: 309, MinCost: "13.8166", MaxCost: "14.2682"}},
+		{"Swa/Cap", Stock{InStock: 7, MinCost: "5", MaxCost: "5"}},
+		{"Sti/Gone", Stock{}},
+		{"Swa/Shirt/H", Stock{}}, // only the SKU itself and "<sku>/…" children count
+	} {
+		if got := StockFor(skus, tc.sku); got != tc.want {
+			t.Errorf("StockFor(%q) = %+v, want %+v", tc.sku, got, tc.want)
+		}
+	}
+}

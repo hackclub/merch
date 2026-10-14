@@ -18,6 +18,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hackclub/merch/internal/auth"
@@ -61,7 +62,14 @@ type Deps struct {
 
 type server struct {
 	Deps
+
+	skuMu  sync.Mutex
+	skus   []theseus.SKU
+	skusAt time.Time
 }
+
+// skuCacheTTL bounds how often product pages hit mail.hackclub.com.
+const skuCacheTTL = time.Minute
 
 func New(d Deps) http.Handler {
 	if d.Now == nil {
@@ -70,7 +78,7 @@ func New(d Deps) http.Handler {
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
-	s := &server{d}
+	s := &server{Deps: d}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", s.healthz)
@@ -80,6 +88,7 @@ func New(d Deps) http.Handler {
 
 	mux.HandleFunc("GET /api/me", s.me)
 	mux.HandleFunc("GET /api/catalog", s.catalog)
+	mux.HandleFunc("GET /api/items/{id}/stock", s.itemStock)
 
 	// hack clubbers
 	mux.Handle("GET /api/requests", s.requireUser(s.myRequests))
@@ -312,6 +321,56 @@ func (s *server) catalog(w http.ResponseWriter, r *http.Request) {
 			"hcb_payment_url":                  s.Config.HCBShippingPaymentURL,
 		},
 	})
+}
+
+// itemStock reports a listed item's live warehouse stock and unit cost.
+func (s *server) itemStock(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	it, err := s.Store.GetItem(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && !it.Visible) {
+		writeErr(w, http.StatusNotFound, "item not found")
+		return
+	} else if err != nil {
+		s.serverErr(w, err)
+		return
+	}
+	skus, err := s.cachedSKUs(r.Context())
+	if err != nil {
+		s.Log.Error("warehouse sku lookup failed", "err", err)
+		writeErr(w, http.StatusBadGateway, "the warehouse didn't answer; try again soon")
+		return
+	}
+	st := theseus.StockFor(skus, it.SKU)
+	out := struct {
+		InStock     int     `json:"in_stock"`
+		UnitCost    *string `json:"unit_cost"`
+		UnitCostMax *string `json:"unit_cost_max"` // set when sizes cost different amounts
+	}{InStock: st.InStock}
+	if st.MinCost != "" {
+		out.UnitCost = &st.MinCost
+	}
+	if st.MaxCost != st.MinCost {
+		out.UnitCostMax = &st.MaxCost
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *server) cachedSKUs(ctx context.Context) ([]theseus.SKU, error) {
+	s.skuMu.Lock()
+	defer s.skuMu.Unlock()
+	if s.skus != nil && s.Now().Sub(s.skusAt) < skuCacheTTL {
+		return s.skus, nil
+	}
+	list, err := s.Warehouse.ListSKUs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.skus = list
+	s.skusAt = s.Now()
+	return s.skus, nil
 }
 
 type requestView struct {

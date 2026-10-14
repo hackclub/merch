@@ -4,17 +4,18 @@
 	import { api, ApiError, formatCents } from '$lib/api';
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
 	import { pruneCart, pruneSizes, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
-	import { itemIdFromParam } from '$lib/items';
+	import { itemIdFromParam, unitCostLabel } from '$lib/items';
 	import { hasSize } from '$lib/scale';
 	import SizePreview from '$lib/SizePreview.svelte';
 	import { session } from '$lib/session.svelte';
 	import SizePicker from '$lib/SizePicker.svelte';
 	import Stepper from '$lib/Stepper.svelte';
-	import type { Catalog } from '$lib/types';
+	import type { Catalog, ItemStock } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
 	let error = $state('');
 	let shown = $state(0);
+	let stock = $state<ItemStock | null>(null);
 
 	onMount(async () => {
 		try {
@@ -39,6 +40,18 @@
 	$effect(() => {
 		id;
 		shown = 0;
+	});
+	// Live warehouse numbers. If the lookup fails, the line is just left out.
+	$effect(() => {
+		const itemId = item?.id;
+		stock = null;
+		if (!itemId) return;
+		let stale = false;
+		api.get<ItemStock>(`/api/items/${itemId}/stock`).then(
+			(s) => { if (!stale) stock = s; },
+			() => {}
+		);
+		return () => { stale = true; };
 	});
 </script>
 
@@ -96,6 +109,11 @@
 						shipping elsewhere{/if}
 				</li>
 				<li>Ships from the Hack Club warehouse</li>
+				{#if stock}
+					<li class="stock">
+						<strong>{stock.in_stock.toLocaleString('en-US')}</strong> in stock{unitCostLabel(stock) ? ` · ${unitCostLabel(stock)}` : ''}
+					</li>
+				{/if}
 			</ul>
 
 			{#if !catalog?.settings.requests_open}
@@ -156,5 +174,6 @@
 	.description { white-space: pre-line; line-height: 1.5; }
 	.facts { padding-left: 1.1rem; line-height: 1.6; }
 	.size-label { margin: 1rem 0 0.4rem; }
+	.stock strong { color: var(--dark); }
 	.buy { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin: 1rem 0 0.5rem; }
 </style>
