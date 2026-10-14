@@ -108,8 +108,7 @@
 			<h2>Where should we send it?</h2>
 			<ul class="summary">
 				{#each catalog.items.filter((i) => cart[i.id]) as i (i.id)}
-					<li>{cart[i.id]} × <a href={itemPath(i)}>{i.name}</a>{#if i.variants.length}
-						({sizeLabel(i, sizes[i.id]) || 'pick a size'}){/if}</li>
+					<li>{cart[i.id]} × <a href={itemPath(i)}>{i.name}</a>{i.variants.length ? ` (${sizeLabel(i, sizes[i.id]) || 'pick a size'})` : ''}</li>
 				{/each}
 			</ul>
 			<div class="form-grid">
