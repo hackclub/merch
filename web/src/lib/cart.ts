@@ -27,3 +27,27 @@ export function cartErrors(cart: Cart, maxItemsPerRequest: number): string[] {
 		return [`You can request at most ${maxItemsPerRequest} items at a time.`];
 	return [];
 }
+
+/** Reads a cart saved to localStorage; anything malformed is dropped. */
+export function parseCart(raw: string | null): Cart {
+	let data: unknown;
+	try {
+		data = JSON.parse(raw ?? '{}');
+	} catch {
+		return {};
+	}
+	if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+	const cart: Cart = {};
+	for (const [k, v] of Object.entries(data)) {
+		const id = Number(k);
+		if (Number.isInteger(id) && id > 0 && Number.isInteger(v) && (v as number) > 0) cart[id] = v as number;
+	}
+	return cart;
+}
+
+/** Drops items that are no longer listed and re-clamps quantities to current limits. */
+export function pruneCart(cart: Cart, items: Item[]): Cart {
+	let next = emptyCart();
+	for (const item of items) if (cart[item.id]) next = setQuantity(next, item, cart[item.id]);
+	return next;
+}

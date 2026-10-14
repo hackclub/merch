@@ -52,4 +52,3 @@ label { display: grid; gap: 0.25rem; font-size: 0.9rem; font-weight: 600; }
 table { width: 100%; border-collapse: collapse; background: white; }
 th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--smoke); vertical-align: top; }
 .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
-.qty { width: 5rem; }

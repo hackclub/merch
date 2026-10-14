@@ -15,6 +15,7 @@ import (
 
 	"github.com/hackclub/merch/internal/auth"
 	"github.com/hackclub/merch/internal/authors"
+	"github.com/hackclub/merch/internal/cdn"
 	"github.com/hackclub/merch/internal/config"
 	"github.com/hackclub/merch/internal/db"
 	"github.com/hackclub/merch/internal/httpapi"
@@ -58,6 +59,13 @@ func run(log *slog.Logger) error {
 		log.Warn("AIRTABLE_API_KEY not set: nobody will be recognized as a YSWS author (admins still are)")
 	}
 
+	var images httpapi.ImageStore
+	if cfg.CDNAPIKey != "" {
+		images = cdn.New(cfg.CDNBaseURL, cfg.CDNAPIKey, nil)
+	} else {
+		log.Warn("HACKCLUB_CDN_API_KEY not set: admins can't upload item images")
+	}
+
 	var static fs.FS
 	if cfg.StaticDir != "" {
 		if st, err := os.Stat(cfg.StaticDir); err == nil && st.IsDir() {
@@ -76,6 +84,7 @@ func run(log *slog.Logger) error {
 		}),
 		Authors:   dir,
 		Warehouse: theseus.New(cfg.TheseusBaseURL, cfg.TheseusAPIKey, nil),
+		Images:    images,
 		Static:    static,
 		Log:       log,
 	})

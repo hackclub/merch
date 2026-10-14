@@ -30,6 +30,15 @@ export const api = {
 	put: <T>(path: string, body: unknown) => request<T>('PUT', path, body)
 };
 
+/** Base64 of a file's bytes, for JSON uploads (the API only accepts application/json). */
+export const fileToBase64 = (file: Blob): Promise<string> =>
+	new Promise((resolve, reject) => {
+		const r = new FileReader();
+		r.onload = () => resolve(String(r.result).slice(String(r.result).indexOf(',') + 1));
+		r.onerror = () => reject(r.error);
+		r.readAsDataURL(file);
+	});
+
 export const formatCents = (cents: number) =>
 	new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 

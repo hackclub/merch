@@ -31,15 +31,15 @@ type Settings struct {
 
 // Item is a listed catalog item backed by a warehouse SKU.
 type Item struct {
-	ID            int64  `json:"id"`
-	SKU           string `json:"sku"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	ImageURL      string `json:"image_url"`
-	Visible       bool   `json:"visible"`
-	SortOrder     int    `json:"sort_order"`
-	MaxPerRequest int    `json:"max_per_request"`
-	MaxPerUser    *int   `json:"max_per_user"` // lifetime cap; nil = unlimited
+	ID            int64    `json:"id"`
+	SKU           string   `json:"sku"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	Images        []string `json:"images"` // CDN URLs, in display order; first is the thumbnail
+	Visible       bool     `json:"visible"`
+	SortOrder     int      `json:"sort_order"`
+	MaxPerRequest int      `json:"max_per_request"`
+	MaxPerUser    *int     `json:"max_per_user"` // lifetime cap; nil = unlimited
 }
 
 type Line struct {

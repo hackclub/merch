@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, ApiError, formatCents, statusLabel } from '$lib/api';
+	import { api, ApiError, fileToBase64, formatCents, statusLabel } from '$lib/api';
+	import { itemPath, moveImage } from '$lib/items';
 	import { session } from '$lib/session.svelte';
 	import type { Item, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
 
@@ -74,6 +75,20 @@
 			await api.put(`/api/admin/items/${it.id}`, it);
 			await loadItems();
 		}, `Saved ${it.name}`);
+	let uploading = $state<number | null>(null);
+	// Uploads go straight to the CDN and onto the item; only the gallery is
+	// refreshed, so unsaved edits to the item's other fields survive.
+	async function uploadImages(it: Item, files: FileList | null) {
+		if (!files?.length) return;
+		uploading = it.id;
+		await guard(async () => {
+			for (const f of files) {
+				const upd = await api.post<Item>(`/api/admin/items/${it.id}/images`, { filename: f.name, data: await fileToBase64(f) });
+				it.images = upd.images;
+			}
+		}, `Uploaded ${files.length} image${files.length === 1 ? '' : 's'} to ${it.name}`);
+		uploading = null;
+	}
 	const listSKU = (s: WarehouseSKU) =>
 		guard(async () => {
 			await api.post('/api/admin/items', { sku: s.sku, name: s.name, max_per_request: 1, visible: false });
@@ -150,9 +165,26 @@
 				{#each items as it (it.id)}
 					<tr>
 						<td>
-							<input bind:value={it.name} /><div class="muted">{it.sku}</div>
-							<input bind:value={it.description} placeholder="description" />
-							<input bind:value={it.image_url} placeholder="image URL" />
+							<input bind:value={it.name} /><div class="muted">{it.sku}{#if it.visible} · <a href={itemPath(it)}>view page</a>{/if}</div>
+							<textarea bind:value={it.description} rows="3" placeholder="description (shown on the product page)"></textarea>
+							<div class="gallery">
+								{#each it.images as src, i (src)}
+									<figure>
+										<img {src} alt="" />
+										<figcaption>
+											<button class="link" title="Move left" disabled={i === 0} onclick={() => (it.images = moveImage(it.images, i, -1))}>←</button>
+											<button class="link" title="Remove" onclick={() => (it.images = it.images.filter((_, j) => j !== i))}>✕</button>
+											<button class="link" title="Move right" disabled={i === it.images.length - 1} onclick={() => (it.images = moveImage(it.images, i, 1))}>→</button>
+										</figcaption>
+									</figure>
+								{/each}
+								<label class="add-image" class:busy={uploading === it.id}>
+									{uploading === it.id ? 'Uploading…' : '+ Image'}
+									<input type="file" accept="image/png,image/jpeg,image/webp" multiple hidden disabled={uploading !== null}
+										onchange={(e) => { uploadImages(it, e.currentTarget.files); e.currentTarget.value = ''; }} />
+								</label>
+							</div>
+							<div class="muted">First image is the thumbnail. Reorder or remove, then Save.</div>
 						</td>
 						<td>
 							<label>Per request <input type="number" min="1" bind:value={it.max_per_request} /></label>
@@ -223,3 +255,15 @@
 		</table>
 	{/if}
 {/if}
+
+<style>
+	.gallery { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+	.gallery figure { margin: 0; width: 5rem; }
+	.gallery img { width: 5rem; height: 5rem; object-fit: contain; background: var(--snow); border: 1px solid var(--smoke); border-radius: 6px; }
+	.gallery figcaption { display: flex; justify-content: space-between; }
+	.add-image {
+		display: grid; place-items: center; width: 5rem; height: 5rem; border: 2px dashed var(--smoke);
+		border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 0.8rem; text-align: center;
+	}
+	.add-image.busy { cursor: progress; }
+</style>

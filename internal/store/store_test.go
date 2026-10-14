@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -113,6 +114,38 @@ func TestItems(t *testing.T) {
 		t.Fatalf("UpdateItem = %+v, %v", upd, err)
 	}
 	if _, err := s.UpdateItem(ctx, swag.Item{ID: 999, SKU: "x", Name: "x", MaxPerRequest: 1}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing item err = %v", err)
+	}
+}
+
+func TestItemImages(t *testing.T) {
+	s := newStore(t)
+	it := mkItem(t, s, "Pri/A", true)
+	if it.Images == nil || len(it.Images) != 0 {
+		t.Fatalf("new item images = %#v, want empty non-nil", it.Images)
+	}
+
+	it, err := s.AddItemImage(ctx, it.ID, "https://cdn.example/front.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	it, _ = s.AddItemImage(ctx, it.ID, "https://cdn.example/back.jpg")
+	if want := []string{"https://cdn.example/front.jpg", "https://cdn.example/back.jpg"}; !slices.Equal(it.Images, want) {
+		t.Fatalf("images = %v, want %v", it.Images, want)
+	}
+
+	// Reordering and removal go through UpdateItem.
+	it.Images = []string{"https://cdn.example/back.jpg"}
+	upd, err := s.UpdateItem(ctx, it)
+	if err != nil || !slices.Equal(upd.Images, it.Images) {
+		t.Fatalf("UpdateItem images = %v, %v", upd.Images, err)
+	}
+	listed, _ := s.ListItems(ctx, true)
+	if !slices.Equal(listed[0].Images, it.Images) {
+		t.Fatalf("listed images = %v", listed[0].Images)
+	}
+
+	if _, err := s.AddItemImage(ctx, 999, "https://cdn.example/x.jpg"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing item err = %v", err)
 	}
 }

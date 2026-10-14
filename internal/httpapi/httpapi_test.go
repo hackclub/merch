@@ -3,13 +3,18 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -71,6 +76,23 @@ func (f *fakeWarehouse) GetOrder(_ context.Context, id string) (*theseus.Order, 
 	return &theseus.Order{ID: id, Status: "mailed", TrackingNumber: "9400", Carrier: "USPS"}, nil
 }
 
+type fakeCDN struct {
+	mu      sync.Mutex
+	uploads []fakeUpload
+}
+
+type fakeUpload struct {
+	name, contentType string
+	data              []byte
+}
+
+func (f *fakeCDN) Upload(_ context.Context, name, contentType string, data []byte) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uploads = append(f.uploads, fakeUpload{name, contentType, data})
+	return fmt.Sprintf("https://cdn.example/%d/%s", len(f.uploads), name), nil
+}
+
 // ---- harness ----
 
 type harness struct {
@@ -78,6 +100,7 @@ type harness struct {
 	srv   *httptest.Server
 	store *store.Store
 	wh    *fakeWarehouse
+	cdn   *fakeCDN
 	cfg   *config.Config
 }
 
@@ -98,6 +121,7 @@ func newHarness(t *testing.T) *harness {
 		HCBShippingPaymentURL: "https://hcb.hackclub.com/donations/start/swag",
 	}
 	wh := &fakeWarehouse{}
+	cdn := &fakeCDN{}
 	h := New(Deps{
 		Config: cfg,
 		Store:  st,
@@ -109,6 +133,7 @@ func newHarness(t *testing.T) *harness {
 		}},
 		Authors:   authors.Static{authorEmail: true},
 		Warehouse: wh,
+		Images:    cdn,
 		Static: fstest.MapFS{
 			"index.html":           {Data: []byte("<html>app shell</html>")},
 			"manifest.webmanifest": {Data: []byte(`{"name":"x"}`)},
@@ -117,7 +142,7 @@ func newHarness(t *testing.T) *harness {
 	})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &harness{t: t, srv: srv, store: st, wh: wh, cfg: cfg}
+	return &harness{t: t, srv: srv, store: st, wh: wh, cdn: cdn, cfg: cfg}
 }
 
 // client returns an http.Client logged in as email ("" = anonymous).
@@ -494,6 +519,71 @@ func TestAdminManagesItemsAndSettings(t *testing.T) {
 	h.do(admin, "GET", "/api/admin/warehouse/skus", nil, &skus)
 	if len(skus.SKUs) != 1 || skus.SKUs[0].SKU != "Sti/A" {
 		t.Fatalf("skus = %+v", skus)
+	}
+}
+
+func TestAdminUploadsItemImages(t *testing.T) {
+	h := newHarness(t)
+	admin := h.client(adminEmail)
+	it := h.mkItem("Pri/A", true)
+	path := fmt.Sprintf("/api/admin/items/%d/images", it.ID)
+
+	var buf bytes.Buffer
+	png.Encode(&buf, image.NewNRGBA(image.Rect(0, 0, 30, 40)))
+	upload := map[string]string{"filename": "Hackpad Poster (front).PNG", "data": base64.StdEncoding.EncodeToString(buf.Bytes())}
+
+	if code := h.do(h.client(userEmail), "POST", path, upload, nil); code != 403 {
+		t.Fatalf("non-admin upload = %d", code)
+	}
+	var upd swag.Item
+	if code := h.do(admin, "POST", path, upload, &upd); code != 200 {
+		t.Fatalf("upload = %d", code)
+	}
+	if len(h.cdn.uploads) != 1 {
+		t.Fatalf("cdn uploads = %d", len(h.cdn.uploads))
+	}
+	got := h.cdn.uploads[0]
+	if got.contentType != "image/jpeg" || got.name != "hackpad-poster-front.jpg" {
+		t.Fatalf("uploaded %q as %s", got.name, got.contentType)
+	}
+	if _, err := jpeg.Decode(bytes.NewReader(got.data)); err != nil {
+		t.Fatalf("uploaded bytes aren't a JPEG: %v", err)
+	}
+	if want := []string{"https://cdn.example/1/hackpad-poster-front.jpg"}; !slices.Equal(upd.Images, want) {
+		t.Fatalf("item images = %v, want %v", upd.Images, want)
+	}
+
+	var cat struct{ Items []swag.Item }
+	h.do(h.client(""), "GET", "/api/catalog", nil, &cat)
+	if len(cat.Items) != 1 || !slices.Equal(cat.Items[0].Images, upd.Images) {
+		t.Fatalf("catalog images = %+v", cat.Items)
+	}
+
+	bad := map[string]string{"filename": "notes.pdf", "data": base64.StdEncoding.EncodeToString([]byte("%PDF-1.4"))}
+	if code := h.do(admin, "POST", path, bad, nil); code != 422 {
+		t.Fatalf("non-image upload = %d", code)
+	}
+	if code := h.do(admin, "POST", "/api/admin/items/999/images", upload, nil); code != 404 {
+		t.Fatalf("missing item upload = %d", code)
+	}
+}
+
+func TestItemImagesMustBeHTTPURLs(t *testing.T) {
+	h := newHarness(t)
+	it := h.mkItem("Pri/A", true)
+	it.Images = []string{"javascript:alert(1)"}
+	if code := h.do(h.client(adminEmail), "PUT", fmt.Sprintf("/api/admin/items/%d", it.ID), it, nil); code != 422 {
+		t.Fatalf("bad image url = %d", code)
+	}
+}
+
+func TestImageUploadsNeedCDNConfigured(t *testing.T) {
+	h := newHarness(t)
+	h.srv.Config.Handler = New(Deps{Config: h.cfg, Store: h.store, Provider: fakeProvider{}, Authors: authors.Static{}, Warehouse: h.wh})
+	it := h.mkItem("Pri/A", true)
+	code := h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/items/%d/images", it.ID), map[string]string{"filename": "a.png", "data": ""}, nil)
+	if code != 503 {
+		t.Fatalf("upload without CDN = %d", code)
 	}
 }
 

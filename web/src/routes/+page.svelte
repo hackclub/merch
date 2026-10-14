@@ -1,14 +1,16 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api, ApiError, formatCents, isInternational } from '$lib/api';
 	import { blankAddress, prefillAddress } from '$lib/address';
-	import { cartErrors, cartLines, emptyCart, setQuantity, totalQuantity, type Cart } from '$lib/cart';
+	import { bag, setCart } from '$lib/bag.svelte';
+	import { cartErrors, cartLines, emptyCart, pruneCart, setQuantity, totalQuantity } from '$lib/cart';
+	import { itemPath, thumbnail } from '$lib/items';
 	import { session } from '$lib/session.svelte';
+	import Stepper from '$lib/Stepper.svelte';
 	import type { Address, Catalog, SwagRequest } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
-	let cart = $state<Cart>(emptyCart());
 	// Prefilled from the person's Hack Club Auth address when they have one.
 	let address = $state<Address>(prefillAddress(blankAddress(), session.me?.user?.address));
 	let note = $state('');
@@ -18,11 +20,18 @@
 	onMount(async () => {
 		try {
 			catalog = await api.get<Catalog>('/api/catalog');
+			setCart(pruneCart(bag.cart, catalog.items));
+			// "Review request" links from product pages land here as /#request.
+			if (location.hash === '#request') {
+				await tick();
+				document.getElementById('request')?.scrollIntoView({ behavior: 'smooth' });
+			}
 		} catch (e) {
 			error = e instanceof ApiError ? e.message : 'Could not load swag.';
 		}
 	});
 
+	const cart = $derived(bag.cart);
 	const problems = $derived(catalog ? cartErrors(cart, catalog.settings.max_items_per_request) : []);
 	const intl = $derived(isInternational(address.country));
 
@@ -37,6 +46,7 @@
 				lines: cartLines(cart, catalog.items),
 				note
 			});
+			setCart(emptyCart());
 			if (r.payment_url) window.location.href = r.payment_url;
 			else goto('/requests');
 		} catch (e) {
@@ -61,16 +71,19 @@
 	{/if}
 	<section class="grid">
 		{#each catalog.items as item (item.id)}
-			<div class="card">
-				{#if item.image_url}<img src={item.image_url} alt={item.name} loading="lazy" />{/if}
-				<h3>{item.name}</h3>
-				{#if item.description}<p class="muted">{item.description}</p>{/if}
+			<div class="card item" class:picked={cart[item.id]}>
+				<a href={itemPath(item)} class="item-link">
+					{#if thumbnail(item)}
+						<img src={thumbnail(item)} alt={item.name} loading="lazy" />
+					{:else}
+						<div class="no-image" aria-hidden="true">📦</div>
+					{/if}
+					<h3>{item.name}</h3>
+				</a>
+				{#if item.description}<p class="muted clamp">{item.description}</p>{/if}
 				{#if session.me?.user && catalog.settings.requests_open}
-					<label>
-						Quantity (max {item.max_per_request})
-						<input class="qty" type="number" min="0" max={item.max_per_request} value={cart[item.id] ?? 0}
-							oninput={(e) => (cart = setQuantity(cart, item, +e.currentTarget.value))} />
-					</label>
+					<Stepper value={cart[item.id] ?? 0} max={item.max_per_request} label="Quantity of {item.name}"
+						onchange={(n) => setCart(setQuantity(cart, item, n))} />
 				{/if}
 			</div>
 		{:else}
@@ -81,8 +94,13 @@
 	{#if !session.me?.user}
 		<p><a class="button" href="/auth/login" data-sveltekit-reload>Sign in with Hack Club to request swag</a></p>
 	{:else if catalog.settings.requests_open && totalQuantity(cart) > 0}
-		<form class="card" style="margin-top: 1.5rem" onsubmit={submit}>
+		<form class="card" id="request" style="margin-top: 1.5rem" onsubmit={submit}>
 			<h2>Where should we send it?</h2>
+			<ul class="summary">
+				{#each catalog.items.filter((i) => cart[i.id]) as i (i.id)}
+					<li>{cart[i.id]} × <a href={itemPath(i)}>{i.name}</a></li>
+				{/each}
+			</ul>
 			<div class="form-grid">
 				<label>First name <input required bind:value={address.first_name} autocomplete="given-name" /></label>
 				<label>Last name <input required bind:value={address.last_name} autocomplete="family-name" /></label>
@@ -111,3 +129,15 @@
 {:else if !error}
 	<p class="muted">Loading swag…</p>
 {/if}
+
+<style>
+	.item { display: flex; flex-direction: column; gap: 0.5rem; }
+	.item.picked { border-color: var(--red); }
+	.item-link { color: inherit; text-decoration: none; }
+	.item-link:hover h3 { color: var(--red); }
+	.item h3 { margin: 0.5rem 0 0; }
+	.item p { margin: 0; }
+	.clamp { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+	.no-image { display: grid; place-items: center; aspect-ratio: 1; border-radius: 8px; background: var(--snow); font-size: 3rem; }
+	.summary { margin: 0 0 1rem; padding-left: 1.1rem; }
+</style>

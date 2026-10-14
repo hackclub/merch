@@ -5,7 +5,7 @@ export type Item = {
 	sku: string;
 	name: string;
 	description: string;
-	image_url: string;
+	images: string[]; // CDN URLs in display order; the first is the thumbnail
 	visible: boolean;
 	sort_order: number;
 	max_per_request: number;

@@ -34,6 +34,9 @@ func TestLoadDefaults(t *testing.T) {
 	if c.TheseusBaseURL != "https://mail.hackclub.com" {
 		t.Errorf("TheseusBaseURL = %q", c.TheseusBaseURL)
 	}
+	if c.CDNBaseURL != "https://cdn.hackclub.com" {
+		t.Errorf("CDNBaseURL = %q", c.CDNBaseURL)
+	}
 	if c.StaticDir != "web/build" {
 		t.Errorf("StaticDir = %q", c.StaticDir)
 	}

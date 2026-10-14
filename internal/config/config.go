@@ -35,6 +35,10 @@ type Config struct {
 	AirtableAuthorsTable    string
 	AirtableAuthorsEmailFld string
 
+	// cdn.hackclub.com hosts item images; uploads are off without a key
+	CDNBaseURL string
+	CDNAPIKey  string
+
 	// HCB donation page international recipients pay shipping through
 	HCBShippingPaymentURL string
 
@@ -68,6 +72,8 @@ func Load(getenv func(string) string) (*Config, error) {
 		AirtableAuthorsBaseID:   get("AIRTABLE_AUTHORS_BASE_ID", "app3A5kJwYqxMLOgh"),
 		AirtableAuthorsTable:    get("AIRTABLE_AUTHORS_TABLE", "YSWS Authors"),
 		AirtableAuthorsEmailFld: get("AIRTABLE_AUTHORS_EMAIL_FIELD", "Hack Club Auth Email"),
+		CDNBaseURL:              strings.TrimRight(get("HACKCLUB_CDN_BASE_URL", "https://cdn.hackclub.com"), "/"),
+		CDNAPIKey:               get("HACKCLUB_CDN_API_KEY", ""),
 		HCBShippingPaymentURL:   get("HCB_SHIPPING_PAYMENT_URL", ""),
 		StaticDir:               get("STATIC_DIR", "web/build"),
 	}

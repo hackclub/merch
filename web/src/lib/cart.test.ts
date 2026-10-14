@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { cartErrors, cartLines, emptyCart, setQuantity, totalQuantity } from './cart';
+import { cartErrors, cartLines, emptyCart, parseCart, pruneCart, setQuantity, totalQuantity } from './cart';
 import type { Item } from './types';
 
 const items: Item[] = [
-	{ id: 1, sku: 'Sti/A', name: 'Stickers', description: '', image_url: '', visible: true, sort_order: 0, max_per_request: 3, max_per_user: null },
-	{ id: 2, sku: 'Swa/Sox', name: 'Socks', description: '', image_url: '', visible: true, sort_order: 1, max_per_request: 1, max_per_user: 1 }
+	{ id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null },
+	{ id: 2, sku: 'Swa/Sox', name: 'Socks', description: '', images: [], visible: true, sort_order: 1, max_per_request: 1, max_per_user: 1 }
 ];
 
 describe('cart', () => {
@@ -35,5 +35,19 @@ describe('cart', () => {
 		c = setQuantity(c, items[1], 1);
 		expect(cartErrors(c, 3)).toEqual(['You can request at most 3 items at a time.']);
 		expect(cartErrors(c, 0)).toEqual([]);
+	});
+
+	it('restores a saved cart, ignoring junk', () => {
+		expect(parseCart('{"1":2,"2":1}')).toEqual({ 1: 2, 2: 1 });
+		expect(parseCart('{"1":2,"x":3,"2":-1,"3":"many","4":1.5}')).toEqual({ 1: 2 });
+		expect(parseCart('not json')).toEqual({});
+		expect(parseCart('[1,2]')).toEqual({});
+		expect(parseCart(null)).toEqual({});
+	});
+
+	it('prunes a restored cart to what is listed now', () => {
+		// item 9 was unlisted since; item 1's max dropped below the saved quantity
+		const listed = [{ ...items[0], max_per_request: 2 }, items[1]];
+		expect(pruneCart({ 1: 3, 2: 1, 9: 4 }, listed)).toEqual({ 1: 2, 2: 1 });
 	});
 });

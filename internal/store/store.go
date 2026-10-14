@@ -134,13 +134,16 @@ func (s *Store) UpdateSettings(ctx context.Context, st swag.Settings) error {
 
 // ---- items ----
 
-const itemCols = `id, sku, name, description, image_url, visible, sort_order, max_per_request, max_per_user`
+const itemCols = `id, sku, name, description, images, visible, sort_order, max_per_request, max_per_user`
 
 func scanItem(row pgx.Row) (swag.Item, error) {
 	var it swag.Item
-	err := row.Scan(&it.ID, &it.SKU, &it.Name, &it.Description, &it.ImageURL, &it.Visible, &it.SortOrder, &it.MaxPerRequest, &it.MaxPerUser)
+	err := row.Scan(&it.ID, &it.SKU, &it.Name, &it.Description, &it.Images, &it.Visible, &it.SortOrder, &it.MaxPerRequest, &it.MaxPerUser)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return it, ErrNotFound
+	}
+	if it.Images == nil {
+		it.Images = []string{}
 	}
 	return it, mapErr(err)
 }
@@ -153,19 +156,38 @@ func (s *Store) ListItems(ctx context.Context, visibleOnly bool) ([]swag.Item, e
 	return collect(rows, func(r pgx.Rows) (swag.Item, error) { return scanItem(r) })
 }
 
+func (s *Store) GetItem(ctx context.Context, id int64) (swag.Item, error) {
+	return scanItem(s.pool.QueryRow(ctx, `SELECT `+itemCols+` FROM items WHERE id = $1`, id))
+}
+
 func (s *Store) CreateItem(ctx context.Context, it swag.Item) (swag.Item, error) {
 	return scanItem(s.pool.QueryRow(ctx, `
-		INSERT INTO items (sku, name, description, image_url, visible, sort_order, max_per_request, max_per_user)
+		INSERT INTO items (sku, name, description, images, visible, sort_order, max_per_request, max_per_user)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+itemCols,
-		it.SKU, it.Name, it.Description, it.ImageURL, it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser))
+		it.SKU, it.Name, it.Description, nonNil(it.Images), it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser))
 }
 
 func (s *Store) UpdateItem(ctx context.Context, it swag.Item) (swag.Item, error) {
 	return scanItem(s.pool.QueryRow(ctx, `
-		UPDATE items SET sku = $2, name = $3, description = $4, image_url = $5, visible = $6,
+		UPDATE items SET sku = $2, name = $3, description = $4, images = $5, visible = $6,
 			sort_order = $7, max_per_request = $8, max_per_user = $9, updated_at = now()
 		WHERE id = $1 RETURNING `+itemCols,
-		it.ID, it.SKU, it.Name, it.Description, it.ImageURL, it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser))
+		it.ID, it.SKU, it.Name, it.Description, nonNil(it.Images), it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser))
+}
+
+// AddItemImage appends an image URL to the end of an item's gallery.
+func (s *Store) AddItemImage(ctx context.Context, id int64, url string) (swag.Item, error) {
+	return scanItem(s.pool.QueryRow(ctx, `
+		UPDATE items SET images = array_append(images, $2), updated_at = now()
+		WHERE id = $1 RETURNING `+itemCols, id, url))
+}
+
+// nonNil keeps NOT NULL array columns from receiving SQL NULL.
+func nonNil(ss []string) []string {
+	if ss == nil {
+		return []string{}
+	}
+	return ss
 }
 
 // ---- swag requests ----

@@ -32,6 +32,8 @@ internal/db/dbtest/  per-test throwaway database (CREATE DATABASE test_<rand> �
 internal/auth/       Hack Club Auth OAuth client (auth.hackclub.com, GET /api/v1/me)
 internal/authors/    YSWS author lookup (Airtable REST, 10 min cache)
 internal/theseus/    mail.hackclub.com warehouse client (SKUs, warehouse_orders)
+internal/cdn/        cdn.hackclub.com upload client (item images)
+internal/imgprep/    shrinks uploaded artwork to ≤1600px JPEGs before upload
 internal/httpapi/    routes, role middleware, CSRF guard, SPA static serving
 web/                 SvelteKit SPA (adapter-static, ssr=false) + service worker + manifest
 ```
@@ -138,7 +140,8 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
 - Migrations run automatically at startup (goose, embedded).
 - Required env: `DATABASE_URL`, `BASE_URL` (public https origin), `SESSION_SECRET`,
   `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, `THESEUS_API_KEY`, `ADMIN_EMAILS`. Also needed:
-  `AIRTABLE_API_KEY` for authors, and `HCB_SHIPPING_PAYMENT_URL` for international payments.
+  `AIRTABLE_API_KEY` for authors, `HCB_SHIPPING_PAYMENT_URL` for international payments, and
+  `HACKCLUB_CDN_API_KEY` for item image uploads.
 - `$BASE_URL/auth/callback` must be registered as a redirect URI on the Hack Club Auth app.
 - Read the `orchard-ops` skill before touching Orchard (`pdw call hack_club_orchard_k8s__…`).
 
@@ -169,6 +172,16 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   - International orders need a phone number for customs.
   - A billing profile is required; it comes from the API key's default.
   - **Never call CreateOrder outside the admin "Ship" action. It ships real mail.**
+- **cdn.hackclub.com** hosts item images. Admins upload them on the admin Items tab; the
+  server re-encodes them as ≤1600px JPEGs (print PNGs are ~9 MB) and stores the CDN URLs in
+  `items.images` (ordered; the first is the thumbnail). Each item has a product page at
+  `/items/<id>-<slug>`.
+- **Print source files** for warehouse SKUs: the Marketing warehouse Airtable
+  (`appK53aN0fz3sgJ4w`, table `warehouse_skus`) has `re_order_instructions`, e.g. "Order
+  VP_MJR069GX on zach@hackclub.com Vistaprint". The Vistaprint order-confirmation email links a
+  `storage.documents.cimpress.io` design document; its panels (Front/Back) link the original
+  print files (`api.sherbert.cimpress.io/.../print?signature=…`). The Hackpad poster
+  (`Pri/HPd/11x/1st`) and 4x6 card (`Pri/HPd/4x6/1st`) use the same front/back artwork.
 - **Unified YSWS DB authors**: only about 64 of 114 authors had `Hack Club Auth Email` filled
   in (warehouse snapshot, 2026-09-29). An author missing it won't be recognized; fix it in
   Airtable.

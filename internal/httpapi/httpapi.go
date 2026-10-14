@@ -23,6 +23,7 @@ import (
 	"github.com/hackclub/merch/internal/auth"
 	"github.com/hackclub/merch/internal/authors"
 	"github.com/hackclub/merch/internal/config"
+	"github.com/hackclub/merch/internal/imgprep"
 	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/swag"
 	"github.com/hackclub/merch/internal/theseus"
@@ -41,13 +42,19 @@ type Warehouse interface {
 	GetOrder(ctx context.Context, id string) (*theseus.Order, error)
 }
 
+// ImageStore hosts item images (cdn.hackclub.com in production).
+type ImageStore interface {
+	Upload(ctx context.Context, filename, contentType string, data []byte) (url string, err error)
+}
+
 type Deps struct {
 	Config    *config.Config
 	Store     *store.Store
 	Provider  auth.Provider
 	Authors   authors.Directory
 	Warehouse Warehouse
-	Static    fs.FS // built PWA (web/build); nil disables static serving
+	Images    ImageStore // nil disables image uploads
+	Static    fs.FS      // built PWA (web/build); nil disables static serving
 	Now       func() time.Time
 	Log       *slog.Logger
 }
@@ -92,6 +99,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET /api/admin/items", s.requireAdmin(s.adminItems))
 	mux.Handle("POST /api/admin/items", s.requireAdmin(s.adminCreateItem))
 	mux.Handle("PUT /api/admin/items/{id}", s.requireAdmin(s.adminUpdateItem))
+	mux.Handle("POST /api/admin/items/{id}/images", s.requireAdmin(s.adminUploadItemImage))
 	mux.Handle("GET /api/admin/warehouse/skus", s.requireAdmin(s.adminSKUs))
 	mux.Handle("GET /api/admin/settings", s.requireAdmin(s.adminSettings))
 	mux.Handle("PUT /api/admin/settings", s.requireAdmin(s.adminUpdateSettings))
@@ -615,8 +623,11 @@ func validItem(it swag.Item) string {
 		return "max_per_request must be at least 1"
 	case it.MaxPerUser != nil && *it.MaxPerUser < 0:
 		return "max_per_user can't be negative"
-	case it.ImageURL != "" && !isHTTPURL(it.ImageURL):
-		return "image_url must be an http(s) URL"
+	}
+	for _, u := range it.Images {
+		if !isHTTPURL(u) {
+			return "images must be http(s) URLs"
+		}
 	}
 	return ""
 }
@@ -666,6 +677,75 @@ func (s *server) adminUpdateItem(w http.ResponseWriter, r *http.Request, v viewe
 	default:
 		writeJSON(w, http.StatusOK, upd)
 	}
+}
+
+// maxImageUpload caps the original file (print PNGs run ~9 MB); it arrives
+// base64-encoded in JSON because the CSRF guard only admits application/json.
+const maxImageUpload = 25 << 20
+
+// adminUploadItemImage shrinks an uploaded image to a web-sized JPEG, stores
+// it on the CDN and appends it to the item's gallery.
+func (s *server) adminUploadItemImage(w http.ResponseWriter, r *http.Request, v viewer) {
+	if s.Images == nil {
+		writeErr(w, http.StatusServiceUnavailable, "image uploads are off: set HACKCLUB_CDN_API_KEY")
+		return
+	}
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Filename string `json:"filename"`
+		Data     []byte `json:"data"` // base64
+	}
+	if !readJSONLimit(w, r, &body, maxImageUpload*4/3+4096) {
+		return
+	}
+	jpg, err := imgprep.Web(body.Data)
+	if err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "upload a PNG, JPEG or WebP image")
+		return
+	}
+	if _, err := s.Store.GetItem(r.Context(), id); errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "item not found")
+		return
+	} else if err != nil {
+		s.serverErr(w, err)
+		return
+	}
+	url, err := s.Images.Upload(r.Context(), imageName(body.Filename), "image/jpeg", jpg)
+	if err != nil {
+		s.Log.Error("cdn upload failed", "item_id", id, "err", err)
+		writeErr(w, http.StatusBadGateway, "cdn.hackclub.com refused the image: "+err.Error())
+		return
+	}
+	it, err := s.Store.AddItemImage(r.Context(), id, url)
+	if err != nil {
+		s.serverErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, it)
+}
+
+// imageName turns "Hackpad Poster (front).PNG" into "hackpad-poster-front.jpg".
+func imageName(filename string) string {
+	base := strings.TrimSuffix(filename, path.Ext(filename))
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(base) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			dash = false
+		} else if !dash && b.Len() > 0 {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	name := strings.TrimSuffix(b.String(), "-")
+	if name == "" {
+		name = "image"
+	}
+	return name + ".jpg"
 }
 
 func (s *server) adminSKUs(w http.ResponseWriter, r *http.Request, v viewer) {
@@ -776,7 +856,11 @@ func pathID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 }
 
 func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	return readJSONLimit(w, r, v, 1<<20)
+}
+
+func readJSONLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	if err := dec.Decode(v); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return false
