@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { api, ApiError, formatCents } from '$lib/api';
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
-	import { pruneCart, pruneSizes, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
+	import { pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
 	import { itemIdFromParam, sizeStockLabel, unitCostLabel } from '$lib/items';
 	import { sheetThickness, finishInfo } from '$lib/paper';
 	import Product3D from '$lib/Product3D.svelte';
@@ -140,7 +140,7 @@
 					<SizePicker variants={item.variants} value={pickedSize} onchange={(sku) => setSizes({ ...bag.sizes, [item.id]: sku })} />
 				{/if}
 				<div class="buy">
-					<Stepper value={inCart} max={item.max_per_request} onchange={(n) => setCart(setQuantity(bag.cart, item, n))} />
+					<Stepper value={inCart} max={item.max_per_request} options={quantityOptions(item)} onchange={(n) => setCart(setQuantity(bag.cart, item, n))} />
 					{#if inCart === 0}
 						<button disabled={needsSize} onclick={() => setCart(setQuantity(bag.cart, item, 1))}>{needsSize ? 'Pick a size' : 'Add to request'}</button>
 					{/if}

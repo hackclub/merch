@@ -1,15 +1,47 @@
 import { describe, expect, it } from 'vitest';
-import { cartErrors, cartLines, emptyCart, parseCart, parseSizes, pruneCart, pruneSizes, setQuantity, sizeLabel, totalQuantity } from './cart';
+import { cartErrors, cartLines, emptyCart, packQuantities, parseCart, parseSizes, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from './cart';
 import type { Item } from './types';
 
 const items: Item[] = [
-	{ id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [] },
-	{ id: 2, sku: 'Swa/Sox', name: 'Socks', description: '', images: [], visible: true, sort_order: 1, max_per_request: 1, max_per_user: 1, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [] },
+	{ id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], sold_in_packs: false },
+	{ id: 2, sku: 'Swa/Sox', name: 'Socks', description: '', images: [], visible: true, sort_order: 1, max_per_request: 1, max_per_user: 1, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], sold_in_packs: false },
 	{
-		id: 3, sku: 'Swa/Shirt/HC', name: 'T-shirt', description: '', images: [], visible: true, sort_order: 2, max_per_request: 1, max_per_user: null, width_in: null, height_in: null, finish: '', thickness_in: null, photos: [],
+		id: 3, sku: 'Swa/Shirt/HC', name: 'T-shirt', description: '', images: [], visible: true, sort_order: 2, max_per_request: 1, max_per_user: null, width_in: null, height_in: null, finish: '', thickness_in: null, photos: [], sold_in_packs: false,
 		variants: [{ label: 'S', sku: 'Swa/Shirt/HC/S' }, { label: 'M', sku: 'Swa/Shirt/HC/M' }]
 	}
 ];
+
+const postcard: Item = { ...items[0], id: 4, sku: 'Pri/Wel/4x6/1st', name: 'Postcard', max_per_request: 150, sold_in_packs: true };
+
+describe('packs', () => {
+	it('lists 5 to 25 by fives, then multiples of 50, up to the max', () => {
+		expect(packQuantities(150)).toEqual([5, 10, 15, 20, 25, 50, 100, 150]);
+		expect(packQuantities(60)).toEqual([5, 10, 15, 20, 25, 50]);
+		expect(packQuantities(4)).toEqual([]);
+		expect(quantityOptions(postcard)).toEqual([0, 5, 10, 15, 20, 25, 50, 100, 150]);
+		expect(quantityOptions(items[0])).toBeUndefined();
+	});
+
+	it('snaps pack quantities to an allowed size', () => {
+		let c = setQuantity(emptyCart(), postcard, 1);
+		expect(c[4]).toBe(5);
+		c = setQuantity(c, postcard, 30);
+		expect(c[4]).toBe(25);
+		c = setQuantity(c, postcard, 75);
+		expect(c[4]).toBe(50);
+		c = setQuantity(c, postcard, 1000);
+		expect(c[4]).toBe(150);
+		c = setQuantity(c, postcard, 0);
+		expect(c[4]).toBeUndefined();
+		expect(setQuantity(emptyCart(), { ...postcard, max_per_request: 4 }, 5)[4]).toBeUndefined();
+	});
+
+	it('counts a pack as one item toward the per-request total', () => {
+		const c = setQuantity(setQuantity(emptyCart(), postcard, 50), items[0], 3);
+		expect(cartErrors(c, 5, [...items, postcard])).toEqual([]);
+		expect(cartErrors(c, 3, [...items, postcard])).toEqual(['You can request at most 3 items at a time.']);
+	});
+});
 
 describe('cart', () => {
 	it('clamps quantity to the per-request max and drops zero lines', () => {

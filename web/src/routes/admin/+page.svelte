@@ -232,6 +232,7 @@
 						</td>
 						<td>
 							<label>Per request <input type="number" min="1" bind:value={it.max_per_request} /></label>
+							<label class="row"><input type="checkbox" style="width: auto" bind:checked={it.sold_in_packs} /> In packs (5–25 by 5s, then 50s)</label>
 							<label>Per person, ever (blank = no cap)
 								<input type="number" min="0" value={it.max_per_user ?? ''}
 									oninput={(e) => (it.max_per_user = e.currentTarget.value === '' ? null : +e.currentTarget.value)} /></label>

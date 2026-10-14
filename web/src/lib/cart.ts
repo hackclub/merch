@@ -8,9 +8,28 @@ export type Sizes = Record<number, string>;
 
 export const emptyCart = (): Cart => ({});
 
+/** Quantities an item sold in packs comes in, up to max: 5 to 25 by fives, then multiples of 50 (mirrors swag.PackQuantity). */
+export function packQuantities(max: number): number[] {
+	const out: number[] = [];
+	for (let q = 5; q <= max; q += q < 25 ? 5 : q === 25 ? 25 : 50) out.push(q);
+	return out;
+}
+
+/** The quantities to offer for an item (0 = none), or undefined when any count up to the max is fine. */
+export const quantityOptions = (item: Item): number[] | undefined =>
+	item.sold_in_packs ? [0, ...packQuantities(item.max_per_request)] : undefined;
+
+/** Snaps a pack quantity to the largest allowed size not above it; 1–4 round up to 5. */
+function snapPack(item: Item, q: number): number {
+	if (q <= 0) return 0;
+	const sizes = packQuantities(item.max_per_request);
+	return sizes.filter((s) => s <= Math.max(q, 5)).at(-1) ?? 0;
+}
+
 export function setQuantity(cart: Cart, item: Item, qty: number): Cart {
 	const next = { ...cart };
-	const q = Math.min(Math.max(Math.floor(qty) || 0, 0), item.max_per_request);
+	const n = Math.max(Math.floor(qty) || 0, 0);
+	const q = item.sold_in_packs ? snapPack(item, n) : Math.min(n, item.max_per_request);
 	if (q === 0) delete next[item.id];
 	else next[item.id] = q;
 	return next;
@@ -33,7 +52,9 @@ export const sizeLabel = (item: Item, sku: string | undefined): string => item.v
 export function cartErrors(cart: Cart, maxItemsPerRequest: number, items: Item[] = [], sizes: Sizes = {}): string[] {
 	const total = totalQuantity(cart);
 	if (total === 0) return ['Pick at least one item.'];
-	if (maxItemsPerRequest > 0 && total > maxItemsPerRequest)
+	// A pack counts as one item toward the per-request total, as on the server.
+	const packed = items.filter((i) => i.sold_in_packs && cart[i.id]).reduce((n, i) => n + cart[i.id] - 1, 0);
+	if (maxItemsPerRequest > 0 && total - packed > maxItemsPerRequest)
 		return [`You can request at most ${maxItemsPerRequest} items at a time.`];
 	return items.filter((i) => cart[i.id] && i.variants.length && !offers(i, sizes[i.id])).map((i) => `Pick a size for ${i.name}.`);
 }

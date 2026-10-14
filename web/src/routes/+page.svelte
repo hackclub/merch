@@ -4,7 +4,7 @@
 	import { api, ApiError, formatCents, isInternational } from '$lib/api';
 	import { blankAddress, prefillAddress } from '$lib/address';
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
-	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
+	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
 	import { itemPath, thumbnail } from '$lib/items';
 	import { session } from '$lib/session.svelte';
 	import SizePicker from '$lib/SizePicker.svelte';
@@ -92,7 +92,7 @@
 						<SizePicker variants={item.variants} value={sizes[item.id]} label="Size of {item.name}"
 							onchange={(sku) => { setSizes({ ...sizes, [item.id]: sku }); if (!cart[item.id]) setCart(setQuantity(cart, item, 1)); }} />
 					{/if}
-					<Stepper value={cart[item.id] ?? 0} max={item.max_per_request} label="Quantity of {item.name}"
+					<Stepper value={cart[item.id] ?? 0} max={item.max_per_request} options={quantityOptions(item)} label="Quantity of {item.name}"
 						onchange={(n) => setCart(setQuantity(cart, item, n))} />
 				{/if}
 			</div>

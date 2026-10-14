@@ -190,3 +190,33 @@ func TestCanTransition(t *testing.T) {
 		}
 	}
 }
+
+func TestPackQuantity(t *testing.T) {
+	for q, want := range map[int]bool{
+		5: true, 10: true, 15: true, 20: true, 25: true, 50: true, 100: true, 150: true, 1000: true,
+		0: false, 1: false, 4: false, 7: false, 30: false, 45: false, 75: false, 125: false,
+	} {
+		if got := PackQuantity(q); got != want {
+			t.Errorf("PackQuantity(%d) = %v, want %v", q, got, want)
+		}
+	}
+}
+
+func TestValidatePacks(t *testing.T) {
+	cat := catalog()
+	cat[5] = Item{ID: 5, SKU: "Pri/Wel/4x6/1st", Name: "Postcard", Visible: true, MaxPerRequest: 200, SoldInPacks: true}
+	in := func(q int) ValidateInput {
+		return ValidateInput{Settings: settings(), Catalog: cat, Lines: []Line{{ItemID: 5, Quantity: q}, {ItemID: 1, Quantity: 3}}, Now: now}
+	}
+	// A pack counts as one item toward the per-request total (5 here).
+	for _, q := range []int{5, 25, 50, 150} {
+		if err := Validate(in(q)); err != nil {
+			t.Errorf("%d postcards: %v", q, err)
+		}
+	}
+	for _, q := range []int{1, 7, 30, 75} {
+		if err := Validate(in(q)); !errors.Is(err, ErrBadQuantity) {
+			t.Errorf("%d postcards: err = %v, want ErrBadQuantity", q, err)
+		}
+	}
+}
