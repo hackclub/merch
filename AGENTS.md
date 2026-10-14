@@ -222,6 +222,10 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   `merch` (`44052a13-2fe2-4f4c-94aa-5ec7102b4fd5`), Postgres `merch-db`
   (`4c2c324f-8b8f-4afe-94a5-3c9d1ba4a6f5`, PG 17, daily backup 03:00 UTC). DNS is a CNAME to
   `merch-merch-1aa3b1.k.hackclub.dev` in `hackclub/dns` (`hackclub.com.yaml`).
+- Production is private for now (2026-10-14). `merch.hackclub.com` sits behind Orchard login
+  (protection mode `orchard`; `/healthz` bypasses it), and `ALLOWED_EMAILS=zach@hackclub.com`
+  refuses every other Hack Club Auth sign-in. To open it, set protection to `none` and remove
+  `ALLOWED_EMAILS`.
 - **Every push to `main` builds and deploys to production** (Orchard auto-deploy, about 3
   minutes). Landing on `main` is shipping. Check a rollout with `list_pods` (the image tag) and
   `get_image_history`, not `get_deployment`.

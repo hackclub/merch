@@ -43,6 +43,9 @@ type Config struct {
 	HCBShippingPaymentURL string
 
 	AdminEmails []string
+	// When set, only these emails may sign in (ALLOWED_EMAILS). Empty lets
+	// anyone with a Hack Club Auth account in.
+	AllowedEmails []string
 
 	// Directory holding the built PWA (web/build). Empty disables static serving.
 	StaticDir string
@@ -80,6 +83,12 @@ func Load(getenv func(string) string) (*Config, error) {
 	for _, e := range strings.Split(getenv("ADMIN_EMAILS"), ",") {
 		if e = normalizeEmail(e); e != "" {
 			c.AdminEmails = append(c.AdminEmails, e)
+		}
+	}
+
+	for _, e := range strings.Split(getenv("ALLOWED_EMAILS"), ",") {
+		if e = normalizeEmail(e); e != "" {
+			c.AllowedEmails = append(c.AllowedEmails, e)
 		}
 	}
 
@@ -155,6 +164,21 @@ func (c *Config) IsAdminEmail(email string) bool {
 	}
 	for _, a := range c.AdminEmails {
 		if a == email {
+			return true
+		}
+	}
+	return false
+}
+
+// CanSignIn reports whether email may sign in: anyone when ALLOWED_EMAILS is
+// empty, otherwise only the listed emails.
+func (c *Config) CanSignIn(email string) bool {
+	if len(c.AllowedEmails) == 0 {
+		return true
+	}
+	email = normalizeEmail(email)
+	for _, a := range c.AllowedEmails {
+		if email != "" && a == email {
 			return true
 		}
 	}

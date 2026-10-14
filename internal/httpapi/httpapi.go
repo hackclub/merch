@@ -162,7 +162,7 @@ func (s *server) currentUser(r *http.Request) *store.User {
 		return nil
 	}
 	u, err := s.Store.UserBySession(r.Context(), c.Value)
-	if err != nil {
+	if err != nil || !s.Config.CanSignIn(u.Email) {
 		return nil
 	}
 	return u
@@ -262,6 +262,11 @@ func (s *server) callback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.Log.Warn("hca exchange failed", "err", err)
 		http.Error(w, "couldn't sign you in with Hack Club Auth", http.StatusBadGateway)
+		return
+	}
+	if !s.Config.CanSignIn(id.Email) {
+		s.Log.Info("sign-in refused: email not in ALLOWED_EMAILS")
+		http.Error(w, "This site isn't open yet. Only invited accounts can sign in.", http.StatusForbidden)
 		return
 	}
 	u, err := s.Store.UpsertUser(r.Context(), *id)

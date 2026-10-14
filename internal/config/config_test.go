@@ -126,3 +126,25 @@ func TestExtraBaseURLs(t *testing.T) {
 		t.Error("EXTRA_BASE_URLS entries must be absolute http(s) origins")
 	}
 }
+
+func TestAllowedEmails(t *testing.T) {
+	c, err := Load(env(validEnv()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.CanSignIn("anyone@example.com") {
+		t.Error("without ALLOWED_EMAILS everyone may sign in")
+	}
+
+	e := validEnv()
+	e["ALLOWED_EMAILS"] = " Orpheus@HackClub.com ,,"
+	if c, err = Load(env(e)); err != nil {
+		t.Fatal(err)
+	}
+	if !c.CanSignIn("orpheus@hackclub.com ") {
+		t.Error("allowlisted email refused")
+	}
+	if c.CanSignIn("anyone@example.com") || c.CanSignIn("") {
+		t.Error("email outside ALLOWED_EMAILS let in")
+	}
+}

@@ -949,3 +949,42 @@ func TestLoginHonorsForwardedHostFromDevProxy(t *testing.T) {
 		}
 	}
 }
+
+func TestAllowedEmailsLimitSignIn(t *testing.T) {
+	h := newHarness(t)
+	h.cfg.AllowedEmails = []string{adminEmail}
+
+	// A signed-in session for someone outside the list counts as signed out.
+	var me meResponse
+	h.do(h.client(userEmail), "GET", "/api/me", nil, &me)
+	if me.User != nil {
+		t.Fatalf("session outside ALLOWED_EMAILS still signed in: %+v", me)
+	}
+	me = meResponse{}
+	h.do(h.client(adminEmail), "GET", "/api/me", nil, &me)
+	if me.User == nil || !me.Roles.Admin {
+		t.Fatalf("allowed admin = %+v", me)
+	}
+
+	// The OAuth callback refuses them without starting a session.
+	jar := newJar()
+	c := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := c.Get(h.srv.URL + "/auth/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	loc, _ := url.Parse(resp.Header.Get("Location"))
+	resp, _ = c.Get(h.srv.URL + "/auth/callback?code=code-user&state=" + url.QueryEscape(loc.Query().Get("state")))
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("callback for a non-allowed email -> %d", resp.StatusCode)
+	}
+	if u, _ := url.Parse(h.srv.URL); len(jar.Cookies(u)) != 0 {
+		for _, ck := range jar.Cookies(u) {
+			if ck.Name == sessionCookie {
+				t.Fatal("non-allowed email got a session cookie")
+			}
+		}
+	}
+}
