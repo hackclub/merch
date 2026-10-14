@@ -218,6 +218,17 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
 
 ## Deploying (Orchard)
 
+- Production is **https://merch.hackclub.com**: Orchard org YSWS, project `merch`, deployment
+  `merch` (`44052a13-2fe2-4f4c-94aa-5ec7102b4fd5`), Postgres `merch-db`
+  (`4c2c324f-8b8f-4afe-94a5-3c9d1ba4a6f5`, PG 17, daily backup 03:00 UTC). DNS is a CNAME to
+  `merch-merch-1aa3b1.k.hackclub.dev` in `hackclub/dns` (`hackclub.com.yaml`).
+- **Every push to `main` builds and deploys to production** (Orchard auto-deploy, about 3
+  minutes). Landing on `main` is shipping. Check a rollout with `list_pods` (the image tag) and
+  `get_image_history`, not `get_deployment`.
+- Production started on 2026-10-14 as a copy of the dev DB (items, the Fillout import, users).
+  Since then the two have diverged: make catalog changes in production through the app. Dev
+  sets `THESEUS_ORDER_TAG=merch-dev` and production uses `merch`, so the same request id in both
+  databases never shares a warehouse idempotency key.
 - One container: `Dockerfile`, which builds the PWA and a static Go binary on distroless. It
   listens on `$PORT` (default 8080). Health check: `GET /healthz` (pings the DB).
 - Migrations run automatically at startup (goose, embedded).
@@ -238,9 +249,8 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
     `openid email name slack_id verification_status address phone`: the primary address and
     phone prefill the request form and cover international customs. Stored in
     `users.address`; a sign-in without the address scope keeps the old value.
-  - Registered redirect URIs (2026-09-29): `http://localhost:5173/auth/callback` and
-    `http://porygon:5173/auth/callback`. Add the production `https://<domain>/auth/callback`
-    before deploying.
+  - Registered redirect URIs (app "Zach's Mail Room"): `http://localhost:5173/auth/callback`,
+    `http://porygon:5173/auth/callback` and `https://merch.hackclub.com/auth/callback`.
   - The app serves several origins: `BASE_URL` plus `EXTRA_BASE_URLS`. Each request's `Host`
     picks the matching origin for the OAuth `redirect_uri`, cookies, and CSRF `Origin` checks,
     so the Vite proxy must keep `Host` (the default; no `changeOrigin`).
