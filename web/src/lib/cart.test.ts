@@ -3,10 +3,10 @@ import { cartErrors, cartLines, emptyCart, parseCart, parseSizes, pruneCart, pru
 import type { Item } from './types';
 
 const items: Item[] = [
-	{ id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [] },
-	{ id: 2, sku: 'Swa/Sox', name: 'Socks', description: '', images: [], visible: true, sort_order: 1, max_per_request: 1, max_per_user: 1, width_in: null, height_in: null, variants: [] },
+	{ id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [] },
+	{ id: 2, sku: 'Swa/Sox', name: 'Socks', description: '', images: [], visible: true, sort_order: 1, max_per_request: 1, max_per_user: 1, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [] },
 	{
-		id: 3, sku: 'Swa/Shirt/HC', name: 'T-shirt', description: '', images: [], visible: true, sort_order: 2, max_per_request: 1, max_per_user: null, width_in: null, height_in: null,
+		id: 3, sku: 'Swa/Shirt/HC', name: 'T-shirt', description: '', images: [], visible: true, sort_order: 2, max_per_request: 1, max_per_user: null, width_in: null, height_in: null, finish: '', thickness_in: null, photos: [],
 		variants: [{ label: 'S', sku: 'Swa/Shirt/HC/S' }, { label: 'M', sku: 'Swa/Shirt/HC/M' }]
 	}
 ];

@@ -731,6 +731,53 @@ func TestItemSizeMustBeWholeAndPlausible(t *testing.T) {
 	}
 }
 
+func TestItemPrintDetailsAreValidated(t *testing.T) {
+	h := newHarness(t)
+	admin := h.client(adminEmail)
+	it := h.mkItem("Pri/A", true)
+	path := fmt.Sprintf("/api/admin/items/%d", it.ID)
+	f := func(v float64) *float64 { return &v }
+
+	for name, bad := range map[string]swag.Item{
+		"unknown finish":  {Finish: "velvet"},
+		"zero thickness":  {ThicknessIn: f(0)},
+		"thick as a book": {ThicknessIn: f(2)},
+		"photo url":       {Photos: []swag.Photo{{URL: "javascript:alert(1)"}}},
+		"long caption":    {Photos: []swag.Photo{{URL: "https://cdn.example/a.jpg", Caption: strings.Repeat("x", 301)}}},
+	} {
+		bad.SKU, bad.Name, bad.MaxPerRequest = it.SKU, it.Name, it.MaxPerRequest
+		if code := h.do(admin, "PUT", path, bad, nil); code != 422 {
+			t.Errorf("%s = %d, want 422", name, code)
+		}
+	}
+	it.Finish, it.ThicknessIn = "matte", f(0.008)
+	var upd swag.Item
+	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || upd.Finish != "matte" || *upd.ThicknessIn != 0.008 {
+		t.Fatalf("good print details = %d %+v", code, upd)
+	}
+}
+
+func TestAdminUploadsItemPhotos(t *testing.T) {
+	h := newHarness(t)
+	it := h.mkItem("Pri/A", true)
+	var buf bytes.Buffer
+	png.Encode(&buf, image.NewNRGBA(image.Rect(0, 0, 30, 40)))
+	body := map[string]string{"filename": "booth.jpg", "data": base64.StdEncoding.EncodeToString(buf.Bytes()),
+		"caption": "  On display at 3DPrintopia ", "credit": "Boa_N"}
+
+	var upd swag.Item
+	if code := h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/items/%d/photos", it.ID), body, &upd); code != 200 {
+		t.Fatalf("photo upload = %d", code)
+	}
+	want := swag.Photo{URL: "https://cdn.example/1/booth.jpg", Caption: "On display at 3DPrintopia", Credit: "Boa_N"}
+	if len(upd.Photos) != 1 || upd.Photos[0] != want || len(upd.Images) != 0 {
+		t.Fatalf("photos = %+v images = %v", upd.Photos, upd.Images)
+	}
+	if code := h.do(h.client(userEmail), "POST", fmt.Sprintf("/api/admin/items/%d/photos", it.ID), body, nil); code != 403 {
+		t.Fatalf("non-admin photo upload = %d", code)
+	}
+}
+
 func TestImageUploadsNeedCDNConfigured(t *testing.T) {
 	h := newHarness(t)
 	h.srv.Config.Handler = New(Deps{Config: h.cfg, Store: h.store, Provider: fakeProvider{}, Authors: authors.Static{}, Warehouse: h.wh})

@@ -13,9 +13,13 @@ export type Item = {
 	width_in: number | null; // physical size in inches, for printed items
 	height_in: number | null;
 	variants: Variant[]; // sizes, each its own warehouse SKU; empty = one size
+	finish: string; // '' | 'matte' | 'gloss' | 'linen' | 'uncoated'
+	thickness_in: number | null;
+	photos: Photo[]; // real-world pictures people posted
 };
 
 export type Variant = { label: string; sku: string };
+export type Photo = { url: string; caption: string; credit: string };
 
 export type Settings = {
 	requests_open: boolean;

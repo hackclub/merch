@@ -1,0 +1,247 @@
+// WebGL product viewer for printed items: the real artwork on a sheet with true
+// thickness and a paper surface (matte, gloss, linen…) lit by a studio
+// environment, standing next to a phone at the same scale. Units are inches.
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
+import { coverCrop, finishInfo } from './paper';
+import { GAP_IN, PHONE } from './scale';
+
+export type ViewerOptions = {
+	front: string;
+	back?: string;
+	widthIn: number;
+	heightIn: number;
+	thicknessIn: number;
+	finish: string;
+};
+
+export type Viewer = {
+	/** Rotation of the print around its vertical axis, radians. */
+	angle: number;
+	/** 1 = whole scene in view; smaller is closer. */
+	zoom: number;
+	resize(width: number, height: number): void;
+	render(): void;
+	dispose(): void;
+};
+
+const PHONE_DEPTH = 0.31;
+const LEAN = THREE.MathUtils.degToRad(-4); // prints lean back a touch, like they're propped up
+
+export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onReady: () => void): Viewer {
+	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+	renderer.outputColorSpace = THREE.SRGBColorSpace;
+	// Neutral tone mapping keeps print colors true; ACES would desaturate them.
+	renderer.toneMapping = THREE.NeutralToneMapping;
+	renderer.toneMappingExposure = 1;
+	renderer.shadowMap.enabled = true;
+	renderer.shadowMap.type = THREE.VSMShadowMap;
+
+	const scene = new THREE.Scene();
+	const pmrem = new THREE.PMREMGenerator(renderer);
+	const room = new RoomEnvironment();
+	scene.environment = pmrem.fromScene(room, 0.04).texture;
+	room.dispose();
+
+	const { widthIn: w, heightIn: h, thicknessIn: t } = opts;
+	const sceneW = w + GAP_IN + PHONE.w;
+	const sceneH = Math.max(h, PHONE.h);
+
+	// Soft studio key light from above and slightly in front, so the shadow pools
+	// under things (a contact shadow) instead of stretching across the floor.
+	const key = new THREE.DirectionalLight(0xffffff, 1.1);
+	key.position.set(-sceneW * 0.25, sceneH * 4, sceneH * 0.9);
+	key.castShadow = true;
+	key.shadow.mapSize.set(2048, 2048);
+	key.shadow.radius = 18;
+	key.shadow.blurSamples = 24;
+	key.shadow.bias = -0.0005;
+	const sc = key.shadow.camera;
+	sc.left = sc.bottom = -sceneW * 1.5;
+	sc.right = sc.top = sceneW * 1.5;
+	sc.near = 0.1;
+	sc.far = sceneH * 8;
+	scene.add(key);
+
+	const floor = new THREE.Mesh(new THREE.PlaneGeometry(sceneW * 6, sceneW * 6), new THREE.ShadowMaterial({ opacity: 0.12 }));
+	floor.rotation.x = -Math.PI / 2;
+	floor.receiveShadow = true;
+	scene.add(floor);
+
+	// Everything is laid out left to right, then centered on x = 0.
+	const left = -sceneW / 2;
+
+	// ---- the print ----
+	const info = finishInfo(opts.finish);
+	const surface = paperSurface(info.weave, info.grain);
+	surface.normal.repeat.set(w / surface.tileIn, h / surface.tileIn);
+	const loader = new THREE.TextureLoader().setCrossOrigin('anonymous');
+	const face = (url: string | undefined) => {
+		const m = new THREE.MeshPhysicalMaterial({
+			color: 0xffffff,
+			roughness: info.roughness,
+			clearcoat: info.clearcoat,
+			clearcoatRoughness: 0.15,
+			normalMap: surface.normal,
+			normalScale: new THREE.Vector2(info.grain, info.grain)
+		});
+		if (url) {
+			pending++;
+			loader.load(
+				url,
+				(tex) => {
+					tex.colorSpace = THREE.SRGBColorSpace;
+					tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+					const img = tex.image as { width: number; height: number };
+					const c = coverCrop(img.width / img.height, w / h);
+					tex.repeat.set(c.repeatX, c.repeatY);
+					tex.offset.set(c.offsetX, c.offsetY);
+					m.map = tex;
+					m.needsUpdate = true;
+					if (--pending === 0) onReady();
+				},
+				undefined,
+				() => {
+					if (--pending === 0) onReady();
+				}
+			);
+		}
+		return m;
+	};
+	let pending = 0;
+	// Paper's core shows on the edges: a warm off-white.
+	const edge = new THREE.MeshStandardMaterial({ color: 0xf2eee6, roughness: 0.95 });
+	// BoxGeometry face order: +x, -x, +y, -y, +z (front), -z (back).
+	const frontMat = face(opts.front);
+	const backMat = face(opts.back);
+	const sheet = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), [edge, edge, edge, edge, frontMat, backMat]);
+	sheet.castShadow = true;
+	sheet.position.y = h / 2;
+	// Pivot at the bottom edge so the lean looks propped rather than floating.
+	const sheetPivot = new THREE.Group();
+	sheetPivot.position.set(left + w / 2, 0, 0);
+	const sheetLean = new THREE.Group();
+	sheetLean.rotation.x = LEAN;
+	sheetLean.add(sheet);
+	sheetPivot.add(sheetLean);
+	scene.add(sheetPivot);
+	if (pending === 0) queueMicrotask(onReady);
+
+	// ---- the phone, for scale ----
+	const phone = new THREE.Group();
+	const body = new THREE.Mesh(
+		new RoundedBoxGeometry(PHONE.w, PHONE.h, PHONE_DEPTH, 6, 0.42),
+		new THREE.MeshPhysicalMaterial({ color: 0x2b2c31, metalness: 0.7, roughness: 0.32 })
+	);
+	body.castShadow = true;
+	const screen = new THREE.Mesh(
+		new RoundedBoxGeometry(PHONE.w - 0.14, PHONE.h - 0.14, 0.02, 4, 0.34),
+		new THREE.MeshPhysicalMaterial({ color: 0x07080b, roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.02 })
+	);
+	screen.position.z = PHONE_DEPTH / 2;
+	const island = new THREE.Mesh(
+		new RoundedBoxGeometry(0.5, 0.14, 0.01, 3, 0.07),
+		new THREE.MeshBasicMaterial({ color: 0x000000 })
+	);
+	island.position.set(0, PHONE.h / 2 - 0.22, PHONE_DEPTH / 2 + 0.012);
+	phone.add(body, screen, island);
+	phone.position.set(left + w + GAP_IN + PHONE.w / 2, PHONE.h / 2, 0);
+	phone.rotation.set(LEAN, THREE.MathUtils.degToRad(-12), 0);
+	scene.add(phone);
+
+	// ---- camera ----
+	const camera = new THREE.PerspectiveCamera(26, 1, 0.05, 2000);
+	const target = new THREE.Vector3();
+	const viewer: Viewer = {
+		angle: 0,
+		zoom: 1,
+		resize(width, height) {
+			renderer.setSize(width, height, false);
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
+		},
+		render() {
+			sheetPivot.rotation.y = viewer.angle;
+			// Frame the whole scene at zoom 1; zooming moves toward the print's center.
+			const vfov = THREE.MathUtils.degToRad(camera.fov) / 2;
+			const fitH = (sceneH * 0.56) / Math.tan(vfov);
+			const fitW = (sceneW * 0.56) / (Math.tan(vfov) * camera.aspect);
+			const dist = Math.max(fitH, fitW) * viewer.zoom;
+			const zoomed = 1 - viewer.zoom; // 0 at full view
+			target.set(THREE.MathUtils.lerp(0, left + w / 2, Math.min(1, zoomed * 1.6)), sceneH * 0.5, 0);
+			camera.position.set(target.x + dist * 0.05, target.y + dist * 0.16, dist);
+			camera.lookAt(target);
+			renderer.render(scene, camera);
+		},
+		dispose() {
+			scene.traverse((o) => {
+				if (o instanceof THREE.Mesh) {
+					o.geometry.dispose();
+					for (const m of [o.material].flat()) {
+						for (const v of Object.values(m)) if (v instanceof THREE.Texture) v.dispose();
+						m.dispose();
+					}
+				}
+			});
+			surface.normal.dispose();
+			scene.environment?.dispose();
+			pmrem.dispose();
+			renderer.dispose();
+		}
+	};
+	return viewer;
+}
+
+/**
+ * A tiling normal map for the paper surface, drawn on a canvas: fine fiber
+ * noise for every paper, plus linen's embossed crosshatch. Each tile covers
+ * half an inch.
+ */
+function paperSurface(weave: boolean, grain: number) {
+	const N = 512;
+	const height = new Float32Array(N * N);
+	// Deterministic noise so the paper looks the same every visit.
+	let seed = 1337;
+	const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+	for (let i = 0; i < N * N; i++) height[i] = rand() * 0.35 * Math.min(1, grain * 3);
+	if (weave) {
+		// ~40 threads per inch each way, with slightly uneven thread thickness.
+		const threads = 20;
+		const rowJitter = Array.from({ length: threads }, () => 0.6 + rand() * 0.8);
+		const colJitter = Array.from({ length: threads }, () => 0.6 + rand() * 0.8);
+		for (let y = 0; y < N; y++) {
+			for (let x = 0; x < N; x++) {
+				const fy = (y / N) * threads;
+				const fx = (x / N) * threads;
+				const row = Math.sin(fy * Math.PI * 2) * 0.5 + 0.5;
+				const col = Math.sin(fx * Math.PI * 2) * 0.5 + 0.5;
+				height[y * N + x] += row * rowJitter[Math.floor(fy)] * 0.9 + col * colJitter[Math.floor(fx)] * 0.9;
+			}
+		}
+	}
+	// Height → tangent-space normals (central differences, wrapping).
+	const canvas = document.createElement('canvas');
+	canvas.width = canvas.height = N;
+	const ctx = canvas.getContext('2d')!;
+	const img = ctx.createImageData(N, N);
+	const at = (x: number, y: number) => height[((y + N) % N) * N + ((x + N) % N)];
+	for (let y = 0; y < N; y++) {
+		for (let x = 0; x < N; x++) {
+			const dx = at(x + 1, y) - at(x - 1, y);
+			const dy = at(x, y + 1) - at(x, y - 1);
+			const len = Math.hypot(dx, dy, 1);
+			const i = (y * N + x) * 4;
+			img.data[i] = ((-dx / len) * 0.5 + 0.5) * 255;
+			img.data[i + 1] = ((dy / len) * 0.5 + 0.5) * 255;
+			img.data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
+			img.data[i + 3] = 255;
+		}
+	}
+	ctx.putImageData(img, 0, 0);
+	const normal = new THREE.CanvasTexture(canvas);
+	normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
+	normal.colorSpace = THREE.NoColorSpace;
+	return { normal, tileIn: 0.5 };
+}

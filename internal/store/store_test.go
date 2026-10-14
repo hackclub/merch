@@ -152,6 +152,21 @@ func TestItemImages(t *testing.T) {
 		t.Fatalf("UpdateItem size = %v x %v, %v", upd.WidthIn, upd.HeightIn, err)
 	}
 
+	thick := 0.016
+	it.Finish, it.ThicknessIn = "linen", &thick
+	it.Photos = []swag.Photo{{URL: "https://cdn.example/booth.jpg", Caption: "At a booth", Credit: "Boa_N"}}
+	upd, err = s.UpdateItem(ctx, it)
+	if err != nil || upd.Finish != "linen" || *upd.ThicknessIn != 0.016 || len(upd.Photos) != 1 || upd.Photos[0] != it.Photos[0] {
+		t.Fatalf("UpdateItem print details = %+v, %v", upd, err)
+	}
+	upd, err = s.AddItemPhoto(ctx, it.ID, swag.Photo{URL: "https://cdn.example/stack.jpg", Credit: "Ryaan"})
+	if err != nil || len(upd.Photos) != 2 || upd.Photos[1].Credit != "Ryaan" {
+		t.Fatalf("AddItemPhoto = %+v, %v", upd.Photos, err)
+	}
+	if fresh := mkItem(t, s, "Pri/New", true); fresh.Photos == nil {
+		t.Fatal("new item photos should be an empty list, not null")
+	}
+
 	if _, err := s.AddItemImage(ctx, 999, "https://cdn.example/x.jpg"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing item err = %v", err)
 	}

@@ -89,6 +89,18 @@
 		}, `Uploaded ${files.length} image${files.length === 1 ? '' : 's'} to ${it.name}`);
 		uploading = null;
 	}
+	async function uploadPhoto(it: Item, files: FileList | null) {
+		const f = files?.[0];
+		if (!f) return;
+		const caption = prompt('Caption (optional):') ?? '';
+		const credit = prompt('Who took it? (credit, e.g. their Slack name)') ?? '';
+		uploading = it.id;
+		await guard(async () => {
+			const upd = await api.post<Item>(`/api/admin/items/${it.id}/photos`, { filename: f.name, data: await fileToBase64(f), caption, credit });
+			it.photos = upd.photos;
+		}, `Added a photo to ${it.name}`);
+		uploading = null;
+	}
 	const listSKU = (s: WarehouseSKU) =>
 		guard(async () => {
 			await api.post('/api/admin/items', { sku: s.sku, name: s.name, max_per_request: 1, visible: false });
@@ -186,7 +198,7 @@
 										onchange={(e) => { uploadImages(it, e.currentTarget.files); e.currentTarget.value = ''; }} />
 								</label>
 							</div>
-							<div class="muted">First image is the thumbnail. Reorder or remove, then Save.</div>
+							<div class="muted">First image is the thumbnail (and the front in 3D; the second is the back). Reorder or remove, then Save.</div>
 							<details open={it.variants.length > 0}>
 								<summary class="muted">Sizes ({it.variants.length || 'one size'})</summary>
 								{#each it.variants as v, i}
@@ -198,6 +210,24 @@
 								{/each}
 								<button class="link" onclick={() => (it.variants = [...it.variants, { label: '', sku: '' }])}>+ Size</button>
 								<div class="muted">Each size ships its own SKU; limits count all sizes together. Saving folds items listed under these SKUs into this one.</div>
+							</details>
+							<details class="photos-edit" open={it.photos.length > 0}>
+								<summary>Real-world photos ({it.photos.length})</summary>
+								{#each it.photos as p, i (p.url)}
+									<div class="photo-row">
+										<img src={p.url} alt="" />
+										<div>
+											<input bind:value={p.caption} placeholder="caption" aria-label="Photo caption" />
+											<input bind:value={p.credit} placeholder="credit" aria-label="Photo credit" />
+										</div>
+										<button class="link" title="Remove photo" onclick={() => (it.photos = it.photos.filter((_, j) => j !== i))}>✕</button>
+									</div>
+								{/each}
+								<label class="button small-btn" class:busy={uploading === it.id}>
+									{uploading === it.id ? 'Uploading…' : '+ Photo'}
+									<input type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={uploading !== null}
+										onchange={(e) => { uploadPhoto(it, e.currentTarget.files); e.currentTarget.value = ''; }} />
+								</label>
 							</details>
 						</td>
 						<td>
@@ -217,6 +247,17 @@
 									<input type="number" min="0" step="0.25" placeholder="H" aria-label="Height in inches" value={it.height_in ?? ''}
 										oninput={(e) => (it.height_in = e.currentTarget.value === '' ? null : +e.currentTarget.value)} />
 								</span>
+							</label>
+							<label>Paper finish
+								<select bind:value={it.finish}>
+									{#each [['', '—'], ['matte', 'Matte'], ['gloss', 'Gloss'], ['linen', 'Linen'], ['uncoated', 'Uncoated']] as [v, l]}
+										<option value={v}>{l}</option>
+									{/each}
+								</select>
+							</label>
+							<label>Thickness, inches (e.g. 0.016 for 16 pt card)
+								<input type="number" min="0" step="0.001" placeholder="0.008" value={it.thickness_in ?? ''}
+									oninput={(e) => (it.thickness_in = e.currentTarget.value === '' ? null : +e.currentTarget.value)} />
 							</label>
 						</td>
 						<td><button onclick={() => saveItem(it)}>Save</button></td>
@@ -294,4 +335,10 @@
 	.add-image.busy { cursor: progress; }
 	.size { flex-wrap: nowrap; font-weight: 400; }
 	.size input { width: 4.5rem; }
+	.photos-edit { margin-top: 0.5rem; }
+	.photos-edit summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+	.photo-row { display: grid; grid-template-columns: 4rem 1fr auto; gap: 0.5rem; align-items: center; margin: 0.4rem 0; }
+	.photo-row img { width: 4rem; height: 3rem; object-fit: cover; border-radius: 4px; }
+	.photo-row div { display: grid; gap: 0.25rem; }
+	.small-btn { background: var(--dark); padding: 0.3rem 0.8rem; font-size: 0.85rem; display: inline-block; margin-top: 0.25rem; cursor: pointer; }
 </style>

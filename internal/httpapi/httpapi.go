@@ -109,6 +109,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/admin/items", s.requireAdmin(s.adminCreateItem))
 	mux.Handle("PUT /api/admin/items/{id}", s.requireAdmin(s.adminUpdateItem))
 	mux.Handle("POST /api/admin/items/{id}/images", s.requireAdmin(s.adminUploadItemImage))
+	mux.Handle("POST /api/admin/items/{id}/photos", s.requireAdmin(s.adminUploadItemPhoto))
 	mux.Handle("GET /api/admin/warehouse/skus", s.requireAdmin(s.adminSKUs))
 	mux.Handle("GET /api/admin/settings", s.requireAdmin(s.adminSettings))
 	mux.Handle("PUT /api/admin/settings", s.requireAdmin(s.adminUpdateSettings))
@@ -702,6 +703,15 @@ func validItem(it swag.Item) string {
 		return "set both width_in and height_in, or neither"
 	case it.WidthIn != nil && !(*it.WidthIn > 0 && *it.WidthIn <= 120 && *it.HeightIn > 0 && *it.HeightIn <= 120):
 		return "size must be between 0 and 120 inches"
+	case !swag.Finishes[it.Finish]:
+		return "finish must be matte, gloss, linen or uncoated"
+	case it.ThicknessIn != nil && !(*it.ThicknessIn > 0 && *it.ThicknessIn <= 0.5):
+		return "thickness must be between 0 and 0.5 inches"
+	}
+	for _, p := range it.Photos {
+		if msg := validPhoto(p); msg != "" {
+			return msg
+		}
 	}
 	for _, u := range it.Images {
 		if !isHTTPURL(u) {
@@ -776,6 +786,16 @@ func (s *server) adminUpdateItem(w http.ResponseWriter, r *http.Request, v viewe
 	}
 }
 
+func validPhoto(p swag.Photo) string {
+	switch {
+	case !isHTTPURL(p.URL):
+		return "photo urls must be http(s) URLs"
+	case len(p.Caption) > 300 || len(p.Credit) > 100:
+		return "photo caption or credit is too long"
+	}
+	return ""
+}
+
 // maxImageUpload caps the original file (print PNGs run ~9 MB); it arrives
 // base64-encoded in JSON because the CSRF guard only admits application/json.
 const maxImageUpload = 25 << 20
@@ -783,19 +803,47 @@ const maxImageUpload = 25 << 20
 // adminUploadItemImage shrinks an uploaded image to a web-sized JPEG, stores
 // it on the CDN and appends it to the item's gallery.
 func (s *server) adminUploadItemImage(w http.ResponseWriter, r *http.Request, v viewer) {
+	id, url, _, ok := s.uploadItemImage(w, r)
+	if !ok {
+		return
+	}
+	s.respondItem(w)(s.Store.AddItemImage(r.Context(), id, url))
+}
+
+// adminUploadItemPhoto adds a real-world photo (with caption and credit) to
+// the item's community photos, stored like gallery images.
+func (s *server) adminUploadItemPhoto(w http.ResponseWriter, r *http.Request, v viewer) {
+	id, url, body, ok := s.uploadItemImage(w, r)
+	if !ok {
+		return
+	}
+	p := swag.Photo{URL: url, Caption: strings.TrimSpace(body.Caption), Credit: strings.TrimSpace(body.Credit)}
+	s.respondItem(w)(s.Store.AddItemPhoto(r.Context(), id, p))
+}
+
+type imageUpload struct {
+	Filename string `json:"filename"`
+	Data     []byte `json:"data"` // base64
+	Caption  string `json:"caption"`
+	Credit   string `json:"credit"`
+}
+
+// uploadItemImage reads an image upload for the item in the path, shrinks it to
+// a web-sized JPEG and stores it on the CDN. It writes the error response itself.
+func (s *server) uploadItemImage(w http.ResponseWriter, r *http.Request) (id int64, url string, body imageUpload, ok bool) {
 	if s.Images == nil {
 		writeErr(w, http.StatusServiceUnavailable, "image uploads are off: set HACKCLUB_CDN_API_KEY")
 		return
 	}
-	id, ok := pathID(w, r)
-	if !ok {
+	if id, ok = pathID(w, r); !ok {
 		return
 	}
-	var body struct {
-		Filename string `json:"filename"`
-		Data     []byte `json:"data"` // base64
-	}
+	ok = false
 	if !readJSONLimit(w, r, &body, maxImageUpload*4/3+4096) {
+		return
+	}
+	if msg := validPhoto(swag.Photo{URL: "https://x", Caption: body.Caption, Credit: body.Credit}); msg != "" {
+		writeErr(w, http.StatusUnprocessableEntity, msg)
 		return
 	}
 	jpg, err := imgprep.Web(body.Data)
@@ -810,18 +858,26 @@ func (s *server) adminUploadItemImage(w http.ResponseWriter, r *http.Request, v 
 		s.serverErr(w, err)
 		return
 	}
-	url, err := s.Images.Upload(r.Context(), imageName(body.Filename), "image/jpeg", jpg)
+	url, err = s.Images.Upload(r.Context(), imageName(body.Filename), "image/jpeg", jpg)
 	if err != nil {
 		s.Log.Error("cdn upload failed", "item_id", id, "err", err)
 		writeErr(w, http.StatusBadGateway, "cdn.hackclub.com refused the image: "+err.Error())
 		return
 	}
-	it, err := s.Store.AddItemImage(r.Context(), id, url)
-	if err != nil {
-		s.serverErr(w, err)
-		return
+	return id, url, body, true
+}
+
+func (s *server) respondItem(w http.ResponseWriter) func(swag.Item, error) {
+	return func(it swag.Item, err error) {
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			writeErr(w, http.StatusNotFound, "item not found")
+		case err != nil:
+			s.serverErr(w, err)
+		default:
+			writeJSON(w, http.StatusOK, it)
+		}
 	}
-	writeJSON(w, http.StatusOK, it)
 }
 
 // imageName turns "Hackpad Poster (front).PNG" into "hackpad-poster-front.jpg".

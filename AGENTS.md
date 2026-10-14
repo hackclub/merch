@@ -258,9 +258,12 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
 - **cdn.hackclub.com** hosts item images. Admins upload them on the admin Items tab; the
   server re-encodes them as ≤1600px JPEGs (print PNGs are ~9 MB) and stores the CDN URLs in
   `items.images` (ordered; the first is the thumbnail). Each item has a product page at
-  `/items/<id>-<slug>`. Printed items with `width_in`/`height_in` set get a "3D" gallery tile
-  (`web/src/lib/SizePreview.svelte`, CSS 3D, no WebGL): images[0] and images[1] as the front
-  and back of a sheet, drawn true to scale next to a phone.
+  `/items/<id>-<slug>`. Printed items with `width_in`/`height_in` set open on a 3D view
+  (`web/src/lib/Product3D.svelte` + `paper3d.ts`, three.js, lazy-loaded): images[0] and
+  images[1] are the front and back of a sheet with real thickness (`thickness_in`) and paper
+  surface (`finish`: matte, gloss, linen, uncoated), next to a phone at the same scale.
+  `photos` holds real-world pictures people posted (`{url, caption, credit}`), shown as
+  "In the wild" on the product page.
 - **Print source files** for warehouse SKUs: the Marketing warehouse Airtable
   (`appK53aN0fz3sgJ4w`, table `warehouse_skus`) has `re_order_instructions`, e.g. "Order
   VP_MJR069GX on zach@hackclub.com Vistaprint". The Vistaprint order-confirmation email links a

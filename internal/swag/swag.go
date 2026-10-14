@@ -29,6 +29,16 @@ type Settings struct {
 	InternationalShippingFeeCents int  `json:"international_shipping_fee_cents"`
 }
 
+// Finishes are the paper surfaces the 3D preview knows how to render.
+var Finishes = map[string]bool{"": true, "matte": true, "gloss": true, "linen": true, "uncoated": true}
+
+// Photo is a real-world picture of an item, credited to whoever took it.
+type Photo struct {
+	URL     string `json:"url"`
+	Caption string `json:"caption"`
+	Credit  string `json:"credit"`
+}
+
 // Item is a listed catalog item backed by a warehouse SKU.
 type Item struct {
 	ID            int64    `json:"id"`
@@ -43,6 +53,12 @@ type Item struct {
 	// Physical size in inches, for printed items; both nil when it doesn't apply.
 	WidthIn  *float64 `json:"width_in"`
 	HeightIn *float64 `json:"height_in"`
+	// How it was printed: paper finish (see Finishes) and thickness in inches.
+	Finish      string   `json:"finish"`
+	ThicknessIn *float64 `json:"thickness_in"`
+	// Real-world photos people have posted of it.
+	Photos []Photo `json:"photos"`
+
 	// Variants are the sizes of an item, each its own warehouse SKU. When an
 	// item has variants, every request line for it must pick one; limits still
 	// apply to the item as a whole.
