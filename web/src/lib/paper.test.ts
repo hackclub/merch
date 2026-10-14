@@ -22,7 +22,7 @@ describe('coverCrop', () => {
 
 describe('finishInfo', () => {
 	it('describes each paper and how it reflects light', () => {
-		expect(finishInfo('linen').label).toBe('Linen texture');
+		expect(finishInfo('linen').label).toBe('Linen card stock');
 		expect(finishInfo('gloss').roughness).toBeLessThan(finishInfo('matte').roughness);
 		expect(finishInfo('').label).toBe('');
 	});

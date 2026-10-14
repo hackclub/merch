@@ -15,7 +15,7 @@ const FINISHES: Record<Finish, FinishInfo> = {
 	'': { label: '', roughness: 0.8, clearcoat: 0, weave: false, grain: 0.15 },
 	matte: { label: 'Matte paper', roughness: 0.88, clearcoat: 0, weave: false, grain: 0.25 },
 	gloss: { label: 'Glossy paper', roughness: 0.35, clearcoat: 0.8, weave: false, grain: 0.05 },
-	linen: { label: 'Linen texture', roughness: 0.8, clearcoat: 0, weave: true, grain: 0.6 },
+	linen: { label: 'Linen card stock', roughness: 0.8, clearcoat: 0, weave: true, grain: 0.6 },
 	uncoated: { label: 'Uncoated paper', roughness: 0.95, clearcoat: 0, weave: false, grain: 0.45 }
 };
 
