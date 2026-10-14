@@ -40,6 +40,9 @@ type Item struct {
 	SortOrder     int      `json:"sort_order"`
 	MaxPerRequest int      `json:"max_per_request"`
 	MaxPerUser    *int     `json:"max_per_user"` // lifetime cap; nil = unlimited
+	// Physical size in inches, for printed items; both nil when it doesn't apply.
+	WidthIn  *float64 `json:"width_in"`
+	HeightIn *float64 `json:"height_in"`
 }
 
 type Line struct {

@@ -10,6 +10,8 @@ export type Item = {
 	sort_order: number;
 	max_per_request: number;
 	max_per_user: number | null;
+	width_in: number | null; // physical size in inches, for printed items
+	height_in: number | null;
 };
 
 export type Settings = {

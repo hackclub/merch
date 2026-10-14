@@ -134,11 +134,11 @@ func (s *Store) UpdateSettings(ctx context.Context, st swag.Settings) error {
 
 // ---- items ----
 
-const itemCols = `id, sku, name, description, images, visible, sort_order, max_per_request, max_per_user`
+const itemCols = `id, sku, name, description, images, visible, sort_order, max_per_request, max_per_user, width_in, height_in`
 
 func scanItem(row pgx.Row) (swag.Item, error) {
 	var it swag.Item
-	err := row.Scan(&it.ID, &it.SKU, &it.Name, &it.Description, &it.Images, &it.Visible, &it.SortOrder, &it.MaxPerRequest, &it.MaxPerUser)
+	err := row.Scan(&it.ID, &it.SKU, &it.Name, &it.Description, &it.Images, &it.Visible, &it.SortOrder, &it.MaxPerRequest, &it.MaxPerUser, &it.WidthIn, &it.HeightIn)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return it, ErrNotFound
 	}
@@ -162,17 +162,18 @@ func (s *Store) GetItem(ctx context.Context, id int64) (swag.Item, error) {
 
 func (s *Store) CreateItem(ctx context.Context, it swag.Item) (swag.Item, error) {
 	return scanItem(s.pool.QueryRow(ctx, `
-		INSERT INTO items (sku, name, description, images, visible, sort_order, max_per_request, max_per_user)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+itemCols,
-		it.SKU, it.Name, it.Description, nonNil(it.Images), it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser))
+		INSERT INTO items (sku, name, description, images, visible, sort_order, max_per_request, max_per_user, width_in, height_in)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING `+itemCols,
+		it.SKU, it.Name, it.Description, nonNil(it.Images), it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser, it.WidthIn, it.HeightIn))
 }
 
 func (s *Store) UpdateItem(ctx context.Context, it swag.Item) (swag.Item, error) {
 	return scanItem(s.pool.QueryRow(ctx, `
 		UPDATE items SET sku = $2, name = $3, description = $4, images = $5, visible = $6,
-			sort_order = $7, max_per_request = $8, max_per_user = $9, updated_at = now()
+			sort_order = $7, max_per_request = $8, max_per_user = $9, width_in = $10, height_in = $11, updated_at = now()
 		WHERE id = $1 RETURNING `+itemCols,
-		it.ID, it.SKU, it.Name, it.Description, nonNil(it.Images), it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser))
+		it.ID, it.SKU, it.Name, it.Description, nonNil(it.Images), it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser,
+		it.WidthIn, it.HeightIn))
 }
 
 // AddItemImage appends an image URL to the end of an item's gallery.

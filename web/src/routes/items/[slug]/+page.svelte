@@ -5,6 +5,8 @@
 	import { bag, setCart } from '$lib/bag.svelte';
 	import { pruneCart, setQuantity, totalQuantity } from '$lib/cart';
 	import { itemIdFromParam } from '$lib/items';
+	import { hasSize } from '$lib/scale';
+	import SizePreview from '$lib/SizePreview.svelte';
 	import { session } from '$lib/session.svelte';
 	import Stepper from '$lib/Stepper.svelte';
 	import type { Catalog } from '$lib/types';
@@ -26,6 +28,9 @@
 	const item = $derived(catalog?.items.find((i) => i.id === id));
 	const inCart = $derived(item ? (bag.cart[item.id] ?? 0) : 0);
 	const total = $derived(totalQuantity(bag.cart));
+	// The true-to-scale 3D view is the gallery's last tile, after the photos.
+	const has3D = $derived(!!item && hasSize(item) && item.images.length > 0);
+	const tiles = $derived(item ? item.images.length + (has3D ? 1 : 0) : 0);
 	// Reset the gallery when moving between items.
 	$effect(() => {
 		id;
@@ -46,16 +51,29 @@
 	<div class="product">
 		<div class="gallery">
 			{#if item.images.length}
-				<a class="main" href={item.images[shown]} target="_blank" rel="noreferrer" title="Open full size">
-					<img src={item.images[shown]} alt="{item.name}, image {shown + 1} of {item.images.length}" />
-				</a>
-				{#if item.images.length > 1}
+				{#if has3D && shown === item.images.length}
+					<div class="main three">
+						<SizePreview front={item.images[0]} back={item.images[1]} widthIn={item.width_in!} heightIn={item.height_in!} name={item.name} />
+					</div>
+				{:else}
+					<a class="main" href={item.images[shown]} target="_blank" rel="noreferrer" title="Open full size">
+						<img src={item.images[shown]} alt="{item.name}, image {shown + 1} of {item.images.length}" />
+					</a>
+				{/if}
+				{#if tiles > 1}
 					<div class="thumbs">
 						{#each item.images as src, i (src)}
 							<button type="button" class="thumb" class:active={i === shown} aria-label="Show image {i + 1}" onclick={() => (shown = i)}>
 								<img {src} alt="" loading="lazy" />
 							</button>
 						{/each}
+						{#if has3D}
+							<button type="button" class="thumb three-thumb" class:active={shown === item.images.length}
+								aria-label="Show it in 3D, to scale" onclick={() => (shown = item.images.length)}>
+								<img src={item.images[0]} alt="" loading="lazy" />
+								<span>3D</span>
+							</button>
+						{/if}
 					</div>
 				{/if}
 			{:else}
@@ -119,6 +137,13 @@
 	}
 	.thumb.active { border-color: var(--red); }
 	.thumb img { width: 100%; height: 100%; object-fit: contain; }
+	.main.three { cursor: default; padding: 0.5rem; }
+	.three-thumb { position: relative; perspective: 120px; }
+	.three-thumb img { transform: rotateY(-28deg) scale(0.85); }
+	.three-thumb span {
+		position: absolute; right: 0.2rem; bottom: 0.2rem; background: var(--red); color: white;
+		font-size: 0.65rem; font-weight: 800; padding: 0.05rem 0.3rem; border-radius: 4px;
+	}
 	.info h1 { margin-bottom: 0.5rem; }
 	.description { white-space: pre-line; line-height: 1.5; }
 	.facts { padding-left: 1.1rem; line-height: 1.6; }

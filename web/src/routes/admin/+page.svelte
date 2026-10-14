@@ -197,6 +197,15 @@
 						<td>
 							<label class="row"><input type="checkbox" style="width: auto" bind:checked={it.visible} /> Visible</label>
 							<label>Sort order <input type="number" bind:value={it.sort_order} /></label>
+							<label>Printed size, inches (for the 3D preview)
+								<span class="row size">
+									<input type="number" min="0" step="0.25" placeholder="W" aria-label="Width in inches" value={it.width_in ?? ''}
+										oninput={(e) => (it.width_in = e.currentTarget.value === '' ? null : +e.currentTarget.value)} />
+									×
+									<input type="number" min="0" step="0.25" placeholder="H" aria-label="Height in inches" value={it.height_in ?? ''}
+										oninput={(e) => (it.height_in = e.currentTarget.value === '' ? null : +e.currentTarget.value)} />
+								</span>
+							</label>
 						</td>
 						<td><button onclick={() => saveItem(it)}>Save</button></td>
 					</tr>
@@ -270,4 +279,6 @@
 		border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 0.8rem; text-align: center;
 	}
 	.add-image.busy { cursor: progress; }
+	.size { flex-wrap: nowrap; font-weight: 400; }
+	.size input { width: 4.5rem; }
 </style>

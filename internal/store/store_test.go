@@ -145,6 +145,13 @@ func TestItemImages(t *testing.T) {
 		t.Fatalf("listed images = %v", listed[0].Images)
 	}
 
+	w, h := 11.0, 17.0
+	it.WidthIn, it.HeightIn = &w, &h
+	upd, err = s.UpdateItem(ctx, it)
+	if err != nil || upd.WidthIn == nil || *upd.WidthIn != 11 || *upd.HeightIn != 17 {
+		t.Fatalf("UpdateItem size = %v x %v, %v", upd.WidthIn, upd.HeightIn, err)
+	}
+
 	if _, err := s.AddItemImage(ctx, 999, "https://cdn.example/x.jpg"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing item err = %v", err)
 	}

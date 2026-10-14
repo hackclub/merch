@@ -577,6 +577,30 @@ func TestItemImagesMustBeHTTPURLs(t *testing.T) {
 	}
 }
 
+func TestItemSizeMustBeWholeAndPlausible(t *testing.T) {
+	h := newHarness(t)
+	admin := h.client(adminEmail)
+	it := h.mkItem("Pri/A", true)
+	path := fmt.Sprintf("/api/admin/items/%d", it.ID)
+	f := func(v float64) *float64 { return &v }
+
+	for _, bad := range [][2]*float64{{f(11), nil}, {nil, f(17)}, {f(0), f(17)}, {f(11), f(-1)}, {f(500), f(17)}} {
+		it.WidthIn, it.HeightIn = bad[0], bad[1]
+		if code := h.do(admin, "PUT", path, it, nil); code != 422 {
+			t.Errorf("size %v x %v = %d, want 422", bad[0], bad[1], code)
+		}
+	}
+	it.WidthIn, it.HeightIn = f(4), f(6)
+	var upd swag.Item
+	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || *upd.WidthIn != 4 || *upd.HeightIn != 6 {
+		t.Fatalf("good size = %d %+v", code, upd)
+	}
+	it.WidthIn, it.HeightIn = nil, nil
+	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || upd.WidthIn != nil {
+		t.Fatalf("clearing size = %d %+v", code, upd)
+	}
+}
+
 func TestImageUploadsNeedCDNConfigured(t *testing.T) {
 	h := newHarness(t)
 	h.srv.Config.Handler = New(Deps{Config: h.cfg, Store: h.store, Provider: fakeProvider{}, Authors: authors.Static{}, Warehouse: h.wh})

@@ -623,6 +623,10 @@ func validItem(it swag.Item) string {
 		return "max_per_request must be at least 1"
 	case it.MaxPerUser != nil && *it.MaxPerUser < 0:
 		return "max_per_user can't be negative"
+	case (it.WidthIn == nil) != (it.HeightIn == nil):
+		return "set both width_in and height_in, or neither"
+	case it.WidthIn != nil && !(*it.WidthIn > 0 && *it.WidthIn <= 120 && *it.HeightIn > 0 && *it.HeightIn <= 120):
+		return "size must be between 0 and 120 inches"
 	}
 	for _, u := range it.Images {
 		if !isHTTPURL(u) {
