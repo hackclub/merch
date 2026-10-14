@@ -5,8 +5,18 @@
 Hack Club's swag and warehouse app. It has a Go backend (`cmd/`, `internal/`), a SvelteKit PWA
 (`web/`), and Postgres. Physical fulfillment goes through the mail.hackclub.com warehouse API.
 
-**This repo is public.** Never commit secrets, `.env` files, tokens, or real addresses.
-Secrets live in env vars only.
+**This repo is public (github.com/hackclub/merch), and git history is permanent.** Everything
+you commit or push is world-readable: code, tests, fixtures, migrations, commit messages, and
+this file. Secrets live in env vars only. Never commit:
+- secrets: `.env` files, API keys, tokens, signed URLs (`?signature=…`), cookies;
+- personal data: real people's names, emails, phone numbers, addresses, Slack IDs or messages,
+  photos of people, or rows from the DB, Airtable, Fillout, or Zenventory exports. Tests use
+  made-up people (`orpheus@hackclub.com`, `a@x.com`);
+- internal money details: Stripe links, HCB or expense codes, per-person payments.
+
+Item data that came from private sources (photos people posted, Slack credits) goes in the DB
+through the app, not into migrations or seed files. Before every commit, read `git diff
+--cached`. If something private was pushed, tell Zach; don't try to rewrite `main`.
 
 ## The three user flows
 
@@ -68,13 +78,15 @@ make test      # go test ./... + vitest   (make test-go / make test-web)
 make check     # gofmt, go vet, svelte-check
 make dev       # Go server :8080 + Vite :5173 (proxies /api, /auth) — http://localhost:5173,
                # or http://porygon:5173 from other tailnet machines (Zach browses from crobat)
+               # Only from the main worktree. See "Sharing porygon with other agents".
 make server    # Go server only; serves web/build if built (make web)
 make docker    # production image
 ```
 
 One Postgres container serves every worktree. Each test gets its own database, so parallel
-worktrees don't collide. If Docker is down on porygon, OrbStack is the runtime (`orb start`).
-Its data dir must be on the internal disk. See "Gotchas".
+worktrees don't collide in `make test`. The dev database (`mailroom`) is shared, though. See
+below. If Docker is down on porygon, OrbStack is the runtime (`orb start`). Its data dir must be
+on the internal disk. See "Gotchas".
 
 ## Config: 12-factor, one shared `.env`
 
@@ -88,12 +100,27 @@ Its data dir must be on the internal disk. See "Gotchas".
 
 ## Landing work on main (worktrees)
 
-Sessions often start in a paseo worktree on a throwaway branch. By default, finished work
-**lands on `main`**:
+Several agents usually work here at once, each in its own paseo worktree
+(`~/.paseo/worktrees/…`) on a throwaway branch. Main moves every few minutes. On 2026-10-14,
+five sessions landed seven commits in 90 minutes, and at least one rebase hit conflicts.
+**Finished work lands on `main`. A task is not done until it's pushed.** Don't stop at "ready to
+merge", and don't leave changes uncommitted in a worktree. The next agent can't see them, and
+Zach won't find them.
+
+Start every task by syncing, because worktrees are often created from an old commit:
+
+```sh
+git fetch origin && git rebase origin/main   # before you read or change code
+```
+
+Land in small slices, as soon as each one is green. Don't save up one big change. A long
+session with several asks (for example "give me a link" → product pages → 3D preview) should
+land after each ask:
 
 ```sh
 make check test                      # green first
-git add -A && git commit             # small, descriptive commits
+git add -A && git diff --cached      # review: only your files, nothing private (public repo)
+git commit                           # small, descriptive commits
 git fetch origin
 git rebase origin/main               # other agents may have landed work; rebase, don't merge
 make check test                      # re-verify after the rebase
@@ -102,8 +129,53 @@ git push origin HEAD:main            # land it
 git -C "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" pull --ff-only
 ```
 
-If `git push` is rejected because main moved, fetch, rebase, re-test, and push again. Never
-force-push `main`. If a migration filename collides with one that just landed, renumber yours.
+- If `git push` is rejected because main moved, fetch, rebase, re-test, and push again. Never
+  force-push `main`, and never `git push --force` anywhere.
+- When a rebase conflicts, read what landed (`git log -p ORIG_HEAD..origin/main -- <file>`)
+  and keep both changes. Never resolve with `--ours`/`--theirs` across a whole file, and never
+  revert another agent's landed work to make yours fit. If the two designs really conflict,
+  build on the landed one and tell Zach.
+- **Migrations:** pick your number at landing time, not when you start. After the rebase, check
+  `ls internal/db/migrations`. If someone landed the same number, `git mv` yours to the next
+  free number before you push. (On 2026-10-14, two branches both wrote `00007_*`.)
+- Hot files (`internal/httpapi/httpapi.go`, `internal/store/store.go`, `web/src/lib/types.ts`,
+  and this file) change in almost every task. Keep your edits there small and local: add new
+  functions, don't reorder or reformat code you didn't need to touch.
+- `git add -A` stages everything in *your* worktree, so check `git status` for stray files
+  (screenshots, exports, scratch scripts) first.
+- After you land, check that `git log origin/main` contains your commit, and give its hash in
+  your final reply.
+
+## Sharing porygon with other agents
+
+Every agent runs on the same machine, Postgres container, and ports.
+
+- **Ports:** `:8080` (Go) and `:5173` (Vite) are the shared dev server that Zach opens at
+  http://porygon:5173. Run it only from the main worktree (`~/dev/hackclub/merch`) on
+  up-to-date `main`. After you land, restart it there so Zach sees your work. If it's
+  already running, check its cwd first (`lsof -a -p <pid> -d cwd`).
+- **To try your branch before landing**, use your own ports. Pick a free one (`lsof -i :8081`)
+  and run:
+  `bash -c 'set -a; . "$(scripts/env-file)"; set +a; PORT=8081 go run ./cmd/server'`, then
+  `cd web && BACKEND_URL=http://localhost:8081 npx vite dev --port 5174`. Hack Club Auth
+  sign-in only redirects to `:5173`, so test signed-in flows on the shared server after you
+  land, or use the httpapi tests.
+- **Never kill a process you didn't start.** No `pkill -f server`, `pkill node`, or
+  `killall`. Kill by the PID you started, or check a process's cwd before you stop it. (A broad
+  `pkill` once took down another worktree's dev server.) If the shared server dies, restart it
+  from the main worktree, not from yours.
+- **The dev DB (`mailroom` on :54329) is shared, and so is its goose version table.** If you
+  start the server from a branch with an unlanded migration, that migration runs against
+  everyone's DB. If another branch then lands a different migration with the same number,
+  goose silently skips it on dev. So land a migration before you run it against `mailroom`.
+  If you need it applied first, use a scratch DB:
+  `docker exec merch-postgres-1 createdb -U mailroom merch_<branch>`. Set
+  `DATABASE_URL=postgres://mailroom:mailroom@127.0.0.1:54329/merch_<branch>?sslmode=disable`
+  after the `. env-file` in the command above, and `dropdb` it when you're done.
+- Data changes in the dev DB (making items visible, adding images) are visible to every agent
+  and to Zach. Make them through the app or store code, and mention them in your reply.
+- Use the git stash only with a unique message (the stash is shared across worktrees). A WIP
+  commit is better.
 
 ## Importing historical requests (Fillout → Airtable era)
 
