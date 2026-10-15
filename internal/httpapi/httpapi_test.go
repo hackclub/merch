@@ -510,8 +510,11 @@ func TestClubOnlyItemsArentForPersonalRequests(t *testing.T) {
 	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": lines}, &errBody); code != 422 || !strings.Contains(errBody["error"], "clubs and events") {
 		t.Fatalf("personal = %d %v", code, errBody)
 	}
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "club", "address": usAddr, "lines": lines}, &errBody); code != 422 || !strings.Contains(errBody["error"], "how you'll use it") {
+		t.Fatalf("club without a reason = %d %v", code, errBody)
+	}
 	var r store.Request
-	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "club", "address": usAddr, "lines": lines}, &r); code != 201 || r.Purpose != swag.PurposeClub {
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "club", "note": "Handing them out at our club fair.", "address": usAddr, "lines": lines}, &r); code != 201 || r.Purpose != swag.PurposeClub {
 		t.Fatalf("club = %d %+v", code, r)
 	}
 }

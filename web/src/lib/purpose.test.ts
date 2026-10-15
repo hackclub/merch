@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { itemsFor, offered, parsePurpose, PURPOSES, purposeLabel } from './purpose';
+import { itemsFor, needsReason, offered, parsePurpose, PURPOSES, purposeLabel } from './purpose';
 import type { Item } from './types';
 
 const base: Item = { id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false };
@@ -8,6 +8,14 @@ const shirt: Item = { ...base, id: 2, sku: 'Swa/Shirt/HC', name: 'T-shirt', club
 describe('purpose', () => {
 	it('asks the three kinds of request, personal first', () => {
 		expect(PURPOSES.map((p) => p.value)).toEqual(['personal', 'club', 'event']);
+	});
+
+	it('asks clubs and events, not personal requests, how they will use it', () => {
+		expect(needsReason('personal')).toBe(false);
+		expect(needsReason('club')).toBe(true);
+		expect(needsReason('event')).toBe(true);
+		expect(PURPOSES.find((p) => p.value === 'personal')?.reason).toBe('');
+		for (const p of PURPOSES.filter((p) => p.value !== 'personal')) expect(p.reason).toMatch(/1–2 sentences/);
 	});
 
 	it('leaves club-only items out of personal requests', () => {

@@ -74,6 +74,8 @@ func TestValidateErrors(t *testing.T) {
 		{"cooldown", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}}, LastRequestAt: &last, Now: now}, ErrCooldown},
 		{"no purpose", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: "none", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrBadPurpose},
 		{"unknown purpose", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: "resale", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrBadPurpose},
+		{"club request without a reason", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposeClub, Reason: "  ", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrNoReason},
+		{"event request without a reason", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposeEvent, Reason: "none", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrNoReason},
 		{"club-only item for personal use", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposePersonal, Lines: []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}}, ErrUnknownItem},
 	}
 	for _, tc := range cases {
@@ -87,6 +89,12 @@ func TestValidateErrors(t *testing.T) {
 			case "none":
 				tc.in.Purpose = ""
 			}
+			switch tc.in.Reason {
+			case "":
+				tc.in.Reason = "Our club fair on Friday."
+			case "none":
+				tc.in.Reason = ""
+			}
 			err := Validate(tc.in)
 			if !errors.Is(err, tc.want) {
 				t.Fatalf("err = %v, want %v", err, tc.want)
@@ -95,7 +103,7 @@ func TestValidateErrors(t *testing.T) {
 	}
 
 	t.Run("cooldown elapsed", func(t *testing.T) {
-		err := Validate(ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposeEvent, Lines: []Line{{ItemID: 1, Quantity: 1}}, LastRequestAt: &oldEnough, Now: now})
+		err := Validate(ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposeEvent, Reason: "Exhibiting at a maker faire, ~500 people.", Lines: []Line{{ItemID: 1, Quantity: 1}}, LastRequestAt: &oldEnough, Now: now})
 		if err != nil {
 			t.Fatalf("err = %v", err)
 		}
@@ -107,6 +115,7 @@ func TestValidateVariants(t *testing.T) {
 		Settings: settings(),
 		Catalog:  catalog(),
 		Purpose:  PurposeClub,
+		Reason:   "Shirts for our club officers.",
 		Lines:    []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}, {ItemID: 1, Quantity: 1, SKU: "Sti/Pck/1"}},
 		Now:      now,
 	})

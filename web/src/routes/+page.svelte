@@ -6,7 +6,7 @@
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartCosts, cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
 	import { formatUnitCost, itemPath, preview3D, previewCount, thumbnail } from '$lib/items';
-	import { itemsFor, PURPOSES } from '$lib/purpose';
+	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { session } from '$lib/session.svelte';
 	import SizePicker from '$lib/SizePicker.svelte';
 	import Stepper from '$lib/Stepper.svelte';
@@ -188,8 +188,12 @@
 				<label>Phone {intl ? '(required for customs)' : '(optional)'}
 					<input required={intl} bind:value={address.phone_number} autocomplete="tel" /></label>
 			</div>
-			<label style="margin-top: 0.75rem">{purposeInfo?.note ?? 'Anything we should know?'}
-				<textarea bind:value={note} rows="2" required={purpose !== 'personal'}></textarea></label>
+			{#if needsReason(purpose)}
+				<label style="margin-top: 0.75rem">{purposeInfo?.reason}
+					<textarea bind:value={note} rows="3" required placeholder={purposeInfo?.example}></textarea></label>
+			{:else}
+				<label style="margin-top: 0.75rem">Anything we should know? (optional) <textarea bind:value={note} rows="2"></textarea></label>
+			{/if}
 			{#if intl && catalog.settings.international_shipping_fee_cents > 0}
 				<p>
 					International shipping is <strong>{formatCents(catalog.settings.international_shipping_fee_cents)}</strong>.

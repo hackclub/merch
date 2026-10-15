@@ -1,11 +1,23 @@
 import type { Item, Purpose } from './types';
 
-/** What a request is for. The request form asks this first, like the old Fillout forms. Mirrors swag.Purposes. */
-export const PURPOSES: { value: Purpose; label: string; short: string; note: string }[] = [
-	{ value: 'personal', label: 'I just want some stuff personally / to share with my friends', short: 'Personal', note: 'Anything we should know?' },
-	{ value: 'club', label: 'I run a Hack Club', short: 'Hack Club', note: 'Which club is it, and how will you use this?' },
-	{ value: 'event', label: 'I am running an event or exhibiting at one', short: 'Event', note: 'Which event, when, and about how many people?' }
+/** What a request is for. The request form asks this first, like the old Fillout forms. Mirrors swag.Purposes.
+ * Clubs and events say how they'll use it (reason, with an example); personal requests don't. */
+export const PURPOSES: { value: Purpose; label: string; short: string; reason: string; example: string }[] = [
+	{ value: 'personal', label: 'I just want some stuff personally / to share with my friends', short: 'Personal', reason: '', example: '' },
+	{
+		value: 'club', label: 'I run a Hack Club', short: 'Hack Club',
+		reason: 'In 1–2 sentences, how will you use it?',
+		example: 'e.g. Handing out stickers and mini-magazines at our school club fair on Sept 12.'
+	},
+	{
+		value: 'event', label: 'I am running an event or exhibiting at one', short: 'Event',
+		reason: 'In 1–2 sentences, how will you use it? Link the event, and if you are running it, say how many people you expect.',
+		example: 'e.g. Running https://example-hacks.dev on Nov 8, about 120 hackers expected.'
+	}
 ];
+
+/** Club and event requests must say how they'll use what they ask for. Mirrors swag.ErrNoReason. */
+export const needsReason = (purpose: Purpose | ''): boolean => purpose === 'club' || purpose === 'event';
 
 /** Club-only items (the full-size magazine, the T-shirt) aren't offered for personal requests. Mirrors Item.Offered. */
 export const offered = (item: Item, purpose: Purpose | ''): boolean => purpose !== 'personal' || !item.club_only;

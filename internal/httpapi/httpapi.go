@@ -502,7 +502,7 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 		UserID: v.user.ID, Address: body.Address, Purpose: body.Purpose, Lines: body.Lines, Status: status, ShippingFeeCents: fee, Note: body.Note,
 	}, func(prior map[int64]int, last *time.Time) error {
 		return swag.Validate(swag.ValidateInput{
-			Settings: st, Catalog: cat, Purpose: body.Purpose, Lines: body.Lines, PriorQuantities: prior, LastRequestAt: last, Now: s.Now(),
+			Settings: st, Catalog: cat, Purpose: body.Purpose, Reason: body.Note, Lines: body.Lines, PriorQuantities: prior, LastRequestAt: last, Now: s.Now(),
 		})
 	})
 	if err != nil {
@@ -518,7 +518,7 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 
 func isRuleErr(err error) bool {
 	for _, e := range []error{swag.ErrRequestsClosed, swag.ErrNoItems, swag.ErrBadQuantity, swag.ErrUnknownItem,
-		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrTooManyItems, swag.ErrCooldown, swag.ErrBadAddress, swag.ErrBadPurpose} {
+		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrTooManyItems, swag.ErrCooldown, swag.ErrBadAddress, swag.ErrBadPurpose, swag.ErrNoReason} {
 		if errors.Is(err, e) {
 			return true
 		}

@@ -150,13 +150,17 @@ var (
 	ErrCooldown       = errors.New("you requested swag recently; try again later")
 	ErrBadAddress     = errors.New("invalid address")
 	ErrBadPurpose     = errors.New("say what the request is for")
+	ErrNoReason       = errors.New("tell us in a sentence or two how you'll use it")
 )
 
 type ValidateInput struct {
 	Settings Settings
 	Catalog  map[int64]Item
 	Purpose  Purpose
-	Lines    []Line
+	// Reason is how a club or event will use what it asks for (the request's
+	// note); personal requests don't need one.
+	Reason string
+	Lines  []Line
 	// PriorQuantities is how many of each item the user has already received
 	// or has in flight (non-rejected, non-cancelled requests).
 	PriorQuantities map[int64]int
@@ -171,6 +175,9 @@ func Validate(in ValidateInput) error {
 	}
 	if !Purposes[in.Purpose] {
 		return ErrBadPurpose
+	}
+	if in.Purpose != PurposePersonal && strings.TrimSpace(in.Reason) == "" {
+		return ErrNoReason
 	}
 	if len(in.Lines) == 0 {
 		return ErrNoItems
