@@ -29,7 +29,14 @@ describe('piles', () => {
 
 	it('gives postcards card-stock thickness when none is set', () => {
 		const card: Item = { ...base, id: 5, name: 'Postcard', width_in: 6, height_in: 4, thickness_in: null, packs: 'postcard' };
-		expect(piles([{ item: card, quantity: 100 }])[0].height).toBeCloseTo(1.4);
+		expect(piles([{ item: card, quantity: 25 }])[0].height).toBeCloseTo(0.35);
+	});
+
+	it('splits postcards into banded bundles of 50, as they ship', () => {
+		const card: Item = { ...base, id: 6, name: 'Postcard', width_in: 6, height_in: 4, thickness_in: 0.014, packs: 'postcard' };
+		const out = piles([{ item: card, quantity: 100 }]);
+		expect(out.map((p) => [+p.height.toFixed(3), p.band])).toEqual([[0.7, true], [0.7, true]]);
+		expect(piles([{ item: card, quantity: 25 }]).map((p) => !!p.band)).toEqual([false]);
 	});
 
 	it('treats an unmeasured sticker as a 3 in sticker, not a box', () => {

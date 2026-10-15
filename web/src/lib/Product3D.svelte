@@ -12,10 +12,12 @@
 	import { packLabel } from './stickers';
 	import type { Viewer, ViewerOptions } from './paper3d';
 	import type { StickerOptions, StickerViewer } from './sticker3d';
+	import type { PostcardOptions } from './postcard3d';
+	import { postcardLabel } from './postcards';
 
 	// count: how many stickers are requested; the sticker view grows to match.
 	// book: a booklet's pages, which open and flip through.
-	let { opts, name, count = 0, book }: { opts: ViewerOptions | StickerOptions; name: string; count?: number; book?: BookOptions } =
+	let { opts, name, count = 0, book }: { opts: ViewerOptions | StickerOptions | PostcardOptions; name: string; count?: number; book?: BookOptions } =
 		$props();
 
 	let canvas = $state<HTMLCanvasElement>();
@@ -44,7 +46,11 @@
 
 	const finish = $derived('finish' in opts ? finishInfo(opts.finish).label : '');
 	const label = $derived(
-		'kind' in opts ? packLabel(count) : `${sizeLabel(opts.widthIn, opts.heightIn)}${finish ? ` · ${finish}` : ''}`
+		!('kind' in opts)
+			? `${sizeLabel(opts.widthIn, opts.heightIn)}${finish ? ` · ${finish}` : ''}`
+			: opts.kind === 'postcards'
+				? `${postcardLabel(count)} · ${sizeLabel(opts.widthIn, opts.heightIn)}`
+				: packLabel(count)
 	);
 	$effect(() => {
 		const n = count;
@@ -70,6 +76,12 @@
 
 		const load = book
 			? import('./book3d').then((m) => m.createBookViewer(canvas!, book, () => (ready = true)))
+			: 'kind' in opts && opts.kind === 'postcards'
+				? import('./postcard3d').then((m) => {
+						const v = m.createPostcardViewer(canvas!, opts as PostcardOptions, () => (ready = true));
+						v.setCount(count);
+						return v as Viewer;
+					})
 			: 'kind' in opts
 				? import('./sticker3d').then((m) => {
 						const v = m.createStickerViewer(canvas!, opts as StickerOptions, () => (ready = true));
@@ -248,7 +260,8 @@
 			{/if}
 		{:else}
 			<span class="muted">{label} · drag to turn</span>
-			{#if 'back' in opts && opts.back && !failed}
+			<!-- A stack of postcards only shows its top card, so there's no back to show. -->
+			{#if 'back' in opts && opts.back && !('kind' in opts) && !failed}
 				<button type="button" class="secondary small" onclick={flip}>{showingBack ? 'Show front' : 'Show back'}</button>
 			{/if}
 		{/if}

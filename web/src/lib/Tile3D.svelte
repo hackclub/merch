@@ -80,6 +80,12 @@
 		const load =
 			'book' in preview
 				? import('./book3d').then((m) => m.createBookViewer(el, (preview as { book: never }).book, () => ((ready = true), (drawn = false))) as Viewer)
+				: 'postcards' in preview
+					? import('./postcard3d').then((m) => {
+							const v = m.createPostcardViewer(el, (preview as { postcards: never }).postcards, () => ((ready = true), (drawn = false)));
+							v.setCount(count);
+							return v as Viewer;
+						})
 				: 'stickers' in preview
 					? import('./sticker3d').then((m) => {
 							const v = m.createStickerViewer(el, (preview as { stickers: never }).stickers, () => ((ready = true), (drawn = false)));

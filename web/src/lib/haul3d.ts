@@ -3,7 +3,7 @@
 // Units are inches.
 import * as THREE from 'three';
 import type { layoutHaul } from './haul';
-import { createPhone, createStage, loadArt, paperEdge } from './paper3d';
+import { createPhone, createStage, loadArt, paperBand, paperEdge } from './paper3d';
 
 export type HaulViewer = {
 	/** Turn of the whole table, radians. */
@@ -46,6 +46,7 @@ export function createHaulViewer(canvas: HTMLCanvasElement, table: ReturnType<ty
 		pile.position.set(p.x, h / 2, p.z);
 		pile.castShadow = true;
 		group.add(pile);
+		if (p.band) group.add(paperBand(p.w, h, p.d, p.x, p.z));
 	}
 	if (pending === 0) queueMicrotask(onReady);
 

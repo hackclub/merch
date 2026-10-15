@@ -5,7 +5,7 @@
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
 	import { pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
 	import { itemsFor, offered } from '$lib/purpose';
-	import { isBooklet, itemIdFromParam, itemPath, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
+	import { isBooklet, itemIdFromParam, itemPath, postcardOptions, previewCount, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
 	import type { BookOptions } from '$lib/book3d';
 	import { sheetThickness, finishInfo } from '$lib/paper';
 	import Product3D from '$lib/Product3D.svelte';
@@ -95,7 +95,9 @@
 				{#if shown === '3d'}
 					<div class="main three">
 						{#key item.id}
-							{#if isSticker}
+							{#if item.packs === 'postcard' && item.images.length}
+								<Product3D name={item.name} count={previewCount(item, inCart)} opts={postcardOptions(item, true)} />
+							{:else if isSticker}
 								<Product3D name={item.name} count={inCart}
 									opts={{ kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in }} />
 							{:else}

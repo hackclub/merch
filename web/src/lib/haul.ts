@@ -3,6 +3,7 @@
 // phone for scale. haul3d.ts draws it; this is the geometry, kept pure for tests.
 import { isBooklet, thumbnail } from './items';
 import { sheetThickness } from './paper';
+import { CARD_IN, PER_BUNDLE } from './postcards';
 import { PHONE } from './scale';
 import { STICKER_THICKNESS_IN } from './stickers';
 import type { Item } from './types';
@@ -16,6 +17,7 @@ export type Pile = {
 	w: number; // footprint, left to right
 	d: number; // footprint, front to back
 	height: number; // the whole stack
+	band?: boolean; // a printer's bundle, with a paper band around it
 };
 
 // A folded T-shirt, roughly.
@@ -24,32 +26,45 @@ const SHIRT = { w: 9.5, d: 12, t: 1.2 };
 const STICKER = { w: 3, d: 3 };
 // Something we have no measurements for: a small box.
 const UNKNOWN = { w: 6, d: 6, t: 1 };
-// Postcards without a measured thickness: 14 pt card stock.
-const CARD_IN = 0.014;
 // Booklets without a measured thickness: about 0.1 mm a page.
 const PAGE_IN = 0.004;
 
 export function piles(lines: HaulLine[]): Pile[] {
 	return lines
 		.filter((l) => l.quantity > 0)
-		.map(({ item, quantity, size }) => {
-			const label = `${quantity} × ${item.name}${size ? ` (${size})` : ''}`;
-			const key = `${item.id}:${size ?? ''}`;
-			const art = thumbnail(item);
-			if (item.width_in != null && item.height_in != null) {
-				const unit = isBooklet(item)
-					? (item.thickness_in ?? item.pages.length * PAGE_IN)
-					: item.packs === 'sticker'
-						? STICKER_THICKNESS_IN
-						: item.packs === 'postcard'
-							? (item.thickness_in ?? CARD_IN)
-							: sheetThickness(item);
-				return { key, label, art, w: item.width_in, d: item.height_in, height: unit * quantity };
+		.flatMap((line): Pile[] => {
+			const { item, quantity } = line;
+			// Postcards ship in banded bundles of 50: one pile each, then the rest loose.
+			if (item.packs === 'postcard' && quantity >= PER_BUNDLE) {
+				const one = pileOf({ ...line, quantity: PER_BUNDLE });
+				const bundles = Array.from({ length: Math.floor(quantity / PER_BUNDLE) }, (_, n) => ({ ...one, key: `${one.key}:${n}`, band: true }));
+				const rest = quantity % PER_BUNDLE;
+				return rest ? [...bundles, { ...pileOf({ ...line, quantity: rest }), key: `${one.key}:rest` }] : bundles;
 			}
-			if (item.packs === 'sticker') return { key, label, art, w: STICKER.w, d: STICKER.d, height: STICKER_THICKNESS_IN * quantity };
-			const box = item.variants.length ? SHIRT : UNKNOWN;
-			return { key, label, art, w: box.w, d: box.d, height: box.t * quantity };
+			return [pileOf(line)];
 		});
+}
+
+/** "3 × Poster (M)" for a line of the request. */
+export const lineLabel = ({ item, quantity, size }: HaulLine) => `${quantity} × ${item.name}${size ? ` (${size})` : ''}`;
+
+function pileOf({ item, quantity, size }: HaulLine): Pile {
+	const label = lineLabel({ item, quantity, size });
+	const key = `${item.id}:${size ?? ''}`;
+	const art = thumbnail(item);
+	if (item.width_in != null && item.height_in != null) {
+		const unit = isBooklet(item)
+			? (item.thickness_in ?? item.pages.length * PAGE_IN)
+			: item.packs === 'sticker'
+				? STICKER_THICKNESS_IN
+				: item.packs === 'postcard'
+					? (item.thickness_in ?? CARD_IN)
+					: sheetThickness(item);
+		return { key, label, art, w: item.width_in, d: item.height_in, height: unit * quantity };
+	}
+	if (item.packs === 'sticker') return { key, label, art, w: STICKER.w, d: STICKER.d, height: STICKER_THICKNESS_IN * quantity };
+	const box = item.variants.length ? SHIRT : UNKNOWN;
+	return { key, label, art, w: box.w, d: box.d, height: box.t * quantity };
 }
 
 export type Placed = Pile & { x: number; z: number }; // centre of the footprint on the table

@@ -2,6 +2,7 @@ import type { BookOptions } from './book3d';
 import { sheetThickness } from './paper';
 import type { ViewerOptions } from './paper3d';
 import { hasSize } from './scale';
+import type { PostcardOptions } from './postcard3d';
 import type { StickerOptions } from './sticker3d';
 import { PER_BAG } from './stickers';
 import type { Item, ItemStock } from './types';
@@ -33,7 +34,8 @@ export type TilePreview =
 	| { clip: string } // a looping video or GIF of the real thing
 	| { book: BookOptions } // a booklet that flips through its pages
 	| { sheet: ViewerOptions } // a sized print, front and back
-	| { stickers: StickerOptions };
+	| { stickers: StickerOptions }
+	| { postcards: PostcardOptions }; // a stack, or bundles of 50
 
 /**
  * A tile's preview, on its own (no phone): the item's clip if it has one, a
@@ -47,6 +49,9 @@ export function tilePreview(item: Item): TilePreview | null {
 			: null;
 	}
 	if (!hasSize(item)) return null;
+	if (item.packs === 'postcard' && item.images.length) {
+		return { postcards: postcardOptions(item) };
+	}
 	if (isBooklet(item)) {
 		return {
 			book: {
@@ -65,9 +70,18 @@ export function tilePreview(item: Item): TilePreview | null {
 	};
 }
 
-/** How many the grid shows: stickers come in sealed bags of 50, so show one until you pick a quantity. */
+/** The postcard view's options for a sized postcard item, no phone (the product page adds one). */
+export const postcardOptions = (item: Item, phone = false): PostcardOptions => ({
+	kind: 'postcards', front: item.images[0], back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
+	thicknessIn: item.thickness_in, finish: item.finish, phone
+});
+
+/**
+ * How many the 3D views show: stickers come in sealed bags of 50, so show one
+ * until you pick a quantity; postcards show the smallest pack (5).
+ */
 export const previewCount = (item: Item, inCart: number): number =>
-	item.packs === 'sticker' && inCart <= 0 ? PER_BAG : inCart;
+	inCart > 0 ? inCart : item.packs === 'sticker' ? PER_BAG : item.packs === 'postcard' ? 5 : inCart;
 
 /** Page files in the order people number them: page-2 before page-10. */
 export const byFilename = <T extends { name: string }>(files: Iterable<T>): T[] =>

@@ -2,7 +2,7 @@
 	// Everything in the request, to scale, on a table next to a phone (haul.ts,
 	// haul3d.ts). It sways gently; drag to turn it. Rebuilt when the bag changes.
 	import { onMount, untrack } from 'svelte';
-	import { layoutHaul, piles, type HaulLine } from './haul';
+	import { layoutHaul, lineLabel, piles, type HaulLine } from './haul';
 	import type { HaulViewer } from './haul3d';
 
 	// table: lay it all out on 6-foot folding tables (for clubs and events), to show how much of one it fills.
@@ -92,7 +92,7 @@
 			{:else}Everything you're getting, to scale, next to a regular 6-inch phone.{/if}
 			Drag to turn it.
 		</span>
-		<span>{stack.map((p) => p.label).join(' · ')}</span>
+		<span>{lines.filter((l) => l.quantity > 0).map(lineLabel).join(' · ')}</span>
 	</figcaption>
 </figure>
 

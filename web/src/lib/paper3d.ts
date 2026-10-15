@@ -247,6 +247,18 @@ export function createSheet(opts: ViewerOptions, renderer: THREE.WebGLRenderer, 
 	return { pivot, dispose: () => surface.normal.dispose() };
 }
 
+/**
+ * The kraft paper band a printer wraps around a bundle (of 50 postcards, say):
+ * a strip around the middle of a w × h × d stack standing at (x, z) on the table.
+ */
+export function paperBand(w: number, h: number, d: number, x: number, z: number): THREE.Mesh {
+	const across = Math.min(1.25, d / 3);
+	const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.04, h + 0.02, across), new THREE.MeshStandardMaterial({ color: 0xc9a36b, roughness: 0.9 }));
+	band.position.set(x, h / 2, z);
+	band.castShadow = true;
+	return band;
+}
+
 /** Paper's core shows on the edges: a warm off-white. */
 export const paperEdge = () =>
 	new THREE.MeshStandardMaterial({ color: 0xf2eee6, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
