@@ -150,7 +150,8 @@ func (c *Client) Lookup(ctx context.Context, placeID, session string) (swag.Addr
 			a.Line2 = strings.Join(p.AddressLines[1:], ", ")
 		}
 		a.City = cmp(p.Locality, a.City)
-		a.State = cmp(p.AdministrativeArea, a.State)
+		// The component's short code ("VT"); postalAddress spells it out ("Vermont").
+		a.State = cmp(a.State, p.AdministrativeArea)
 		a.PostalCode = cmp(p.PostalCode, a.PostalCode)
 		a.Country = cmp(p.RegionCode, a.Country)
 	}

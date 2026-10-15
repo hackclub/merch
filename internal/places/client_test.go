@@ -57,7 +57,7 @@ func TestLookupUS(t *testing.T) {
 			{"longText":"Vermont","shortText":"VT","types":["administrative_area_level_1","political"]},
 			{"longText":"United States","shortText":"US","types":["country","political"]},
 			{"longText":"05482","shortText":"05482","types":["postal_code"]}
-		],"postalAddress":{"regionCode":"US","postalCode":"05482","administrativeArea":"VT","locality":"Shelburne","addressLines":["15 Falls Rd"]}}`))
+		],"postalAddress":{"regionCode":"US","postalCode":"05482","administrativeArea":"Vermont","locality":"Shelburne","addressLines":["15 Falls Rd"]}}`))
 	}))
 	defer srv.Close()
 
