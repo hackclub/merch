@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cartErrors, cartLines, emptyCart, packQuantities, parseCart, parseSizes, pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from './cart';
+import { cartErrors, cartLines, emptyCart, packQuantities, parseCart, presetQuantities, parseSizes, pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from './cart';
 import type { Item } from './types';
 
 const items: Item[] = [
@@ -165,5 +165,19 @@ describe('cart', () => {
 	it('labels a size by its SKU', () => {
 		expect(sizeLabel(items[2], 'Swa/Shirt/HC/M')).toBe('M');
 		expect(sizeLabel(items[2], undefined)).toBe('');
+	});
+});
+
+describe('presetQuantities', () => {
+	it('offers the first few pack sizes for items that come in packs', () => {
+		expect(presetQuantities(postcard)).toEqual([5, 10, 15, 20, 25, 50]);
+		expect(presetQuantities(sticker)).toEqual([3, 10, 50, 100, 150]);
+		expect(presetQuantities({ ...miniMag, max_per_request: 100 })).toEqual([5, 10, 15, 20, 25, 30]);
+	});
+
+	it('offers round counts up to the max for everything else', () => {
+		expect(presetQuantities(items[0])).toEqual([1, 2, 3]);
+		expect(presetQuantities({ ...items[0], max_per_request: 40 })).toEqual([1, 2, 3, 5, 10, 25]);
+		expect(presetQuantities(items[1])).toEqual([1]);
 	});
 });

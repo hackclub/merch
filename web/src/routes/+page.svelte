@@ -6,24 +6,25 @@
 	import AddressLine1 from '$lib/AddressLine1.svelte';
 	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
-	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
+	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
 	import { gallery, roughFee } from '$lib/gallery';
 	import { itemPath, previewCount, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
-	import Stepper from '$lib/Stepper.svelte';
+	import QuantityPicker from '$lib/QuantityPicker.svelte';
 	import Tile3D from '$lib/Tile3D.svelte';
 	import type { Address, Catalog, Item, Purpose, SwagRequest } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
 	// Prefilled from the person's Hack Club Auth address when they have one.
-	let address = $state<Address>(prefillAddress(blankAddress(), session.me?.user?.address));
+	const prefilled = prefillAddress(blankAddress(), session.me?.user?.address);
+	let address = $state<Address>(prefilled);
 	// A complete address folds into a "Ship to" summary. Editing shows the fields until they press "Use this address";
 	// `manual` shows every field instead of just the autocomplete search.
-	let editing = $state(!addressComplete(address));
-	let manual = $state(!!address.line_1.trim());
+	let editing = $state(!addressComplete(prefilled));
+	let manual = $state(!!prefilled.line_1.trim());
 	let note = $state('');
 	let understood = $state(false);
 	let error = $state('');
@@ -84,6 +85,14 @@
 
 	// The item whose details float beside the list while the pointer is over its row.
 	let peek = $state<number | null>(null);
+	// Items whose amounts are showing: "Add" opens them; removing the item closes them.
+	let picking = $state<Record<number, boolean>>({});
+	const expanded = (item: Item) => item.variants.length > 0 || !!picking[item.id] || !!cart[item.id];
+
+	function setAmount(item: Item, n: number) {
+		setCart(setQuantity(cart, item, n));
+		if (n === 0) picking[item.id] = false;
+	}
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -148,7 +157,7 @@
 				<h3 id="group-{section.key}">{section.title}</h3>
 				{#each tiles as { item } (item.id)}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div class="line" class:picked={cart[item.id]} class:sized={item.variants.length > 0}
+					<div class="line" class:picked={cart[item.id]} class:sized={open && expanded(item)}
 						onmouseenter={() => (peek = item.id)} onmouseleave={() => (peek = null)}>
 						<a href={itemPath(item)} class="thumb" class:sticker={item.packs === 'sticker'} tabindex="-1" aria-hidden="true">
 							{#if thumbnail(item)}<img src={thumbnail(item)} alt="" loading="lazy" />{/if}
@@ -161,11 +170,10 @@
 							<div class="add">
 								{#if item.variants.length}
 									<SizeSteppers {item} {sizes} onchange={(sku, n) => setSize(item, sku, n)} />
-								{:else if cart[item.id]}
-									<Stepper value={cart[item.id]} max={item.max_per_request} options={quantityOptions(item)} label="Quantity of {item.name}"
-										onchange={(n) => setCart(setQuantity(cart, item, n))} />
+								{:else if expanded(item)}
+									<QuantityPicker {item} value={cart[item.id] ?? 0} onchange={(n) => setAmount(item, n)} />
 								{:else}
-									<button type="button" class="secondary" onclick={() => setCart(setQuantity(cart, item, 1))}>Add</button>
+									<button type="button" class="secondary" onclick={() => (picking[item.id] = true)}>Add</button>
 								{/if}
 							</div>
 						{/if}

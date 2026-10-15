@@ -23,6 +23,12 @@ export function packQuantities(packs: string, max: number): number[] {
 export const quantityOptions = (item: Item): number[] | undefined =>
 	item.packs ? [0, ...packQuantities(item.packs, item.max_per_request)] : undefined;
 
+/** The quick-pick amounts shown after "Add": the first few pack sizes, or round counts up to the max. */
+export function presetQuantities(item: Item): number[] {
+	if (item.packs) return packQuantities(item.packs, item.max_per_request).slice(0, 6);
+	return [1, 2, 3, 5, 10, 25, 50, 100].filter((q) => q <= item.max_per_request);
+}
+
 /** Snaps a pack quantity to the largest allowed size not above it; below the smallest pack rounds up to it. */
 function snapPack(item: Item, q: number): number {
 	if (q <= 0) return 0;
