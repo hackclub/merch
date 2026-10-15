@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { api, ApiError, formatCents, isInternational } from '$lib/api';
 	import { addressComplete, addressSummary, blankAddress, prefillAddress } from '$lib/address';
@@ -69,13 +70,15 @@
 	const intl = $derived(isInternational(address.country));
 	// Two strips of everything under the intro: photos and products on top, magazine pages and backs below.
 	const rows = $derived(catalog ? galleryRows(catalog.items) : null);
-	// What's coming, line by line (one per size), for the 3D preview above Submit.
+	// What's coming, line by line (one per size), for the 3D preview: beside the sheet on wide screens, above Submit otherwise.
 	const haul = $derived(
 		cartLines(cart, shown, sizes).map((l) => {
 			const item = shown.find((i) => i.id === l.item_id)!;
 			return { item, quantity: l.quantity, size: l.sku ? sizeLabel(item, l.sku) : undefined };
 		})
 	);
+	// Wide enough for the haul to sit in the grey space left of the sheet, so it grows as people pick.
+	const side = new MediaQuery('min-width: 74rem');
 	const fee = $derived(catalog?.settings.international_shipping_fee_cents ?? 0);
 
 	// Re-quote shipping as the bag or country changes. The server refuses what won't pack together
@@ -273,7 +276,7 @@
 		{/each}
 
 		{#if !session.me?.user}
-			{#if haul.length}<div class="send"><Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} /></div>{/if}
+			{#if haul.length && !side.current}<div class="send"><Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} /></div>{/if}
 			<p id="request" class="send"><a class="button" href="/auth/login" data-sveltekit-reload
 				>{count ? `Sign in with Hack Club to send ${count} item${count === 1 ? '' : 's'}` : 'Sign in with Hack Club to request swag'}</a></p>
 		{:else if asking && !purpose}
@@ -337,7 +340,7 @@
 						<span>I understand, and I'll only request what I'll use.</span>
 					</label>
 				</div>
-				{#if haul.length}<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />{/if}
+				{#if haul.length && !side.current}<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />{/if}
 				{#if quote && arrivalText(quote.estimate)}<p>{arrivalText(quote.estimate)}, by {quote.estimate.service}.</p>{/if}
 				{#each problems as p}<p class="error">{p}</p>{/each}
 				{#if quoteError}<p class="error">{quoteError}</p>{/if}
@@ -348,6 +351,12 @@
 		{/if}
 	{:else if !error}
 		<p class="muted">Loading swag…</p>
+	{/if}
+	{#if catalog && haul.length && side.current}
+		<aside class="haul-side" aria-label="Your request so far">
+			<strong>Your request · {count} item{count === 1 ? '' : 's'}</strong>
+			<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
+		</aside>
 	{/if}
 </div>
 
@@ -430,6 +439,11 @@
 		.amount-3d { display: none; }
 		/* Once the 3D view or clip is up it replaces the photo. */
 		.peek-img:has(:global(.spin.ready)) > img { opacity: 0; }
+	}
+	/* The haul so far, pinned in the grey space left of the sheet (the hover details take the right). */
+	.haul-side {
+		position: fixed; z-index: 1; top: 6rem; right: calc(50% + 23.5rem); width: min(24rem, calc((100vw - 40rem) / 2 - 3.5rem));
+		max-height: calc(100vh - 7rem); overflow-y: auto; display: grid; gap: 0.6rem; padding: 1rem; background: white; font-size: 0.9rem; line-height: 1.45;
 	}
 	/* Picking how many of a booklet or an item that plays a clip: the amount, stacked up in 3D, under the row. */
 	.amount-3d { flex-basis: 100%; padding-left: 4.65rem; }
