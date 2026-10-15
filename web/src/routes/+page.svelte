@@ -183,9 +183,9 @@
 	.item p { margin: 0; font-size: 0.85rem; line-height: 1.4; }
 	.clamp { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 	.summary { width: 100%; max-width: 36rem; margin: 0 0 1rem; border-collapse: collapse; }
-	.summary td, .summary th { padding: 0.3rem 0; vertical-align: baseline; }
+	.summary td, .summary th { padding: 0.3rem 0; border: 0; vertical-align: baseline; }
 	.summary .num { padding-left: 1rem; text-align: right; white-space: nowrap; font-family: var(--mono); font-size: 0.8rem; }
 	.summary tfoot th { text-align: left; font-family: var(--mono); font-size: 0.72rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.02em; }
-	.summary tfoot tr:first-child > * { border-top: 1.5px solid var(--smoke); padding-top: 0.5rem; }
+	.summary tfoot tr:first-child th, .summary tfoot tr:first-child td { border-top: 1.5px solid var(--dark); padding-top: 0.5rem; }
 	#request { max-width: 56rem; }
 </style>
