@@ -333,9 +333,9 @@
 	.slide { display: block; flex: none; height: clamp(11rem, 26vw, 17rem); aspect-ratio: 4 / 5; background: var(--tile); }
 	.slide img { width: 100%; height: 100%; object-fit: contain; padding: 8%; box-sizing: border-box; mix-blend-mode: multiply; }
 	.slide.sticker img { mix-blend-mode: normal; }
-	/* Real-world photos fill their frame, wider, at full colour. */
-	.slide.real { aspect-ratio: 4 / 3; }
-	.slide.real img { object-fit: cover; padding: 0; mix-blend-mode: normal; }
+	/* Real-world photos show whole, uncropped: the frame takes the photo's own shape, at full colour. */
+	.slide.real { aspect-ratio: auto; }
+	.slide.real img { width: auto; height: 100%; padding: 0; mix-blend-mode: normal; }
 	.item { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 	.item-link { color: inherit; text-decoration: none; }
 	.tile { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 5; background: var(--tile); font-size: 3rem; }
