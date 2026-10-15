@@ -2,7 +2,7 @@
 	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api, ApiError, formatCents, isInternational } from '$lib/api';
-	import { blankAddress, prefillAddress } from '$lib/address';
+	import { addressComplete, addressSummary, blankAddress, prefillAddress } from '$lib/address';
 	import AddressLine1 from '$lib/AddressLine1.svelte';
 	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
@@ -19,6 +19,10 @@
 	let catalog = $state<Catalog | null>(null);
 	// Prefilled from the person's Hack Club Auth address when they have one.
 	let address = $state<Address>(prefillAddress(blankAddress(), session.me?.user?.address));
+	// A complete address folds into a "Ship to" summary. Editing shows the fields until they press "Use this address";
+	// `manual` shows every field instead of just the autocomplete search.
+	let editing = $state(!addressComplete(address));
+	let manual = $state(!!address.line_1.trim());
 	let note = $state('');
 	let understood = $state(false);
 	let error = $state('');
@@ -63,6 +67,12 @@
 		const listed = itemsFor(catalog.items, p);
 		setSizes(pruneSizes(sizes, listed));
 		setCart(pruneCart(cart, listed, bag.sizes));
+	}
+
+	function pickPlace(place: Address) {
+		address = applyPlace(address, place);
+		if (addressComplete(address)) editing = manual = false;
+		else manual = true;
 	}
 
 	function setSize(item: Item, sku: string, n: number) {
@@ -182,18 +192,39 @@
 		{:else if asking && totalQuantity(cart) > 0}
 			<form id="request" onsubmit={submit}>
 				<h2>Shipping info</h2>
-				<div class="form-grid">
-					<label>First name <input required bind:value={address.first_name} autocomplete="given-name" /></label>
-					<label>Last name <input required bind:value={address.last_name} autocomplete="family-name" /></label>
-					<AddressLine1 bind:value={address.line_1} onpick={(place) => (address = applyPlace(address, place))} />
-					<label>Address line 2 (optional) <input bind:value={address.line_2} autocomplete="address-line2" /></label>
-					<label>City <input required bind:value={address.city} autocomplete="address-level2" /></label>
-					<label>State / province <input bind:value={address.state} autocomplete="address-level1" /></label>
-					<label>ZIP / postal code <input required bind:value={address.postal_code} autocomplete="postal-code" /></label>
-					<label>Country (2-letter code) <input required maxlength="2" bind:value={address.country} autocomplete="country" /></label>
-					<label>Phone {intl ? '(required for customs)' : '(optional)'}
-						<input required={intl} bind:value={address.phone_number} autocomplete="tel" /></label>
-				</div>
+				{#if !editing}
+					<div class="ship-to">
+						<div>
+							<span class="muted">Ship to</span>
+							<address>{#each addressSummary(address) as l}<span>{l}</span>{/each}</address>
+						</div>
+						<button type="button" class="link" onclick={() => (editing = manual = true)}>Edit</button>
+					</div>
+				{:else}
+					<div class="form-grid">
+						<label>First name <input required bind:value={address.first_name} autocomplete="given-name" /></label>
+						<label>Last name <input required bind:value={address.last_name} autocomplete="family-name" /></label>
+					</div>
+					<AddressLine1 bind:value={address.line_1} onpick={pickPlace} onunavailable={() => (manual = true)}
+						label={manual ? 'Address line 1' : 'Address'} placeholder="Start typing your street address…"
+						hint={manual ? 'Type to search for a different address, or fix any field below.' : 'Pick it from the suggestions and we’ll fill in the rest.'} />
+					{#if manual}
+						<div class="form-grid">
+							<label>Address line 2 (optional) <input bind:value={address.line_2} autocomplete="address-line2" /></label>
+							<label>City <input required bind:value={address.city} autocomplete="address-level2" /></label>
+							<label>State / province <input bind:value={address.state} autocomplete="address-level1" /></label>
+							<label>ZIP / postal code <input required bind:value={address.postal_code} autocomplete="postal-code" /></label>
+							<label>Country code (US, CA, GB…) <input required maxlength="2" bind:value={address.country} autocomplete="country" /></label>
+							<label>Phone {intl ? '(required for customs)' : '(optional)'}
+								<input required={intl} bind:value={address.phone_number} autocomplete="tel" /></label>
+						</div>
+						{#if addressComplete(address)}
+							<button type="button" class="secondary done" onclick={() => (editing = manual = false)}>Use this address</button>
+						{/if}
+					{:else}
+						<button type="button" class="link" onclick={() => (manual = true)}>Can’t find it? Type it in yourself</button>
+					{/if}
+				{/if}
 				{#if needsReason(purpose)}
 					<label>{purposeInfo?.reason}
 						<textarea bind:value={note} rows="3" required placeholder={purposeInfo?.example}></textarea></label>
@@ -284,7 +315,12 @@
 	form h2 { margin-bottom: 0; }
 	.sheet :global(label:not(.choice)) { font-size: 0.95rem; font-weight: 700; color: var(--dark); }
 	.sheet :global(label :is(input, select, textarea)) { font-weight: 400; }
-	button:not(.secondary), .button { justify-self: start; padding: 0.8rem 1.4rem; font-size: 1rem; }
+	button:not(.secondary):not(.link), .button { justify-self: start; padding: 0.8rem 1.4rem; font-size: 1rem; }
+	button.link { justify-self: start; font-size: 0.95rem; color: var(--dark); }
+	button.done { justify-self: start; padding: 0.7rem 1.2rem; font-size: 1rem; }
+	/* The folded address: a mailing label with an Edit link. */
+	.ship-to { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding: 1rem 1.25rem; background: var(--tile); }
+	.ship-to address { display: grid; margin-top: 0.25rem; font-style: normal; }
 	/* Square, bordered options; the picked one takes the red. */
 	.choice {
 		display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.8rem 1rem; border: 1.5px solid var(--smoke); cursor: pointer;

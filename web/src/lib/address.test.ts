@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blankAddress, prefillAddress } from './address';
+import { addressComplete, addressSummary, blankAddress, prefillAddress } from './address';
 
 describe('prefillAddress', () => {
 	const hca = {
@@ -25,5 +25,30 @@ describe('prefillAddress', () => {
 
 	it('is a no-op without an address', () => {
 		expect(prefillAddress(blankAddress(), undefined)).toEqual(blankAddress());
+	});
+});
+
+describe('addressComplete', () => {
+	const full = { ...blankAddress(), first_name: 'Orpheus', last_name: 'Dino', line_1: '15 Falls Rd', city: 'Shelburne', state: 'VT', postal_code: '05482' };
+
+	it('needs a name, street, city, postal code and a 2-letter country', () => {
+		expect(addressComplete(full)).toBe(true);
+		for (const k of ['first_name', 'last_name', 'line_1', 'city', 'postal_code'] as const) expect(addressComplete({ ...full, [k]: ' ' })).toBe(false);
+		expect(addressComplete({ ...full, country: 'USA' })).toBe(false);
+		expect(addressComplete({ ...full, state: '', line_2: '' })).toBe(true);
+	});
+
+	it('needs a phone number outside the US, for customs', () => {
+		const ca = { ...full, country: 'CA', state: 'ON', postal_code: 'M5V 2T6' };
+		expect(addressComplete(ca)).toBe(false);
+		expect(addressComplete({ ...ca, phone_number: '+1 416 555 0100' })).toBe(true);
+	});
+});
+
+describe('addressSummary', () => {
+	it('reads like a mailing label', () => {
+		const a = { ...blankAddress(), first_name: 'Orpheus', last_name: 'Dino', line_1: '15 Falls Rd', line_2: 'Apt 2', city: 'Shelburne', state: 'VT', postal_code: '05482' };
+		expect(addressSummary(a)).toEqual(['Orpheus Dino', '15 Falls Rd, Apt 2', 'Shelburne, VT 05482', 'United States']);
+		expect(addressSummary({ ...a, line_2: '', state: '', country: 'gb', phone_number: '+44 20 7946 0000' })).toEqual(['Orpheus Dino', '15 Falls Rd', 'Shelburne 05482', 'United Kingdom', '+44 20 7946 0000']);
 	});
 });

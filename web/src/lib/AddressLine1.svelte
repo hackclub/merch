@@ -6,7 +6,14 @@
 	import { createSearcher, moveHighlight, newSessionToken, type AddressSuggestion } from './addressSearch';
 	import type { Address } from './types';
 
-	let { value = $bindable(), onpick }: { value: string; onpick: (place: Address) => void } = $props();
+	let {
+		value = $bindable(),
+		onpick,
+		onunavailable,
+		label = 'Address line 1',
+		placeholder = '',
+		hint = ''
+	}: { value: string; onpick: (place: Address) => void; onunavailable?: () => void; label?: string; placeholder?: string; hint?: string } = $props();
 
 	let off = $state(false);
 	let open = $state(false);
@@ -30,7 +37,10 @@
 			highlight = -1;
 			open = r.length > 0;
 		} catch (e) {
-			if (e instanceof ApiError && e.status === 404) off = true;
+			if (e instanceof ApiError && e.status === 404) {
+				off = true;
+				onunavailable?.();
+			}
 			suggestions = [];
 			open = false;
 		}
@@ -63,8 +73,9 @@
 </script>
 
 <div class="wrap">
-	<label>Address line 1
-		<input required bind:value {oninput} {onkeydown} onblur={() => (open = false)} autocomplete="address-line1"
+	<label>{label}
+		{#if hint && !off}<span class="hint">{hint}</span>{/if}
+		<input required bind:value {oninput} placeholder={off ? '' : placeholder} {onkeydown} onblur={() => (open = false)} autocomplete="address-line1"
 			role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={listId}
 			aria-activedescendant={open && highlight >= 0 ? `${listId}-${highlight}` : undefined} />
 	</label>
@@ -91,6 +102,7 @@
 	li[role='option'] { padding: 0.55rem 0.7rem; cursor: pointer; line-height: 1.3; }
 	li.on, li[role='option']:hover { background: var(--tile); }
 	.secondary { color: var(--muted); font-size: 0.85rem; }
+	.hint { color: var(--muted); font-weight: 400; }
 	.credit {
 		padding: 0.3rem 0.7rem; text-align: right; color: var(--muted); border-top: 1.5px solid var(--smoke);
 		font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.02em;
