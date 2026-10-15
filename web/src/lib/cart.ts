@@ -8,13 +8,14 @@ export type Sizes = Record<number, string>;
 
 export const emptyCart = (): Cart => ({});
 
-/** Small pack sizes per kind of pack; past the last, multiples of 50 (mirrors swag.Packs). */
-export const PACKS: Record<string, number[]> = { postcard: [5, 10, 15, 20, 25], sticker: [3, 10] };
+/** Small pack sizes per kind of pack; past the last, multiples of 50 ("fives" is every multiple of 5). Mirrors swag.Packs. */
+export const PACKS: Record<string, number[]> = { fives: [], postcard: [5, 10, 15, 20, 25], sticker: [3, 10] };
 
-/** Quantities a pack kind comes in, up to max: its small sizes, then multiples of 50. */
+/** Quantities a pack kind comes in, up to max: multiples of 5 for "fives", or its small sizes then multiples of 50. */
 export function packQuantities(packs: string, max: number): number[] {
+	const step = packs === 'fives' ? 5 : 50;
 	const out = (PACKS[packs] ?? []).filter((q) => q <= max);
-	for (let q = 50; q <= max; q += 50) out.push(q);
+	for (let q = step; q <= max; q += step) out.push(q);
 	return out;
 }
 

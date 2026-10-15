@@ -198,6 +198,8 @@ func TestPackQuantity(t *testing.T) {
 		q     int
 		want  bool
 	}{
+		{"fives", 5, true}, {"fives", 10, true}, {"fives", 15, true}, {"fives", 30, true}, {"fives", 100, true},
+		{"fives", 0, false}, {"fives", -5, false}, {"fives", 1, false}, {"fives", 3, false}, {"fives", 12, false},
 		{"postcard", 5, true}, {"postcard", 10, true}, {"postcard", 25, true}, {"postcard", 50, true}, {"postcard", 150, true}, {"postcard", 1000, true},
 		{"postcard", 0, false}, {"postcard", 1, false}, {"postcard", 3, false}, {"postcard", 30, false}, {"postcard", 75, false}, {"postcard", 125, false},
 		{"sticker", 3, true}, {"sticker", 10, true}, {"sticker", 50, true}, {"sticker", 100, true}, {"sticker", 150, true},
@@ -210,6 +212,9 @@ func TestPackQuantity(t *testing.T) {
 }
 
 func TestPackSizes(t *testing.T) {
+	if got := PackSizes("fives"); got != "multiples of 5" {
+		t.Errorf("PackSizes(fives) = %q", got)
+	}
 	if got := PackSizes("sticker"); got != "3, 10, then multiples of 50" {
 		t.Errorf("PackSizes(sticker) = %q", got)
 	}
@@ -222,18 +227,19 @@ func TestValidatePacks(t *testing.T) {
 	cat := catalog()
 	cat[5] = Item{ID: 5, SKU: "Pri/Wel/4x6/1st", Name: "Postcard", Visible: true, MaxPerRequest: 200, Packs: "postcard"}
 	cat[6] = Item{ID: 6, SKU: "Sti/Sti/Kaw/1st", Name: "Kawaii sticker", Visible: true, MaxPerRequest: 150, Packs: "sticker"}
+	cat[7] = Item{ID: 7, SKU: "Pri/Bok/Mini25/1st", Name: "Mini-Magazine", Visible: true, MaxPerRequest: 100, Packs: "fives"}
 	in := func(id int64, q int) ValidateInput {
 		return ValidateInput{Settings: settings(), Catalog: cat, Lines: []Line{{ItemID: id, Quantity: q}, {ItemID: 1, Quantity: 3}}, Now: now}
 	}
 	// A pack counts as one item toward the per-request total (5 here).
-	for id, qs := range map[int64][]int{5: {5, 25, 50, 150}, 6: {3, 10, 50, 150}} {
+	for id, qs := range map[int64][]int{5: {5, 25, 50, 150}, 6: {3, 10, 50, 150}, 7: {5, 10, 15, 30, 100}} {
 		for _, q := range qs {
 			if err := Validate(in(id, q)); err != nil {
 				t.Errorf("item %d × %d: %v", id, q, err)
 			}
 		}
 	}
-	for id, qs := range map[int64][]int{5: {1, 3, 7, 30, 75}, 6: {1, 5, 25, 75}} {
+	for id, qs := range map[int64][]int{5: {1, 3, 7, 30, 75}, 6: {1, 5, 25, 75}, 7: {1, 3, 7, 12}} {
 		for _, q := range qs {
 			if err := Validate(in(id, q)); !errors.Is(err, ErrBadQuantity) {
 				t.Errorf("item %d × %d: err = %v, want ErrBadQuantity", id, q, err)

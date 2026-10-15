@@ -746,7 +746,7 @@ func validItem(it swag.Item) string {
 	case !swag.Finishes[it.Finish]:
 		return "finish must be matte, gloss, linen or uncoated"
 	case it.Packs != "" && swag.Packs[it.Packs] == nil:
-		return "packs must be postcard or sticker"
+		return "packs must be fives, postcard or sticker"
 	case it.ThicknessIn != nil && !(*it.ThicknessIn > 0 && *it.ThicknessIn <= 0.5):
 		return "thickness must be between 0 and 0.5 inches"
 	case !swag.Bindings[it.Binding]:

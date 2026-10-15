@@ -271,6 +271,7 @@
 							<label>Packs
 								<select bind:value={it.packs}>
 									<option value="">Any quantity</option>
+									<option value="fives">In 5s (5, 10, 15…)</option>
 									<option value="postcard">Postcards: 5–25 by 5s, then 50s</option>
 									<option value="sticker">Stickers: 3, 10, then 50s</option>
 								</select></label>

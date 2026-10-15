@@ -198,20 +198,29 @@ func Validate(in ValidateInput) error {
 }
 
 // Packs lists the small pack sizes for each kind of pack; past the last one,
-// packs come in multiples of 50. web/src/lib/cart.ts mirrors this.
+// packs come in multiples of 50 ("fives" is every multiple of 5).
+// web/src/lib/cart.ts mirrors this.
 var Packs = map[string][]int{
+	"fives":    {},
 	"postcard": {5, 10, 15, 20, 25},
 	"sticker":  {3, 10},
 }
 
 // PackQuantity reports whether q is an allowed quantity for an item in the
-// given packs: one of its small sizes, or a multiple of 50.
+// given packs: multiples of 5 for "fives", or one of its small sizes / a
+// multiple of 50 otherwise.
 func PackQuantity(packs string, q int) bool {
+	if packs == "fives" {
+		return q > 0 && q%5 == 0
+	}
 	return slices.Contains(Packs[packs], q) || (q > 0 && q%50 == 0)
 }
 
 // PackSizes describes the allowed quantities, e.g. "3, 10, then multiples of 50".
 func PackSizes(packs string) string {
+	if packs == "fives" {
+		return "multiples of 5"
+	}
 	var b strings.Builder
 	for _, n := range Packs[packs] {
 		fmt.Fprintf(&b, "%d, ", n)

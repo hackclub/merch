@@ -16,7 +16,7 @@ export type Item = {
 	finish: string; // '' | 'matte' | 'gloss' | 'linen' | 'uncoated'
 	thickness_in: number | null;
 	photos: Photo[]; // real-world pictures people posted
-	packs: string; // '' (any quantity) | 'postcard' (5, 10…25) | 'sticker' (3, 10), then multiples of 50
+	packs: string; // '' (any quantity) | 'fives' (5, 10, 15…) | 'postcard' (5, 10…25) | 'sticker' (3, 10), then multiples of 50
 	binding: string; // '' (a single sheet) | 'staple' | 'perfect': booklets open in 3D
 	pages: string[]; // a booklet's page images in reading order, front cover first
 	ships_with: string[]; // warehouse SKUs packed with every unit (the magazine's card)

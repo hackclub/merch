@@ -13,6 +13,7 @@ const items: Item[] = [
 
 const postcard: Item = { ...items[0], id: 4, sku: 'Pri/Wel/4x6/1st', name: 'Postcard', max_per_request: 150, packs: 'postcard' };
 const sticker: Item = { ...items[0], id: 5, sku: 'Sti/Sti/Kaw/1st', name: 'Kawaii sticker', max_per_request: 150, packs: 'sticker' };
+const miniMag: Item = { ...items[0], id: 6, sku: 'Pri/Bok/Mini25/1st', name: 'Mini-Magazine', max_per_request: 25, packs: 'fives' };
 
 describe('packs', () => {
 	it('lists 5 to 25 by fives, then multiples of 50, up to the max', () => {
@@ -20,6 +21,16 @@ describe('packs', () => {
 		expect(packQuantities('postcard', 60)).toEqual([5, 10, 15, 20, 25, 50]);
 		expect(packQuantities('postcard', 4)).toEqual([]);
 		expect(quantityOptions(postcard)).toEqual([0, 5, 10, 15, 20, 25, 50, 100, 150]);
+	});
+
+	it('lists fives as every multiple of 5 up to the max', () => {
+		expect(packQuantities('fives', 35)).toEqual([5, 10, 15, 20, 25, 30, 35]);
+		expect(packQuantities('fives', 4)).toEqual([]);
+		expect(quantityOptions(miniMag)).toEqual([0, 5, 10, 15, 20, 25]);
+		let c = setQuantity(emptyCart(), miniMag, 1);
+		expect(c[6]).toBe(5);
+		c = setQuantity(c, miniMag, 12);
+		expect(c[6]).toBe(10);
 	});
 
 	it('lists stickers as 3, 10, then multiples of 50', () => {
