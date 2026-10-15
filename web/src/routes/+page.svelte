@@ -292,8 +292,14 @@
 	.item.big { grid-column: span 2; }
 	/* As tall as the 4:5 tiles beside it. */
 	.item.big .tile { aspect-ratio: 8 / 5; min-height: 0; overflow: hidden; }
-	@media (max-width: 600px) { .item.big .tile { aspect-ratio: 5 / 4; } }
 	.item.big h3 { font-size: 1.15rem; }
+	/* Phones stay 2-up, so a featured item's neighbour isn't left alone in a half-empty row. */
+	@media (max-width: 600px) {
+		.item.big { grid-column: auto; }
+		.item.big .tile { aspect-ratio: 4 / 5; }
+		.item.big h3 { font-size: 0.9rem; }
+		.item.big .clamp { display: none; }
+	}
 	.fact { margin: -0.2rem 0 0; color: #55555d; }
 	.add { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: auto; padding-top: 0.25rem; }
 	.add > button { height: 2.6rem; padding: 0 1.4rem; }
