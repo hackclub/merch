@@ -93,8 +93,10 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 		polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2
 	});
 	const backing = new THREE.MeshStandardMaterial({ color: 0xf3f1ec, roughness: 0.9, alphaTest: 0.5 });
+	// Thin and clear: enough glint to read as a bag, without fogging the art inside.
 	const plastic = new THREE.MeshPhysicalMaterial({
-		color: 0xffffff, transparent: true, opacity: 0.16, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05, depthWrite: false
+		color: 0xffffff, transparent: true, opacity: 0.06, roughness: 0.12, clearcoat: 0.5, clearcoatRoughness: 0.08, envMapIntensity: 0.35,
+		depthWrite: false
 	});
 	const zip = new THREE.MeshPhysicalMaterial({ color: 0xe9eef2, transparent: true, opacity: 0.55, roughness: 0.3, depthWrite: false });
 	let bagGeo: RoundedBoxGeometry | null = null;
