@@ -7,7 +7,7 @@
 	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from '$lib/cart';
-	import { gallery, roughFee } from '$lib/gallery';
+	import { galleryRows, roughFee } from '$lib/gallery';
 	import { itemPath, previewCount, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
@@ -60,8 +60,8 @@
 	const count = $derived(totalQuantity(cart));
 	const problems = $derived(catalog ? cartErrors(cart, catalog.settings.max_items_per_request, catalog.items, sizes) : []);
 	const intl = $derived(isInternational(address.country));
-	// One photo under the intro, like the old Fillout forms: the first real-world one when there is one.
-	const photo = $derived(catalog ? gallery(catalog.items)[0] : undefined);
+	// Two strips of everything under the intro: photos and products on top, magazine pages and backs below.
+	const rows = $derived(catalog ? galleryRows(catalog.items) : null);
 	// What's coming, line by line (one per size), for the 3D preview above Submit.
 	const haul = $derived(
 		cartLines(cart, shown, sizes).map((l) => {
@@ -128,7 +128,7 @@
 
 <svelte:head><title>Hack Club Mail Room</title></svelte:head>
 
-<!-- One simple column, top to bottom, like the old Fillout request forms: intro, photo, questions, shipping, submit. -->
+<!-- One simple column, top to bottom, like the old Fillout request forms: intro, gallery, questions, shipping, submit. -->
 <div class="sheet">
 	<div class="intro">
 		<p>Teenager and want to spread <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a> in your community?</p>
@@ -137,8 +137,24 @@
 		<p>Shipped next day Mon–Fri. 2–5 day delivery in US. 2–4 week delivery globally.</p>
 	</div>
 
-	{#if photo}
-		<a class="photo" class:product={!photo.real} href={photo.href}><img src={photo.src} alt={photo.alt} /></a>
+	{#if rows && rows[0].length}
+		<!-- Each row renders twice so it loops without a seam; the copy is hidden from screen readers. -->
+		<div class="strips">
+			{#each rows as row, r (r)}
+				<div class="strip" class:reverse={r === 1}>
+					<div class="track" style="--n: {row.length}">
+						{#each [0, 1] as copy}
+							{#each row as s, i (i)}
+								<a href={s.href} class="slide" class:real={s.real} class:page={s.page} class:sticker={s.sticker}
+									aria-hidden={copy === 1} tabindex={copy === 1 ? -1 : undefined}>
+									<img src={s.src} alt={copy === 1 ? '' : s.alt} decoding="async" />
+								</a>
+							{/each}
+						{/each}
+					</div>
+				</div>
+			{/each}
+		</div>
 	{/if}
 
 	{#if error}<p class="error">{error}</p>{/if}
@@ -294,10 +310,24 @@
 		font-family: inherit; text-transform: none; letter-spacing: 0;
 	}
 	.intro p { margin: 0 0 0.6rem; }
-	.photo { display: flex; justify-content: center; margin: 1.25rem 0 0; }
-	.photo img { display: block; max-width: 100%; max-height: 28rem; }
-	.photo.product { background: var(--tile); }
-	.photo.product img { padding: 2rem; box-sizing: border-box; mix-blend-mode: multiply; }
+	/* Two strips edge to edge across the sheet, scrolling opposite ways; they pause under the pointer. */
+	.strips { display: grid; gap: 0.5rem; margin: 1.5rem -2rem 0; overflow: hidden; }
+	@media (max-width: 600px) { .strips { margin: 1.25rem -1.25rem 0; } }
+	.strip { overflow: hidden; }
+	.track { display: flex; gap: 0.5rem; width: max-content; animation: scroll calc(var(--n) * 5s) linear infinite; }
+	.strip.reverse .track { animation-direction: reverse; }
+	.strips:hover .track { animation-play-state: paused; }
+	@keyframes scroll { to { transform: translateX(calc(-50% - 0.25rem)); } }
+	@media (prefers-reduced-motion: reduce) {
+		.strip { overflow-x: auto; }
+		.track { animation: none; }
+	}
+	.slide { display: block; flex: none; height: 11rem; aspect-ratio: 4 / 5; background: var(--tile); }
+	.slide img { display: block; width: 100%; height: 100%; object-fit: contain; padding: 8%; box-sizing: border-box; mix-blend-mode: multiply; }
+	.slide.sticker img { mix-blend-mode: normal; }
+	/* Photos and magazine pages show whole, at their own shape. */
+	.slide:is(.real, .page) { aspect-ratio: auto; }
+	.slide:is(.real, .page) img { width: auto; padding: 0; mix-blend-mode: normal; }
 	h2 { margin: 2rem 0 1rem; padding-top: 1.5rem; border-top: 1px solid var(--smoke); font-size: 1.25rem; line-height: 1.3; }
 	.ask { margin: 2rem 0 0; padding: 1.5rem 0 0; border: 0; border-top: 1px solid var(--smoke); display: grid; gap: 0.5rem; }
 	.ask legend { float: left; width: 100%; margin-bottom: 0.5rem; padding: 0; font-weight: 700; font-size: 1.25rem; line-height: 1.3; }

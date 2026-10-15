@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gallery, roughFee } from './gallery';
+import { gallery, galleryRows, roughFee } from './gallery';
 import type { Item } from './types';
 
 const item = (id: number, name: string, images: string[], photos: Item['photos'] = []): Item => ({
@@ -36,5 +36,31 @@ describe('roughFee', () => {
 	it('rounds to whole dollars', () => {
 		expect(roughFee(1500)).toBe('~$15 USD');
 		expect(roughFee(1499)).toBe('~$15 USD');
+	});
+});
+
+describe('galleryRows', () => {
+	const poster = item(1, 'Poster', ['front.jpg', 'back.jpg'], [{ url: 'wild.jpg', caption: 'On a wall', credit: '' }]);
+	const mag = { ...item(2, 'Magazine', ['cover.jpg']), binding: 'staple', pages: ['p1.jpg', 'p2.jpg', 'p3.jpg'] };
+	const srcs = (row: { src: string }[]) => [...new Set(row.map((s) => s.src))];
+
+	it('puts photos and products in one row, inside pages and other sides in the other', () => {
+		const [top, bottom] = galleryRows([poster, mag], 1);
+		expect(srcs(top)).toEqual(['wild.jpg', 'front.jpg', 'cover.jpg']);
+		expect(srcs(bottom)).toEqual(['p2.jpg', 'back.jpg', 'p3.jpg']);
+		expect(bottom[0]).toMatchObject({ page: true, href: '/items/2-magazine' });
+	});
+
+	it('repeats a short row so it fills the strip', () => {
+		const [top] = galleryRows([poster], 8);
+		expect(top.length).toBeGreaterThanOrEqual(8);
+		expect(srcs(top)).toEqual(['wild.jpg', 'front.jpg']);
+	});
+
+	it('splits one row in two when there is nothing for the second', () => {
+		const items = [1, 2, 3, 4].map((i) => item(i, `I${i}`, [`${i}.jpg`]));
+		const [top, bottom] = galleryRows(items, 1);
+		expect(srcs(top)).toEqual(['1.jpg', '3.jpg']);
+		expect(srcs(bottom)).toEqual(['2.jpg', '4.jpg']);
 	});
 });
