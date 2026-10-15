@@ -9,7 +9,7 @@
 	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from '$lib/cart';
 	import { galleryRows, roughFee } from '$lib/gallery';
 	import { pickedLines } from '$lib/haul';
-	import { itemPath, previewCount, productPreview, thumbnail, tilePreview } from '$lib/items';
+	import { itemPath, previewCount, showsAmountIn3D, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
@@ -96,8 +96,6 @@
 	let peek = $state<number | null>(null);
 	// Items whose amounts are showing: "Add" opens them; removing the item closes them.
 	let picking = $state<Record<number, boolean>>({});
-	// Items whose shop preview is a clip (the Mini-Magazine's GIF) also show the amount picked in 3D, to scale.
-	const amountIn3D = (item: Item) => !!item.clip && !!productPreview(item, [], false);
 	const expanded = (item: Item) => item.variants.length > 0 || !!picking[item.id] || !!cart[item.id];
 
 	function setAmount(item: Item, n: number) {
@@ -206,7 +204,7 @@
 							<span class="muted">{tileFact(item)}{#if sizesSummary(item, sizes)}{tileFact(item) ? ' · ' : ''}<strong class="in">{sizesSummary(item, sizes)}</strong>{/if}</span>
 						</div>
 						{#if open}{@render add(item)}{/if}
-						{#if open && expanded(item) && amountIn3D(item)}
+						{#if open && expanded(item) && showsAmountIn3D(item)}
 							<div class="amount-3d"><Haul3D lines={pickedLines(item, cart[item.id] ?? 0)} includes={catalog.includes} compact /></div>
 						{/if}
 						{#if peek === item.id}
@@ -218,7 +216,7 @@
 										{#if preview}<Tile3D {preview} active count={previewCount(item, cart[item.id] ?? 0)} rest={'stickers' in preview ? -0.25 : -0.45} />{/if}
 									</div>
 								{/if}
-								{#if amountIn3D(item)}
+								{#if showsAmountIn3D(item)}
 									<div class="peek-3d"><Haul3D lines={pickedLines(item, cart[item.id] ?? 0)} includes={catalog.includes} compact /></div>
 								{/if}
 								<strong>{item.name}</strong>
@@ -397,7 +395,7 @@
 		/* Once the 3D view or clip is up it replaces the photo. */
 		.peek-img:has(:global(.spin.ready)) > img { opacity: 0; }
 	}
-	/* Picking how many of an item that plays a clip: the amount, stacked up in 3D, under the row. */
+	/* Picking how many of a booklet or an item that plays a clip: the amount, stacked up in 3D, under the row. */
 	.amount-3d { flex-basis: 100%; padding-left: 4.65rem; }
 	@media (max-width: 600px) { .amount-3d { padding-left: 0; } }
 	/* The rest of a grid section (the other stickers) under its lead row: picture, name, add. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byFilename, formatUnitCost, isBooklet, itemIdFromParam, productPreview, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, previewCount, tilePreview, thumbnail } from './items';
+import { byFilename, formatUnitCost, isBooklet, itemIdFromParam, productPreview, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, previewCount, showsAmountIn3D, tilePreview, thumbnail } from './items';
 import type { Item } from './types';
 
 const poster: Item = {
@@ -160,5 +160,17 @@ describe('previewCount', () => {
 	it('is what you picked for everything else', () => {
 		expect(previewCount(poster, 0)).toBe(0);
 		expect(previewCount(poster, 2)).toBe(2);
+	});
+});
+
+describe('showsAmountIn3D', () => {
+	it('booklets, and items with a clip and measurements, show the amount picked stacked up in 3D', () => {
+		const book: Item = { ...poster, binding: 'perfect', pages: ['1.jpg', '2.jpg'], width_in: 5.83, height_in: 8.27 };
+		expect(showsAmountIn3D(book)).toBe(true);
+		expect(showsAmountIn3D({ ...book, binding: 'staple', clip: 'flip.gif' })).toBe(true);
+		expect(showsAmountIn3D({ ...poster, clip: 'loop.mp4', width_in: 11, height_in: 17 })).toBe(true);
+		// A plain print keeps its turning tile; nothing measured can't be stacked.
+		expect(showsAmountIn3D({ ...poster, width_in: 11, height_in: 17 })).toBe(false);
+		expect(showsAmountIn3D({ ...poster, clip: 'loop.mp4', width_in: null, height_in: null })).toBe(false);
 	});
 });

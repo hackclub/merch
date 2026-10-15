@@ -90,6 +90,13 @@ export function tilePreview(item: Item): TilePreview | null {
 	return productPreview(item, [], false);
 }
 
+/**
+ * Whether picking how many of an item also shows that amount stacked up in 3D
+ * (beside its clip or flip-through): booklets, and anything measured with a clip.
+ */
+export const showsAmountIn3D = (item: Item): boolean =>
+	(isBooklet(item) || !!item.clip) && !!productPreview(item, [], false);
+
 /** Lazy-loads the matching WebGL viewer for a Preview3D descriptor. */
 export function loadPreviewViewer(canvas: HTMLCanvasElement, preview: Preview3D, count: number, onReady: () => void): Promise<Viewer> {
 	if ('book' in preview) return import('./book3d').then((m) => m.createBookViewer(canvas, preview.book, onReady));
