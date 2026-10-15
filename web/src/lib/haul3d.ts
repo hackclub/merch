@@ -14,7 +14,8 @@ export type HaulViewer = {
 };
 
 const PHONE_DEPTH = 0.31;
-const ELEVATION = THREE.MathUtils.degToRad(48); // how far above the table we look from
+const ELEVATION = THREE.MathUtils.degToRad(34); // low enough that stack heights read
+const TABLE_TOP = 1; // inches thick
 
 export function createHaulViewer(canvas: HTMLCanvasElement, table: ReturnType<typeof layoutHaul>, onReady: () => void): HaulViewer {
 	const tallest = Math.max(0.5, ...table.piles.map((p) => p.height));
@@ -48,6 +49,16 @@ export function createHaulViewer(canvas: HTMLCanvasElement, table: ReturnType<ty
 	}
 	if (pending === 0) queueMicrotask(onReady);
 
+	// Folding tables: a white plastic top with a grey rim; the piles sit on it.
+	for (const t of table.tables) {
+		const top = new THREE.MeshStandardMaterial({ color: 0xf6f5f1, roughness: 0.85 });
+		const rim = new THREE.MeshStandardMaterial({ color: 0xb9b7b0, roughness: 0.7 });
+		const slab = new THREE.Mesh(new THREE.BoxGeometry(t.w, TABLE_TOP, t.d), [rim, rim, top, rim, rim, rim]);
+		slab.position.set(t.x, -TABLE_TOP / 2 - 0.01, t.z);
+		slab.receiveShadow = true;
+		group.add(slab);
+	}
+
 	// Lying flat, screen up.
 	const phone = createPhone();
 	phone.rotation.set(-Math.PI / 2, 0, 0);
@@ -63,8 +74,10 @@ export function createHaulViewer(canvas: HTMLCanvasElement, table: ReturnType<ty
 			// Fit the table, whichever way it's turned, with a little room around it.
 			const span = Math.hypot(table.width, table.depth);
 			const half = THREE.MathUtils.degToRad(camera.fov) / 2;
-			const fitW = (span * 0.5) / (Math.tan(half) * camera.aspect);
-			const fitH = (span * Math.sin(ELEVATION) * 0.5 + tallest * Math.cos(ELEVATION) * 0.5) / Math.tan(half);
+			// Tables get a little more room: their corners swing nearest the camera.
+			const room = table.tables.length ? 0.56 : 0.52;
+			const fitW = (span * room) / (Math.tan(half) * camera.aspect);
+			const fitH = (span * Math.sin(ELEVATION) * room + tallest * Math.cos(ELEVATION) * 0.5) / Math.tan(half);
 			const dist = Math.max(fitW, fitH);
 			camera.near = Math.max(0.5, dist * 0.1);
 			camera.far = dist * 4;

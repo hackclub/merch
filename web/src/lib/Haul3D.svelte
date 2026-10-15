@@ -5,10 +5,11 @@
 	import { layoutHaul, piles, type HaulLine } from './haul';
 	import type { HaulViewer } from './haul3d';
 
-	let { lines }: { lines: HaulLine[] } = $props();
+	// table: lay it all out on 6-foot folding tables (for clubs and events), to show how much of one it fills.
+	let { lines, table: onTable = false }: { lines: HaulLine[]; table?: boolean } = $props();
 
 	const stack = $derived(piles(lines));
-	const table = $derived(layoutHaul(stack));
+	const table = $derived(layoutHaul(stack, { table: onTable }));
 	// Rebuild only when what's on the table changes, not on every re-render.
 	const shape = $derived(JSON.stringify(table));
 
@@ -50,7 +51,8 @@
 				const tick = (now: number) => {
 					raf = requestAnimationFrame(tick);
 					if (document.hidden) return;
-					v.angle = turned + (still || dragging ? 0 : Math.sin(now / 2400) * 0.35);
+					// A wide table only sways a little, so it stays in frame.
+					v.angle = turned + (still || dragging ? 0 : Math.sin(now / 2400) * (onTable ? 0.1 : 0.35));
 					v.render();
 				};
 				raf = requestAnimationFrame(tick);
@@ -82,9 +84,14 @@
 	<div class="stage" class:ready bind:this={stage} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}>
 		<!-- A fresh canvas per rebuild: disposing a viewer kills its canvas's WebGL context for good. -->
 		{#if near}{#key shape}<canvas bind:this={canvas} aria-label="Your whole request in 3D, to scale, next to a phone"></canvas>{/key}{/if}
+		{#if !ready}<span class="loading muted">Loading 3D…</span>{/if}
 	</div>
 	<figcaption>
-		<span class="muted">Everything you're getting, to scale. The phone is a regular 6-inch phone. Drag to turn it.</span>
+		<span class="muted">
+			{#if onTable}Everything you're getting, to scale, on {table.tables.length === 1 ? 'a 6-foot folding table' : `${table.tables.length} 6-foot folding tables`} with a phone for size.
+			{:else}Everything you're getting, to scale, next to a regular 6-inch phone.{/if}
+			Drag to turn it.
+		</span>
 		<span>{stack.map((p) => p.label).join(' · ')}</span>
 	</figcaption>
 </figure>
@@ -94,5 +101,6 @@
 	.stage { position: relative; aspect-ratio: 16 / 10; background: var(--tile); touch-action: pan-y; cursor: grab; }
 	canvas { width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 0.4s; }
 	.ready canvas { opacity: 1; }
+	.loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 0.9rem; }
 	figcaption { display: grid; gap: 0.15rem; font-size: 0.9rem; }
 </style>

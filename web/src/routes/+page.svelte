@@ -224,7 +224,7 @@
 		{/each}
 
 		{#if !session.me?.user}
-			{#if haul.length}<div class="send"><Haul3D lines={haul} /></div>{/if}
+			{#if haul.length}<div class="send"><Haul3D lines={haul} table={purpose === 'club' || purpose === 'event'} /></div>{/if}
 			<p id="request" class="send"><a class="button" href="/auth/login" data-sveltekit-reload
 				>{count ? `Sign in with Hack Club to send ${count} item${count === 1 ? '' : 's'}` : 'Sign in with Hack Club to request swag'}</a></p>
 		{:else if asking && !purpose}
@@ -288,7 +288,7 @@
 						<span>I understand, and I'll only request what I'll use.</span>
 					</label>
 				</div>
-				{#if haul.length}<Haul3D lines={haul} />{/if}
+				{#if haul.length}<Haul3D lines={haul} table={purpose === 'club' || purpose === 'event'} />{/if}
 				{#each problems as p}<p class="error">{p}</p>{/each}
 				<button disabled={submitting || problems.length > 0 || !understood}>
 					{submitting ? 'Sending…' : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}

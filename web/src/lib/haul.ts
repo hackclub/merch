@@ -24,6 +24,8 @@ const SHIRT = { w: 9.5, d: 12, t: 1.2 };
 const STICKER = { w: 3, d: 3 };
 // Something we have no measurements for: a small box.
 const UNKNOWN = { w: 6, d: 6, t: 1 };
+// Postcards without a measured thickness: 14 pt card stock.
+const CARD_IN = 0.014;
 // Booklets without a measured thickness: about 0.1 mm a page.
 const PAGE_IN = 0.004;
 
@@ -39,7 +41,9 @@ export function piles(lines: HaulLine[]): Pile[] {
 					? (item.thickness_in ?? item.pages.length * PAGE_IN)
 					: item.packs === 'sticker'
 						? STICKER_THICKNESS_IN
-						: sheetThickness(item);
+						: item.packs === 'postcard'
+							? (item.thickness_in ?? CARD_IN)
+							: sheetThickness(item);
 				return { key, label, art, w: item.width_in, d: item.height_in, height: unit * quantity };
 			}
 			if (item.packs === 'sticker') return { key, label, art, w: STICKER.w, d: STICKER.d, height: STICKER_THICKNESS_IN * quantity };
@@ -49,42 +53,81 @@ export function piles(lines: HaulLine[]): Pile[] {
 }
 
 export type Placed = Pile & { x: number; z: number }; // centre of the footprint on the table
+export type Table = { x: number; z: number; w: number; d: number }; // centre and size of a tabletop
 
-/** Space between piles, in inches. */
+/** A standard 6-foot folding table, the kind at every club fair. */
+export const TABLE = { w: 72, d: 30 };
+/** Space between piles, between the piles and the table's edge, and between tables, in inches. */
 const GAP = 1.5;
+const EDGE = 3;
+const BETWEEN = 12;
+
+export type HaulLayout = { piles: Placed[]; phone: { x: number; z: number }; tables: Table[]; width: number; depth: number };
 
 /**
  * Rows of piles, biggest footprints first, with the phone lying flat right beside
  * the biggest so the two are easy to compare; x runs left to right and z back to
- * front, centred on 0.
+ * front, centred on 0. With table, everything sits on 6-foot folding tables, as
+ * many as it takes side by side, so people can see how much of a table it fills.
  */
-export function layoutHaul(all: Pile[]): { piles: Placed[]; phone: { x: number; z: number }; width: number; depth: number } {
+export function layoutHaul(all: Pile[], opts: { table?: boolean } = {}): HaulLayout {
 	const phone: Pile = { key: 'phone', label: 'phone', art: '', w: PHONE.w, d: PHONE.h, height: 0 };
 	const items = [...all].sort((a, b) => b.d - a.d);
-	const area = [...items, phone].reduce((a, p) => a + (p.w + GAP) * (p.d + GAP), 0);
-	const rowMax = Math.max(24, Math.sqrt(area) * 1.6);
+	const order = [...items.slice(0, 1), phone, ...items.slice(1)];
+	const area = order.reduce((a, p) => a + (p.w + GAP) * (p.d + GAP), 0);
+	const rowMax = opts.table ? TABLE.w - 2 * EDGE : Math.max(24, Math.sqrt(area) * 1.6);
+	const depthMax = opts.table ? TABLE.d - 2 * EDGE : Infinity;
 
 	const placed: Placed[] = [];
+	const onTable: number[] = [];
+	let table = 0;
 	let x = 0;
 	let z = 0;
 	let rowDepth = 0;
-	const order = [...items.slice(0, 1), phone, ...items.slice(1)];
 	for (const p of order) {
 		if (x > 0 && x + p.w > rowMax) {
 			z += rowDepth + GAP;
 			x = 0;
 			rowDepth = 0;
 		}
-		placed.push({ ...p, x: x + p.w / 2, z: z + p.d / 2 });
+		if (z > 0 && z + p.d > depthMax) {
+			table++;
+			x = z = rowDepth = 0;
+		}
+		const offset = opts.table ? table * (TABLE.w + BETWEEN) + EDGE : 0;
+		placed.push({ ...p, x: offset + x + p.w / 2, z: (opts.table ? EDGE : 0) + z + p.d / 2 });
+		onTable.push(table);
 		x += p.w + GAP;
 		rowDepth = Math.max(rowDepth, p.d);
 	}
-	const width = Math.max(...placed.map((p) => p.x + p.w / 2));
-	const depth = z + rowDepth;
+
+	// placed[i] went on table onTable[i]; centre each table's piles on it, like a booth display.
+	if (opts.table) {
+		for (let n = 0; n <= table; n++) {
+			const mine = placed.filter((_, i) => onTable[i] === n);
+			const left = Math.min(...mine.map((p) => p.x - p.w / 2)), right = Math.max(...mine.map((p) => p.x + p.w / 2));
+			const back = Math.min(...mine.map((p) => p.z - p.d / 2)), front = Math.max(...mine.map((p) => p.z + p.d / 2));
+			const dx = n * (TABLE.w + BETWEEN) + TABLE.w / 2 - (left + right) / 2;
+			const dz = TABLE.d / 2 - (back + front) / 2;
+			for (const p of mine) (p.x += dx), (p.z += dz);
+		}
+	}
+
+	let width: number;
+	let depth: number;
+	let tables: Table[] = [];
+	if (opts.table) {
+		width = (table + 1) * TABLE.w + table * BETWEEN;
+		depth = TABLE.d;
+		tables = Array.from({ length: table + 1 }, (_, n) => ({ x: n * (TABLE.w + BETWEEN) + TABLE.w / 2 - width / 2, z: 0, ...TABLE }));
+	} else {
+		width = Math.max(...placed.map((p) => p.x + p.w / 2));
+		depth = z + rowDepth;
+	}
 	for (const p of placed) {
 		p.x -= width / 2;
 		p.z -= depth / 2;
 	}
 	const ph = placed.find((p) => p.key === 'phone')!;
-	return { piles: placed.filter((p) => p !== ph), phone: { x: ph.x, z: ph.z }, width, depth };
+	return { piles: placed.filter((p) => p !== ph), phone: { x: ph.x, z: ph.z }, tables, width, depth };
 }
