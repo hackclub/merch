@@ -7,7 +7,7 @@
 	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from '$lib/cart';
-	import { galleryRows, roughFee } from '$lib/gallery';
+	import { feeTooltip, galleryRows, roughFee } from '$lib/gallery';
 	import { pickedLines } from '$lib/haul';
 	import { itemPath, previewCount, showsAmountIn3D, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
@@ -134,7 +134,7 @@
 	<div class="intro">
 		<p>Teenager and want to spread <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a> in your community?</p>
 		<p>Get some awesome hand-designed swag made by your fellow Hack Clubbers!</p>
-		<p>Free shipping in the US.{#if fee > 0}{' '}{roughFee(fee)} to help cover shipping globally.{/if}</p>
+		<p>Free shipping in the US.{#if fee > 0}{' '}<span class="fee" title={feeTooltip}>{roughFee(fee)}</span> to help cover shipping globally.{/if}</p>
 		<p>Shipped next day Mon–Fri. 2–5 day delivery in US. 2–4 week delivery globally.</p>
 	</div>
 
@@ -323,6 +323,10 @@
 </div>
 
 <style>
+	.fee {
+		text-decoration: underline dotted;
+		cursor: help;
+	}
 	/* Grey page, one white sheet: the request form is the whole page. */
 	:global(html:has(.sheet)) { background: var(--tile); }
 	.sheet { max-width: 40rem; margin: 0 auto; padding: 2rem; background: white; line-height: 1.5; }

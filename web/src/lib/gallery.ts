@@ -23,6 +23,11 @@ export function gallery(items: Item[]): Slide[] {
 /** "~$15 USD" for 1500; the hero rounds the international fee to whole dollars. */
 export const roughFee = (cents: number): string => `~$${Math.round(cents / 100)} USD`;
 
+/** Hover text on the international fee in the hero. */
+export const feeTooltip =
+	'Globally we ask you to cover shipping. Based on the size of your request, we will estimate the shipping cost.\n\n' +
+	'Note: You are responsible for any customs fees your country charges you to receive packages from the USA.';
+
 /** Every other slide from a and b, a first, until both run out. */
 function interleave<T>(a: T[], b: T[]): T[] {
 	const out: T[] = [];

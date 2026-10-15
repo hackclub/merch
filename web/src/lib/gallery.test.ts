@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gallery, galleryRows, roughFee } from './gallery';
+import { feeTooltip, gallery, galleryRows, roughFee } from './gallery';
 import type { Item } from './types';
 
 const item = (id: number, name: string, images: string[], photos: Item['photos'] = []): Item => ({
@@ -36,6 +36,10 @@ describe('roughFee', () => {
 	it('rounds to whole dollars', () => {
 		expect(roughFee(1500)).toBe('~$15 USD');
 		expect(roughFee(1499)).toBe('~$15 USD');
+	});
+	it('explains the fee and customs on hover', () => {
+		expect(feeTooltip).toContain('we will estimate the shipping cost');
+		expect(feeTooltip).toContain('\n\nNote: You are responsible for any customs fees');
 	});
 });
 
