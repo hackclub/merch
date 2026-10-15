@@ -743,6 +743,8 @@ func validItem(it swag.Item) string {
 		return "max_per_request must be at least 1"
 	case it.MinPerRequest > it.MaxPerRequest:
 		return "min_per_request can't be more than max_per_request"
+	case badQuickPicks(it) != "":
+		return badQuickPicks(it)
 	case it.MaxPerUser != nil && *it.MaxPerUser < 0:
 		return "max_per_user can't be negative"
 	case (it.WidthIn == nil) != (it.HeightIn == nil):
@@ -1105,4 +1107,21 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 func (s *server) serverErr(w http.ResponseWriter, err error) {
 	s.Log.Error("internal error", "err", err)
 	writeErr(w, http.StatusInternalServerError, "something went wrong")
+}
+
+// badQuickPicks says what's wrong with an item's one-tap amounts, or "" if
+// nothing: each must be orderable (within the limits, a real pack size) and
+// they must go up.
+func badQuickPicks(it swag.Item) string {
+	for i, q := range it.QuickPicks {
+		switch {
+		case q < max(it.MinPerRequest, 1) || q > it.MaxPerRequest:
+			return "quick pick " + strconv.Itoa(q) + " is outside the item's limits"
+		case it.Packs != "" && !swag.PackQuantity(it.Packs, q):
+			return "quick pick " + strconv.Itoa(q) + " isn't a pack size (" + swag.PackSizes(it.Packs) + ")"
+		case i > 0 && q <= it.QuickPicks[i-1]:
+			return "quick picks must go up"
+		}
+	}
+	return ""
 }

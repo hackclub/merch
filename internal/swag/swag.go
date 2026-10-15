@@ -56,6 +56,7 @@ type Item struct {
 	SortOrder     int      `json:"sort_order"`
 	MaxPerRequest int      `json:"max_per_request"`
 	MinPerRequest int      `json:"min_per_request"` // fewest per request (all sizes together); 1 for most things
+	QuickPicks    []int    `json:"quick_picks"`     // one-tap amounts on the shop, ascending; empty = worked out from the limits
 	MaxPerUser    *int     `json:"max_per_user"`    // lifetime cap; nil = unlimited
 	// Physical size in inches, for printed items; both nil when it doesn't apply.
 	WidthIn  *float64 `json:"width_in"`

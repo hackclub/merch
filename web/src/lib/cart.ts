@@ -23,8 +23,10 @@ export function packQuantities(packs: string, max: number): number[] {
 export const quantityOptions = (item: Item): number[] | undefined =>
 	item.packs ? [0, ...packQuantities(item.packs, item.max_per_request)] : undefined;
 
-/** The quick-pick amounts shown after "Add": set amounts for postcards, the first few pack sizes for other packs, or round counts up to the max. */
+/** The quick-pick amounts shown after "Add": the item's own list when it has one, set amounts for postcards, the first few pack sizes for other packs, or round counts up to the max. */
 export function presetQuantities(item: Item): number[] {
+	// Set on the admin Items tab (e.g. 1, 3, 5, 10 for the full-size magazine).
+	if (item.quick_picks.length) return item.quick_picks.filter((q) => q >= item.min_per_request && q <= item.max_per_request);
 	// Postcards: the amounts people actually ask for (all of them valid pack sizes).
 	if (item.packs === 'postcard') return [5, 10, 25, 50, 100].filter((q) => q <= item.max_per_request);
 	if (item.packs) return packQuantities(item.packs, item.max_per_request).slice(0, 6);
@@ -154,3 +156,7 @@ export function pruneSizes(sizes: Sizes, items: Item[]): Sizes {
 	}
 	return next;
 }
+
+/** Amounts typed on the admin Items tab ("1, 3, 5, 10"): positive whole numbers, ascending, no repeats. */
+export const parseQuickPicks = (text: string): number[] =>
+	[...new Set(text.split(/[\s,]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b);

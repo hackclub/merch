@@ -10,6 +10,7 @@ export type Item = {
 	sort_order: number;
 	max_per_request: number;
 	min_per_request: number; // fewest per request (all sizes together); 1 for most things
+	quick_picks: number[]; // one-tap amounts on the shop, ascending; empty = worked out from the limits
 	max_per_user: number | null;
 	width_in: number | null; // physical size in inches, for printed items
 	height_in: number | null;

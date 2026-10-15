@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api, ApiError, fileToBase64, formatCents, statusLabel } from '$lib/api';
+	import { parseQuickPicks } from '$lib/cart';
 	import { purposeLabel } from '$lib/purpose';
 	import { byFilename, itemPath, moveImage } from '$lib/items';
 	import { session } from '$lib/session.svelte';
@@ -270,6 +271,8 @@
 						<td>
 							<label>Min per request <input type="number" min="1" bind:value={it.min_per_request} /></label>
 							<label>Per request <input type="number" min="1" bind:value={it.max_per_request} /></label>
+							<label>Quick picks (blank = automatic)
+								<input value={it.quick_picks.join(', ')} placeholder="e.g. 1, 3, 5, 10" onchange={(e) => (it.quick_picks = parseQuickPicks(e.currentTarget.value))} /></label>
 							<label>Packs
 								<select bind:value={it.packs}>
 									<option value="">Any quantity</option>

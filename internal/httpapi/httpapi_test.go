@@ -1156,6 +1156,29 @@ func TestItemMinimum(t *testing.T) {
 	}
 }
 
+func TestItemQuickPicks(t *testing.T) {
+	h := newHarness(t)
+	admin := h.client(adminEmail)
+	it := h.mkItem("Pri/Bok/M25/1st", true)
+	path := fmt.Sprintf("/api/admin/items/%d", it.ID)
+	it.MaxPerRequest = 25
+	for _, bad := range [][]int{{0, 3}, {1, 30}, {5, 3}} {
+		it.QuickPicks = bad
+		if code := h.do(admin, "PUT", path, it, nil); code != 422 {
+			t.Errorf("quick picks %v = %d, want 422", bad, code)
+		}
+	}
+	it.QuickPicks = []int{1, 3, 5, 10}
+	var upd swag.Item
+	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || fmt.Sprint(upd.QuickPicks) != "[1 3 5 10]" {
+		t.Fatalf("good quick picks = %d %+v", code, upd.QuickPicks)
+	}
+	it.QuickPicks = nil
+	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || upd.QuickPicks == nil || len(upd.QuickPicks) != 0 {
+		t.Fatalf("cleared = %d %#v", code, upd.QuickPicks)
+	}
+}
+
 func TestAdminUploadsItemPages(t *testing.T) {
 	h := newHarness(t)
 	it := h.mkItem("Pri/Bok/Mini25/1st", true)

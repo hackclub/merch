@@ -3,7 +3,7 @@ import { gallery, galleryRows, roughFee } from './gallery';
 import type { Item } from './types';
 
 const item = (id: number, name: string, images: string[], photos: Item['photos'] = []): Item => ({
-	id, sku: `S/${id}`, name, description: '', images, visible: true, sort_order: id, max_per_request: 1, min_per_request: 1, max_per_user: null,
+	id, sku: `S/${id}`, name, description: '', images, visible: true, sort_order: id, max_per_request: 1, min_per_request: 1, quick_picks: [], max_per_user: null,
 	width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos, packs: '', binding: '', pages: [],
 	ships_with: [], club_only: false, clip: ''
 });

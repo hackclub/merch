@@ -3,7 +3,7 @@ import { layoutHaul, piles } from './haul';
 import type { Item } from './types';
 
 const base: Item = {
-	id: 1, sku: 'Pri/A', name: 'Poster', description: '', images: ['poster.jpg'], visible: true, sort_order: 0, max_per_request: 10, min_per_request: 1, max_per_user: null,
+	id: 1, sku: 'Pri/A', name: 'Poster', description: '', images: ['poster.jpg'], visible: true, sort_order: 0, max_per_request: 10, min_per_request: 1, quick_picks: [], max_per_user: null,
 	width_in: 11, height_in: 17, variants: [], finish: '', thickness_in: 0.01, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: ''
 };
 const mag: Item = { ...base, id: 2, name: 'Mini-Magazine', images: [], pages: ['p1.jpg', 'p2.jpg', 'p3.jpg', 'p4.jpg'], binding: 'staple', width_in: 6, height_in: 6, thickness_in: null };

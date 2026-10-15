@@ -5,7 +5,7 @@ import type { Item } from './types';
 const poster: Item = {
 	id: 681, sku: 'Pri/HPd/11x/1st', name: '11x17 Hackpad Poster (Double-Sided)', description: '',
 	images: ['https://cdn.example/front.jpg', 'https://cdn.example/back.jpg'],
-	visible: true, sort_order: 1, max_per_request: 1, min_per_request: 1, max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: ''
+	visible: true, sort_order: 1, max_per_request: 1, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: ''
 };
 
 describe('item URLs', () => {
