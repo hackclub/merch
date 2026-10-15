@@ -63,9 +63,9 @@ export function sectionize(items: Item[]): { section: Section; tiles: Tile[] }[]
 	}).filter((s) => s.tiles.length > 0);
 }
 
-/** The tile's one line of facts: "Free · 11×17 in", "Free · S M L XL · limit 1". */
+/** The tile's one line of facts: "11×17 in", "S M L XL · limit 1". Everything is free, so it doesn't say so. */
 export function tileFact(item: Item): string {
-	const facts = ['Free'];
+	const facts: string[] = [];
 	if (item.variants.length) facts.push(item.variants.map((v) => v.label).join(' '));
 	if (item.binding && item.pages.length) facts.push(`${item.pages.length} pages`);
 	else if (item.width_in && item.height_in && item.packs !== 'sticker') facts.push(`${item.width_in}×${item.height_in} in`);

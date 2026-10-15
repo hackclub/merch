@@ -188,7 +188,7 @@
 						</a>
 						<div class="what">
 							<a href={itemPath(item)}>{item.name}</a>
-							<span class="muted">{tileFact(item)}{#if sizesSummary(item, sizes)}{' · '}<strong class="in">{sizesSummary(item, sizes)}</strong>{/if}</span>
+							<span class="muted">{tileFact(item)}{#if sizesSummary(item, sizes)}{tileFact(item) ? ' · ' : ''}<strong class="in">{sizesSummary(item, sizes)}</strong>{/if}</span>
 						</div>
 						{#if open}
 							<div class="add">

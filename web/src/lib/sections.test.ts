@@ -51,12 +51,12 @@ describe('sectionize', () => {
 
 describe('tileFact', () => {
 	it('says FREE and the one fact that matters for choosing', () => {
-		expect(tileFact({ ...shirt, variants: [{ label: 'S', sku: 'a' }, { label: 'M', sku: 'b' }], max_per_user: 1 })).toBe('Free · S M · limit 1');
-		expect(tileFact({ ...flag, packs: 'sticker' })).toBe('Free · 3, 10 or packs of 50');
-		expect(tileFact({ ...mini, packs: 'fives', binding: 'staple', pages: Array(12).fill('p') })).toBe('Free · 12 pages · in fives');
-		expect(tileFact({ ...postcard, packs: 'postcard', width_in: 6, height_in: 4 })).toBe('Free · 6×4 in · in fives');
-		expect(tileFact({ ...poster, width_in: 11, height_in: 17 })).toBe('Free · 11×17 in');
-		expect(tileFact({ ...poster, width_in: 11, height_in: 17, min_per_request: 2 })).toBe('Free · 11×17 in · at least 2');
-		expect(tileFact(mystery)).toBe('Free');
+		expect(tileFact({ ...shirt, variants: [{ label: 'S', sku: 'a' }, { label: 'M', sku: 'b' }], max_per_user: 1 })).toBe('S M · limit 1');
+		expect(tileFact({ ...flag, packs: 'sticker' })).toBe('3, 10 or packs of 50');
+		expect(tileFact({ ...mini, packs: 'fives', binding: 'staple', pages: Array(12).fill('p') })).toBe('12 pages · in fives');
+		expect(tileFact({ ...postcard, packs: 'postcard', width_in: 6, height_in: 4 })).toBe('6×4 in · in fives');
+		expect(tileFact({ ...poster, width_in: 11, height_in: 17 })).toBe('11×17 in');
+		expect(tileFact({ ...poster, width_in: 11, height_in: 17, min_per_request: 2 })).toBe('11×17 in · at least 2');
+		expect(tileFact(mystery)).toBe('');
 	});
 });
