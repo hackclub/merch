@@ -365,9 +365,10 @@ func (s *server) itemStock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type variantStock struct {
-		SKU     string `json:"sku"`
-		Label   string `json:"label"`
-		InStock int    `json:"in_stock"`
+		SKU      string  `json:"sku"`
+		Label    string  `json:"label"`
+		InStock  int     `json:"in_stock"`
+		UnitCost *string `json:"unit_cost"`
 	}
 	out := struct {
 		InStock     int            `json:"in_stock"`
@@ -381,7 +382,12 @@ func (s *server) itemStock(w http.ResponseWriter, r *http.Request) {
 		want = want[:0]
 		for _, v := range it.Variants {
 			want = append(want, v.SKU)
-			out.Variants = append(out.Variants, variantStock{v.SKU, v.Label, theseus.StockFor(skus, v.SKU).InStock})
+			vs := theseus.StockFor(skus, v.SKU)
+			var cost *string
+			if vs.MinCost != "" {
+				cost = &vs.MinCost
+			}
+			out.Variants = append(out.Variants, variantStock{v.SKU, v.Label, vs.InStock, cost})
 		}
 	}
 	st := theseus.StockFor(skus, want...)

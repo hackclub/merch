@@ -92,8 +92,8 @@ describe('unitCostLabel', () => {
 describe('sizeStockLabel', () => {
 	it('lists each size with its count, or nothing for one-size items', () => {
 		const variants = [
-			{ sku: 'Swa/Shirt/HC/S', label: 'S', in_stock: 92 },
-			{ sku: 'Swa/Shirt/HC/XL', label: 'XL', in_stock: 1122 }
+			{ sku: 'Swa/Shirt/HC/S', label: 'S', in_stock: 92, unit_cost: null },
+			{ sku: 'Swa/Shirt/HC/XL', label: 'XL', in_stock: 1122, unit_cost: null }
 		];
 		expect(sizeStockLabel({ in_stock: 1214, unit_cost: null, unit_cost_max: null, variants })).toBe('S 92 · XL 1,122');
 		expect(sizeStockLabel({ in_stock: 5, unit_cost: null, unit_cost_max: null, variants: [] })).toBe('');

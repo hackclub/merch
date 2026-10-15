@@ -399,8 +399,9 @@ func TestItemStockComesFromWarehouse(t *testing.T) {
 		UnitCost    *string `json:"unit_cost"`
 		UnitCostMax *string `json:"unit_cost_max"`
 		Variants    []struct {
-			SKU     string `json:"sku"`
-			InStock int    `json:"in_stock"`
+			SKU      string  `json:"sku"`
+			InStock  int     `json:"in_stock"`
+			UnitCost *string `json:"unit_cost"`
 		} `json:"variants"`
 	}
 	var got stock
@@ -416,7 +417,7 @@ func TestItemStockComesFromWarehouse(t *testing.T) {
 		got.UnitCost == nil || *got.UnitCost != "13.8166" || got.UnitCostMax == nil || *got.UnitCostMax != "14.2682" {
 		t.Fatalf("sized stock = %d %+v", code, got)
 	}
-	// Listed sizes count by their own SKUs, and each size gets its count.
+	// Listed sizes count by their own SKUs, and each size gets its count and cost.
 	hoodie, err := h.store.CreateItem(context.Background(), swag.Item{SKU: "Swa/Hood", Name: "Hoodie", Visible: true, MaxPerRequest: 1,
 		Variants: []swag.Variant{{Label: "S", SKU: "Swa/Hood/Small"}, {Label: "M", SKU: "Swa/Hood/Medium"}}})
 	if err != nil {
@@ -424,7 +425,8 @@ func TestItemStockComesFromWarehouse(t *testing.T) {
 	}
 	got = stock{}
 	if code := h.do(anon, "GET", fmt.Sprintf("/api/items/%d/stock", hoodie.ID), nil, &got); code != 200 || got.InStock != 4 ||
-		len(got.Variants) != 2 || got.Variants[0].SKU != "Swa/Hood/Small" || got.Variants[0].InStock != 4 || got.Variants[1].InStock != 0 {
+		len(got.Variants) != 2 || got.Variants[0].SKU != "Swa/Hood/Small" || got.Variants[0].InStock != 4 || got.Variants[1].InStock != 0 ||
+		got.Variants[0].UnitCost == nil || *got.Variants[0].UnitCost != "30" || got.Variants[1].UnitCost != nil {
 		t.Fatalf("variant stock = %d %+v", code, got)
 	}
 	// The warehouse only lists in-stock SKUs; a missing one is out of stock.

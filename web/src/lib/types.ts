@@ -111,5 +111,5 @@ export type ItemStock = {
 	in_stock: number;
 	unit_cost: string | null;
 	unit_cost_max: string | null;
-	variants: { sku: string; label: string; in_stock: number }[]; // per size; empty = one size
+	variants: { sku: string; label: string; in_stock: number; unit_cost: string | null }[]; // per size; empty = one size
 };

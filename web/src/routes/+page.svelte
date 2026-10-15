@@ -4,12 +4,12 @@
 	import { api, ApiError, formatCents, isInternational } from '$lib/api';
 	import { blankAddress, prefillAddress } from '$lib/address';
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
-	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
-	import { itemPath, thumbnail } from '$lib/items';
+	import { cartCosts, cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
+	import { formatUnitCost, itemPath, thumbnail } from '$lib/items';
 	import { session } from '$lib/session.svelte';
 	import SizePicker from '$lib/SizePicker.svelte';
 	import Stepper from '$lib/Stepper.svelte';
-	import type { Address, Catalog, SwagRequest } from '$lib/types';
+	import type { Address, Catalog, ItemStock, SwagRequest } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
 	// Prefilled from the person's Hack Club Auth address when they have one.
@@ -17,6 +17,9 @@
 	let note = $state('');
 	let error = $state('');
 	let submitting = $state(false);
+	// Live warehouse unit costs for what's in the bag, fetched once per item.
+	let stocks = $state<Record<number, ItemStock>>({});
+	const fetching = new Set<number>();
 
 	onMount(async () => {
 		try {
@@ -37,6 +40,19 @@
 	const sizes = $derived(bag.sizes);
 	const problems = $derived(catalog ? cartErrors(cart, catalog.settings.max_items_per_request, catalog.items, sizes) : []);
 	const intl = $derived(isInternational(address.country));
+	const costs = $derived(catalog ? cartCosts(cart, catalog.items, sizes, stocks) : null);
+	const shippingCents = $derived(intl ? catalog?.settings.international_shipping_fee_cents ?? 0 : 0);
+	const dollars = (n: number) => formatCents(Math.round(n * 100));
+
+	$effect(() => {
+		if (!session.me?.user) return;
+		for (const id of Object.keys(cart).map(Number)) {
+			if (fetching.has(id)) continue;
+			fetching.add(id);
+			// No cost just leaves the line unpriced; it never blocks the request.
+			api.get<ItemStock>(`/api/items/${id}/stock`).then((s) => (stocks = { ...stocks, [id]: s }), () => {});
+		}
+	});
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -102,11 +118,29 @@
 	{:else if catalog.settings.requests_open && totalQuantity(cart) > 0}
 		<form class="card" id="request" style="margin-top: 1.5rem" onsubmit={submit}>
 			<h2>Where should we send it?</h2>
-			<ul class="summary">
-				{#each catalog.items.filter((i) => cart[i.id]) as i (i.id)}
-					<li>{cart[i.id]} × <a href={itemPath(i)}>{i.name}</a>{i.variants.length ? ` (${sizeLabel(i, sizes[i.id]) || 'pick a size'})` : ''}</li>
-				{/each}
-			</ul>
+			{#if costs}
+				<table class="summary">
+					<tbody>
+						{#each costs.lines as l (l.item.id)}
+							<tr>
+								<td>{l.quantity} × <a href={itemPath(l.item)}>{l.item.name}</a>{l.item.variants.length ? ` (${sizeLabel(l.item, sizes[l.item.id]) || 'pick a size'})` : ''}</td>
+								<td class="num muted">{l.unitCost ? `${formatUnitCost(l.unitCost)} each` : ''}</td>
+								<td class="num">{l.total === null ? '—' : dollars(l.total)}</td>
+							</tr>
+						{/each}
+					</tbody>
+					<tfoot>
+						<tr>
+							<th colspan="2">Subtotal <span class="muted">(Hack Club covers it)</span></th>
+							<td class="num">{costs.subtotal === null ? '—' : dollars(costs.subtotal)}</td>
+						</tr>
+						<tr>
+							<th colspan="2">Shipping <span class="muted">({intl ? 'outside the US, you pay' : 'inside the US'})</span></th>
+							<td class="num">{shippingCents > 0 ? formatCents(shippingCents) : 'Free'}</td>
+						</tr>
+					</tfoot>
+				</table>
+			{/if}
 			<div class="form-grid">
 				<label>First name <input required bind:value={address.first_name} autocomplete="given-name" /></label>
 				<label>Last name <input required bind:value={address.last_name} autocomplete="family-name" /></label>
@@ -148,6 +182,10 @@
 	.item h3 { margin: 0.6rem 0 0; font-size: 0.9rem; letter-spacing: 0.01em; line-height: 1.2; }
 	.item p { margin: 0; font-size: 0.85rem; line-height: 1.4; }
 	.clamp { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-	.summary { margin: 0 0 1rem; padding-left: 1.1rem; }
+	.summary { width: 100%; max-width: 36rem; margin: 0 0 1rem; border-collapse: collapse; }
+	.summary td, .summary th { padding: 0.3rem 0; vertical-align: baseline; }
+	.summary .num { padding-left: 1rem; text-align: right; white-space: nowrap; font-family: var(--mono); font-size: 0.8rem; }
+	.summary tfoot th { text-align: left; font-family: var(--mono); font-size: 0.72rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.02em; }
+	.summary tfoot tr:first-child > * { border-top: 1.5px solid var(--smoke); padding-top: 0.5rem; }
 	#request { max-width: 56rem; }
 </style>

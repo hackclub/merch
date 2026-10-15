@@ -1,4 +1,4 @@
-import type { Item, Line } from './types';
+import type { Item, ItemStock, Line } from './types';
 
 /** item id -> quantity */
 export type Cart = Record<number, number>;
@@ -50,6 +50,23 @@ const offers = (item: Item, sku: string | undefined) => item.variants.some((v) =
 
 /** The size label ("M") of a sized item's SKU, or "" if none is picked. */
 export const sizeLabel = (item: Item, sku: string | undefined): string => item.variants.find((v) => v.sku === sku)?.label ?? '';
+
+export type CostLine = { item: Item; quantity: number; unitCost: string | null; total: number | null };
+
+/** What the cart costs at warehouse unit costs (dollars). A sized item is priced at its picked
+ * size; a line is unpriced (null) until its cost is known, and so is the subtotal. */
+export function cartCosts(cart: Cart, items: Item[], sizes: Sizes, stocks: Record<number, ItemStock>) {
+	const lines: CostLine[] = items
+		.filter((i) => cart[i.id])
+		.map((item) => {
+			const stock = stocks[item.id];
+			const unitCost = (item.variants.length ? stock?.variants.find((v) => v.sku === sizes[item.id])?.unit_cost : stock?.unit_cost) ?? null;
+			const n = Number(unitCost);
+			return { item, quantity: cart[item.id], unitCost, total: unitCost && Number.isFinite(n) ? n * cart[item.id] : null };
+		});
+	const subtotal = lines.every((l) => l.total !== null) ? lines.reduce((a, l) => a + (l.total ?? 0), 0) : null;
+	return { lines, subtotal };
+}
 
 /** Client-side mirror of the server's checks, for instant feedback. The server is authoritative. */
 export function cartErrors(cart: Cart, maxItemsPerRequest: number, items: Item[] = [], sizes: Sizes = {}): string[] {

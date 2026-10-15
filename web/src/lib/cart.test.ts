@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { cartErrors, cartLines, emptyCart, packQuantities, parseCart, parseSizes, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from './cart';
-import type { Item } from './types';
+import { cartCosts, cartErrors, cartLines, emptyCart, packQuantities, parseCart, parseSizes, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from './cart';
+import type { Item, ItemStock } from './types';
 
 const items: Item[] = [
 	{ id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [] },
@@ -124,5 +124,40 @@ describe('cart', () => {
 	it('labels a size by its SKU', () => {
 		expect(sizeLabel(items[2], 'Swa/Shirt/HC/M')).toBe('M');
 		expect(sizeLabel(items[2], undefined)).toBe('');
+	});
+});
+
+describe('cartCosts', () => {
+	const stocks: Record<number, ItemStock> = {
+		1: { in_stock: 100, unit_cost: '0.0832', unit_cost_max: null, variants: [] },
+		3: {
+			in_stock: 187, unit_cost: '13.8166', unit_cost_max: '13.967',
+			variants: [
+				{ sku: 'Swa/Shirt/HC/S', label: 'S', in_stock: 92, unit_cost: '13.967' },
+				{ sku: 'Swa/Shirt/HC/M', label: 'M', in_stock: 95, unit_cost: '13.8166' }
+			]
+		}
+	};
+
+	it('prices each line at its unit cost and sums a subtotal', () => {
+		const c = cartCosts({ 1: 3, 3: 1 }, items, { 3: 'Swa/Shirt/HC/M' }, stocks);
+		expect(c.lines.map((l) => [l.item.id, l.quantity, l.unitCost, l.total])).toEqual([
+			[1, 3, '0.0832', 0.2496],
+			[3, 1, '13.8166', 13.8166]
+		]);
+		expect(c.subtotal).toBeCloseTo(14.0662);
+	});
+
+	it("uses the picked size's cost, and leaves a sized item unpriced until one is picked", () => {
+		expect(cartCosts({ 3: 1 }, items, { 3: 'Swa/Shirt/HC/S' }, stocks).lines[0].unitCost).toBe('13.967');
+		const c = cartCosts({ 1: 1, 3: 1 }, items, {}, stocks);
+		expect(c.lines[1].unitCost).toBeNull();
+		expect(c.subtotal).toBeNull();
+	});
+
+	it('has no subtotal while any cost is unknown', () => {
+		const c = cartCosts({ 1: 1, 2: 1 }, items, {}, stocks);
+		expect(c.lines[1]).toMatchObject({ unitCost: null, total: null });
+		expect(c.subtotal).toBeNull();
 	});
 });
