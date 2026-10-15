@@ -8,12 +8,13 @@
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
 	import { gallery, roughFee } from '$lib/gallery';
-	import { itemPath, thumbnail } from '$lib/items';
+	import { itemPath, previewCount, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Stepper from '$lib/Stepper.svelte';
+	import Tile3D from '$lib/Tile3D.svelte';
 	import type { Address, Catalog, Item, Purpose, SwagRequest } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
@@ -169,8 +170,14 @@
 							</div>
 						{/if}
 						{#if peek === item.id}
+							{@const preview = tilePreview(item)}
 							<div class="peek" aria-hidden="true">
-								{#if thumbnail(item)}<div class="peek-img" class:sticker={item.packs === 'sticker'}><img src={thumbnail(item)} alt="" /></div>{/if}
+								{#if thumbnail(item) || preview}
+									<div class="peek-img" class:sticker={item.packs === 'sticker'}>
+										{#if thumbnail(item)}<img src={thumbnail(item)} alt="" />{/if}
+										{#if preview}<Tile3D {preview} active count={previewCount(item, cart[item.id] ?? 0)} rest={'stickers' in preview ? -0.25 : -0.45} />{/if}
+									</div>
+								{/if}
 								<strong>{item.name}</strong>
 								<span class="muted">{tileFact(item)}</span>
 								{#if item.description}<p>{item.description}</p>{/if}
@@ -303,14 +310,17 @@
 	.peek { display: none; }
 	@media (hover: hover) and (min-width: 74rem) {
 		.peek {
-			display: flex; flex-direction: column; gap: 0.35rem; position: absolute; z-index: 2; top: 50%; transform: translateY(-40%);
-			left: calc(100% + 3.5rem); width: min(20rem, calc((100vw - 40rem) / 2 - 3.5rem)); padding: 1rem;
+			/* Pinned beside the sheet, centred below the header, so it never runs off the screen. */
+			display: flex; flex-direction: column; gap: 0.35rem; position: fixed; z-index: 2; top: calc(50% + 2rem); transform: translateY(-50%);
+			left: calc(50% + 23.5rem); width: min(20rem, calc((100vw - 40rem) / 2 - 3.5rem)); max-height: calc(100vh - 6rem); overflow: hidden; padding: 1rem;
 			background: white; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12); pointer-events: none; font-size: 0.9rem; line-height: 1.45;
 		}
 		.peek p { margin: 0; display: -webkit-box; -webkit-line-clamp: 6; line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
-		.peek-img { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 4 / 3; margin-bottom: 0.4rem; background: var(--tile); }
+		.peek-img { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 4 / 3; margin-bottom: 0.4rem; background: var(--tile); }
 		.peek-img img { width: 85%; height: 85%; object-fit: contain; mix-blend-mode: multiply; }
 		.peek-img.sticker img { mix-blend-mode: normal; }
+		/* Once the 3D view or clip is up it replaces the photo. */
+		.peek-img:has(:global(.spin.ready)) > img { opacity: 0; }
 	}
 	.send { margin-top: 1.5rem; }
 	form { display: grid; gap: 1rem; }

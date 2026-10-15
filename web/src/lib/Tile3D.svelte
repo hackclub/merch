@@ -14,8 +14,9 @@
 	import type { StickerViewer } from './sticker3d';
 	import { flipStep, hoverTurn, isGif } from './tile';
 
-	// count: stickers in the bag; rest: the angle it sits at.
-	let { preview, count = 0, rest = -0.45 }: { preview: TilePreview; count?: number; rest?: number } = $props();
+	// count: stickers in the bag; rest: the angle it sits at; active: animate as if hovered
+	// (the clip plays, a booklet flips, a print swings), for previews that never get the pointer.
+	let { preview, count = 0, rest = -0.45, active = false }: { preview: TilePreview; count?: number; rest?: number; active?: boolean } = $props();
 
 	const FLIP_EVERY = 1100; // ms per leaf while hovering a booklet
 	let stage: HTMLDivElement;
@@ -55,7 +56,7 @@
 	// Clips play while hovered; touch screens have no hover, so there they play while on screen.
 	$effect(() => {
 		if (!video) return;
-		if (near && matchMedia('(hover: none)').matches) video.play().catch(() => {});
+		if (active || (near && matchMedia('(hover: none)').matches)) video.play().catch(() => {});
 		else if (!near) video.pause();
 	});
 
@@ -101,7 +102,7 @@
 					if (document.hidden) return;
 					let moving = !drawn || now < busyUntil;
 					if (bv) {
-						if (hovering && !dragging && !still && now > flipAt && goal < leaves) {
+						if ((hovering || active) && !dragging && !still && now > flipAt && goal < leaves) {
 							goal = flipStep(goal, leaves);
 							flipAt = now + FLIP_EVERY;
 						}
@@ -114,6 +115,7 @@
 						// Open books face you squarely; closed, they sit at rest.
 						target = goal > 0 || bv.position > 0.001 ? 0 : at;
 					}
+					if (active && !bv && !hovering && !dragging && !still) target = at + Math.sin(now / 900) * 0.5;
 					if (!dragging && Math.abs(target - v.angle) > 0.0005) {
 						v.angle += (target - v.angle) * Math.min(1, dt * 6);
 						moving = true;
