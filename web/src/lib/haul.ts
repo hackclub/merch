@@ -291,27 +291,6 @@ function skyline(order: Pile[], width: number): { placed: Placed[]; depth: numbe
 	return { placed, depth: Math.max(0, ...placed.map((p) => p.z + p.d / 2)) };
 }
 
-// Things everyone has held, by volume in cubic inches, smallest first.
-const LIKE = [
-	{ name: 'a deck of cards', in3: 3.5 * 2.5 * 0.75 },
-	{ name: 'a paperback book', in3: 7 * 4.5 * 1.2 },
-	{ name: 'a shoebox', in3: 13 * 8 * 5 },
-	{ name: 'a box of printer paper', in3: 17.5 * 11.5 * 10.5 }
-];
-
-/**
- * Everything in the request stacked together, compared to something familiar:
- * "about the size of a shoebox", or "about 3 boxes of printer paper". Helps
- * people feel how much they'll get (they tend to ask for too little).
- */
-export function haulSize(all: Pile[]): string {
-	const v = all.reduce((a, p) => a + p.w * p.d * p.height, 0);
-	const box = LIKE[LIKE.length - 1];
-	if (v > box.in3 * 2) return `about ${Math.round(v / box.in3)} boxes of printer paper`;
-	const nearest = LIKE.reduce((best, t) => (Math.abs(Math.log(v / t.in3)) < Math.abs(Math.log(v / best.in3)) ? t : best));
-	return `about the size of ${nearest.name}`;
-}
-
 /** How much of the tables the piles cover, 0 to 1 (0 with no tables). */
 export function tableCover(layout: HaulLayout): number {
 	if (!layout.tables.length) return 0;

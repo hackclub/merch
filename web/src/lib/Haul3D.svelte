@@ -3,10 +3,10 @@
 	// (haul.ts, haul3d.ts), on 6-foot folding tables beside a laptop for clubs and
 	// events, against a dark backdrop so the white table stands out. Made to
 	// explore: drag to turn and tilt, pinch (or ctrl-scroll) or +/− to zoom, hover
-	// or tap a pile to see what it is and how tall. The caption puts the total in
-	// familiar terms, because people tend to ask for too little.
+	// or tap a pile to see what it is and how tall. On tables, the caption says how
+	// much of them it covers, because people tend to ask for too little.
 	import { onMount, untrack } from 'svelte';
-	import { haulSize, layoutHaul, lineLabel, piles, tableCover, tall, withIncludes, type HaulLine } from './haul';
+	import { layoutHaul, lineLabel, piles, tableCover, tall, withIncludes, type HaulLine } from './haul';
 	import type { HaulViewer } from './haul3d';
 	import type { Item } from './types';
 
@@ -178,10 +178,12 @@
 		<figcaption class="muted">{allLines.map(lineLabel).join(' · ')}, {tall(Math.max(...stack.map((p) => p.height)))} stacked up, next to a 6-inch phone.</figcaption>
 	{:else}
 	<figcaption>
-		<span>
-			Altogether it's {haulSize(stack)}{#if onTable}, and covers about {cover}% of {table.tables.length === 1 ? 'a 6-foot folding table' : `${table.tables.length} 6-foot folding tables`}{/if}.
-			{#if onTable && cover < 35}Most people find they need more than they think, so don't be shy about adding more.{/if}
-		</span>
+		{#if onTable}
+			<span>
+				Spread out, it covers about {cover}% of {table.tables.length === 1 ? 'a 6-foot folding table' : `${table.tables.length} 6-foot folding tables`}.
+				{#if cover < 35}Most people find they need more than they think, so don't be shy about adding more.{/if}
+			</span>
+		{/if}
 		<span class="muted">To scale, next to {onTable ? 'a 13-inch laptop and ' : ''}a regular 6-inch phone. Drag to turn and tilt it, pinch or use + and − to zoom, and tap a pile to see what it is.</span>
 		<span class="muted">{allLines.map(lineLabel).join(' · ')}</span>
 	</figcaption>

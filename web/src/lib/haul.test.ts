@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bookletStack, haulSize, LAPTOP, layoutHaul, LOFT, piles, pickedLines, TABLE, tableCover, tall } from './haul';
+import { bookletStack, LAPTOP, layoutHaul, LOFT, piles, pickedLines, TABLE, tableCover, tall } from './haul';
 import type { Item } from './types';
 
 const base: Item = {
@@ -142,17 +142,6 @@ describe('layoutHaul on tables', () => {
 
 	it('has no table unless asked', () => {
 		expect(layoutHaul(piles([{ item: base, quantity: 1 }])).tables).toEqual([]);
-	});
-});
-
-describe('haulSize', () => {
-	const pile = (w: number, d: number, height: number) => ({ key: 'k', label: 'l', art: '', w, d, height });
-
-	it('compares everything stacked together to things people know', () => {
-		expect(haulSize([pile(4, 6, 0.1)])).toBe('about the size of a deck of cards');
-		expect(haulSize([pile(6, 6, 4), pile(11, 17, 0.2)])).toBe('about the size of a shoebox');
-		expect(haulSize([pile(12, 12, 12), pile(12, 12, 10)])).toBe('about the size of a box of printer paper');
-		expect(haulSize([pile(20, 20, 20)])).toBe('about 4 boxes of printer paper');
 	});
 });
 
