@@ -63,6 +63,11 @@ images on borderless `var(--tile)` (#f0f1ec, the sticker photos' own backdrop; o
 `mix-blend-mode: multiply` so white backgrounds disappear). Reuse these instead of new colors or
 rounded cards.
 
+The shop home page (`web/src/routes/+page.svelte`) is the exception: Zach wants it as simple as the old
+Fillout request forms (forms.hackclub.com/mini-magazine). It's one white column on the grey page,
+in one font and size: plain intro text, one photo, then the questions, a compact item list, shipping
+info and Submit. Keep it that simple; product pages carry the 3D views and the detail.
+
 ## TDD workflow (required)
 
 1. Write or extend a failing test first. Run it and watch it fail for the right reason.
