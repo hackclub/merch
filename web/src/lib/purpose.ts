@@ -6,12 +6,12 @@ export const PURPOSES: { value: Purpose; label: string; short: string; reason: s
 	{ value: 'personal', label: 'I just want some stuff personally / to share with my friends', short: 'Personal', reason: '', example: '' },
 	{
 		value: 'club', label: 'I run a Hack Club', short: 'Hack Club',
-		reason: 'In 1–2 sentences, how will you use it?',
+		reason: 'In 1–2 sentences, how will you use it? This will be reviewed before we send your shipment, usually with 6-10 hour turnaround. More detail helps us approve more requests.',
 		example: 'e.g. Handing out stickers and mini-magazines at our school club fair on Sept 12.'
 	},
 	{
 		value: 'event', label: 'I am running an event or exhibiting at one', short: 'Event',
-		reason: 'In 1–2 sentences, how will you use it? Link the event, and if you are running it, say how many people you expect.',
+		reason: 'In 1–2 sentences, how will you use it? Link the event, and if you are running it, say how many people you expect. This will be reviewed before we send your shipment, usually with 6-10 hour turnaround. More detail helps us approve more requests.',
 		example: 'e.g. Running https://example-hacks.dev on Nov 8, about 120 hackers expected.'
 	}
 ];

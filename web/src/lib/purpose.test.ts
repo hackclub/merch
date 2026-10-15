@@ -16,6 +16,7 @@ describe('purpose', () => {
 		expect(needsReason('event')).toBe(true);
 		expect(PURPOSES.find((p) => p.value === 'personal')?.reason).toBe('');
 		for (const p of PURPOSES.filter((p) => p.value !== 'personal')) expect(p.reason).toMatch(/1–2 sentences/);
+		for (const p of PURPOSES.filter((p) => p.value !== 'personal')) expect(p.reason).toMatch(/This will be reviewed before we send your shipment, usually with 6-10 hour turnaround\. More detail helps us approve more requests\.$/);
 	});
 
 	it('leaves club-only items out of personal requests', () => {
