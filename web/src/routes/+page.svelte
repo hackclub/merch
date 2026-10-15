@@ -104,8 +104,8 @@
 		<fieldset class="ask">
 			<legend><h2>What kind of request is this?</h2></legend>
 			<p class="muted">
-				Free shipping in the US.{#if catalog.settings.international_shipping_fee_cents > 0}
-					{formatCents(catalog.settings.international_shipping_fee_cents)} to help cover shipping anywhere else.{/if}
+				Free shipping in the US.{#if catalog.settings.international_shipping_fee_cents > 0}{' '}{formatCents(catalog.settings.international_shipping_fee_cents)}
+					to help cover shipping anywhere else.{/if}
 			</p>
 			{#each PURPOSES as p (p.value)}
 				<label class="choice" class:on={purpose === p.value}>
