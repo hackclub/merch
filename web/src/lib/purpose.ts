@@ -1,17 +1,21 @@
 import type { Item, Purpose } from './types';
 
+const REASON =
+	"In 2-3 sentences, how will you use it? Please include specifics (including estimated # of people you're getting swag for) and links. If you're requesting multiple t-shirts, please include the names of the people they're for.\n\n" +
+	'This will be reviewed before we send your shipment, usually with 6-10 hour turnaround. More detail helps us approve more requests. We may adjust quantities up or down based on what you put here. (For events people often don\'t request enough stickers, for example)';
+
 /** What a request is for. The request form asks this first, like the old Fillout forms. Mirrors swag.Purposes.
  * Clubs and events say how they'll use it (reason, with an example); personal requests don't. */
 export const PURPOSES: { value: Purpose; label: string; short: string; reason: string; example: string }[] = [
 	{ value: 'personal', label: 'Personal / to share with friends', short: 'Personal', reason: '', example: '' },
 	{
 		value: 'club', label: 'I run a Hack Club', short: 'Hack Club',
-		reason: 'In 1–2 sentences, how will you use it? This will be reviewed before we send your shipment, usually with 6-10 hour turnaround. More detail helps us approve more requests.',
+		reason: REASON,
 		example: 'e.g. Handing out stickers and mini-magazines at our school club fair on Sept 12.'
 	},
 	{
 		value: 'event', label: 'Hackathon / event', short: 'Event',
-		reason: 'In 1–2 sentences, how will you use it? Link the event, and if you are running it, say how many people you expect. This will be reviewed before we send your shipment, usually with 6-10 hour turnaround. More detail helps us approve more requests.',
+		reason: REASON,
 		example: 'e.g. Running https://example-hacks.dev on Nov 8, about 120 hackers expected.'
 	}
 ];

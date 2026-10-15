@@ -288,7 +288,7 @@
 					{/if}
 				{/if}
 				{#if needsReason(purpose)}
-					<label>{purposeInfo?.reason}
+					<label><span class="reason">{purposeInfo?.reason}</span>
 						<textarea bind:value={note} rows="3" required placeholder={purposeInfo?.example}></textarea></label>
 				{:else}
 					<label>Anything we should know? (optional) <textarea bind:value={note} rows="2"></textarea></label>
@@ -323,6 +323,9 @@
 </div>
 
 <style>
+	.reason {
+		white-space: pre-line;
+	}
 	.fee {
 		text-decoration: underline dotted;
 		cursor: help;

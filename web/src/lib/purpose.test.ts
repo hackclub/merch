@@ -15,8 +15,8 @@ describe('purpose', () => {
 		expect(needsReason('club')).toBe(true);
 		expect(needsReason('event')).toBe(true);
 		expect(PURPOSES.find((p) => p.value === 'personal')?.reason).toBe('');
-		for (const p of PURPOSES.filter((p) => p.value !== 'personal')) expect(p.reason).toMatch(/1–2 sentences/);
-		for (const p of PURPOSES.filter((p) => p.value !== 'personal')) expect(p.reason).toMatch(/This will be reviewed before we send your shipment, usually with 6-10 hour turnaround\. More detail helps us approve more requests\.$/);
+		for (const p of PURPOSES.filter((p) => p.value !== 'personal')) expect(p.reason).toMatch(/^In 2-3 sentences, how will you use it\? Please include specifics \(including estimated # of people you're getting swag for\) and links\. If you're requesting multiple t-shirts, please include the names of the people they're for\.\n\n/);
+		for (const p of PURPOSES.filter((p) => p.value !== 'personal')) expect(p.reason).toMatch(/This will be reviewed before we send your shipment, usually with 6-10 hour turnaround\. More detail helps us approve more requests\. We may adjust quantities up or down based on what you put here\. \(For events people often don't request enough stickers, for example\)$/);
 	});
 
 	it('leaves club-only items out of personal requests', () => {
