@@ -7,6 +7,7 @@
 	import { itemsFor, offered } from '$lib/purpose';
 	import { isBooklet, itemIdFromParam, itemPath, previewCount, productPreview, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
 	import { sheetThickness, finishInfo } from '$lib/paper';
+	import { programFor } from '$lib/programs';
 	import Product3D from '$lib/Product3D.svelte';
 	import { session } from '$lib/session.svelte';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
@@ -47,6 +48,7 @@
 	const tiles = $derived(item ? item.images.length + (has3D ? 1 : 0) : 0);
 	const pickedSizes = $derived(item ? sizesSummary(item, bag.sizes) : '');
 	const finish = $derived(item ? finishInfo(item.finish).label : '');
+	const program = $derived(item ? programFor(item.sku) : null);
 	// Reset the gallery when moving between items.
 	$effect(() => {
 		id;
@@ -116,6 +118,9 @@
 		<div class="info">
 			<h1>{item.name}</h1>
 			{#if item.description}<p class="description">{item.description}</p>{/if}
+			{#if program}
+				<p class="program">Made for <a href={program.href} target="_blank" rel="noreferrer">{program.name} ↗</a></p>
+			{/if}
 
 			<ul class="facts">
 				<li>Up to {item.max_per_request} per request{item.max_per_user != null ? `, ${item.max_per_user} per person` : ''}</li>
@@ -243,6 +248,7 @@
 	}
 	.info h1 { margin-bottom: 0.75rem; font-size: 1.75rem; }
 	.description { white-space: pre-line; line-height: 1.55; }
+	.program { margin: 0.75rem 0; }
 	.facts { list-style: none; padding: 0; margin: 1.25rem 0; border-top: 1px solid var(--smoke); }
 	.facts li {
 		padding: 0.65rem 0; border-bottom: 1px solid var(--smoke); font-family: var(--mono); font-size: 0.75rem;
