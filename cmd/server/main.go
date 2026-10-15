@@ -19,6 +19,7 @@ import (
 	"github.com/hackclub/merch/internal/config"
 	"github.com/hackclub/merch/internal/db"
 	"github.com/hackclub/merch/internal/httpapi"
+	"github.com/hackclub/merch/internal/places"
 	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/theseus"
 )
@@ -66,6 +67,13 @@ func run(log *slog.Logger) error {
 		log.Warn("HACKCLUB_CDN_API_KEY not set: admins can't upload item images")
 	}
 
+	var finder httpapi.AddressFinder
+	if cfg.GooglePlacesAPIKey != "" {
+		finder = places.New(cfg.GooglePlacesBaseURL, cfg.GooglePlacesAPIKey, nil)
+	} else {
+		log.Warn("GOOGLE_PLACES_API_KEY not set: the request form has no address autocomplete")
+	}
+
 	var static fs.FS
 	if cfg.StaticDir != "" {
 		if st, err := os.Stat(cfg.StaticDir); err == nil && st.IsDir() {
@@ -85,6 +93,7 @@ func run(log *slog.Logger) error {
 		Authors:   dir,
 		Warehouse: theseus.New(cfg.TheseusBaseURL, cfg.TheseusAPIKey, nil),
 		Images:    images,
+		Places:    finder,
 		Static:    static,
 		Log:       log,
 	})

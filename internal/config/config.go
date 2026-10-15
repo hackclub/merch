@@ -39,6 +39,10 @@ type Config struct {
 	CDNBaseURL string
 	CDNAPIKey  string
 
+	// Google Places API (New) key for address autocomplete; off without it
+	GooglePlacesBaseURL string
+	GooglePlacesAPIKey  string
+
 	// HCB donation page international recipients pay shipping through
 	HCBShippingPaymentURL string
 
@@ -78,6 +82,8 @@ func Load(getenv func(string) string) (*Config, error) {
 		CDNBaseURL:              strings.TrimRight(get("HACKCLUB_CDN_BASE_URL", "https://cdn.hackclub.com"), "/"),
 		CDNAPIKey:               get("HACKCLUB_CDN_API_KEY", ""),
 		HCBShippingPaymentURL:   get("HCB_SHIPPING_PAYMENT_URL", ""),
+		GooglePlacesBaseURL:     strings.TrimRight(get("GOOGLE_PLACES_BASE_URL", "https://places.googleapis.com"), "/"),
+		GooglePlacesAPIKey:      get("GOOGLE_PLACES_API_KEY", ""),
 		StaticDir:               get("STATIC_DIR", "web/build"),
 	}
 	for _, e := range strings.Split(getenv("ADMIN_EMAILS"), ",") {

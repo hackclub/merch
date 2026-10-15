@@ -3,6 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { api, ApiError, formatCents, isInternational } from '$lib/api';
 	import { blankAddress, prefillAddress } from '$lib/address';
+	import AddressLine1 from '$lib/AddressLine1.svelte';
+	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartCosts, cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
 	import { formatUnitCost, itemPath, preview3D, previewCount, thumbnail } from '$lib/items';
@@ -179,7 +181,7 @@
 			<div class="form-grid">
 				<label>First name <input required bind:value={address.first_name} autocomplete="given-name" /></label>
 				<label>Last name <input required bind:value={address.last_name} autocomplete="family-name" /></label>
-				<label>Address line 1 <input required bind:value={address.line_1} autocomplete="address-line1" /></label>
+				<AddressLine1 bind:value={address.line_1} onpick={(place) => (address = applyPlace(address, place))} />
 				<label>Address line 2 <input bind:value={address.line_2} autocomplete="address-line2" /></label>
 				<label>City <input required bind:value={address.city} autocomplete="address-level2" /></label>
 				<label>State / province <input bind:value={address.state} autocomplete="address-level1" /></label>

@@ -247,8 +247,9 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
 - Migrations run automatically at startup (goose, embedded).
 - Required env: `DATABASE_URL`, `BASE_URL` (public https origin), `SESSION_SECRET`,
   `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, `THESEUS_API_KEY`, `ADMIN_EMAILS`. Also needed:
-  `AIRTABLE_API_KEY` for authors, `HCB_SHIPPING_PAYMENT_URL` for international payments, and
-  `HACKCLUB_CDN_API_KEY` for item image uploads.
+  `AIRTABLE_API_KEY` for authors, `HCB_SHIPPING_PAYMENT_URL` for international payments,
+  `HACKCLUB_CDN_API_KEY` for item image uploads, and `GOOGLE_PLACES_API_KEY` for address
+  autocomplete.
 - `$BASE_URL/auth/callback` must be registered as a redirect URI on the Hack Club Auth app.
 - Read the `orchard-ops` skill before touching Orchard (`pdw call hack_club_orchard_k8s__…`).
 
@@ -298,6 +299,10 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   `storage.documents.cimpress.io` design document; its panels (Front/Back) link the original
   print files (`api.sherbert.cimpress.io/.../print?signature=…`). The Hackpad poster
   (`Pri/HPd/11x/1st`) and 4x6 card (`Pri/HPd/4x6/1st`) use the same front/back artwork.
+- **Google Places API (New)** (`internal/places`): the request form's address line 1 suggests
+  addresses as people type. The server proxies `/api/address/suggest` and `/api/address/place`
+  (signed-in only) so the key stays secret; one session token per search keeps it to one billed
+  session. Without `GOOGLE_PLACES_API_KEY` the endpoints return 404 and the field is a plain input.
 - **Unified YSWS DB authors**: only about 64 of 114 authors had `Hack Club Auth Email` filled
   in (warehouse snapshot, 2026-09-29). An author missing it won't be recognized; fix it in
   Airtable.

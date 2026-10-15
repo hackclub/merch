@@ -112,12 +112,13 @@ func (f *fakeCDN) Upload(_ context.Context, name, contentType string, data []byt
 // ---- harness ----
 
 type harness struct {
-	t     *testing.T
-	srv   *httptest.Server
-	store *store.Store
-	wh    *fakeWarehouse
-	cdn   *fakeCDN
-	cfg   *config.Config
+	t      *testing.T
+	srv    *httptest.Server
+	store  *store.Store
+	wh     *fakeWarehouse
+	cdn    *fakeCDN
+	places *fakePlaces
+	cfg    *config.Config
 }
 
 const (
@@ -138,6 +139,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	wh := &fakeWarehouse{}
 	cdn := &fakeCDN{}
+	pl := &fakePlaces{}
 	h := New(Deps{
 		Config: cfg,
 		Store:  st,
@@ -150,6 +152,7 @@ func newHarness(t *testing.T) *harness {
 		Authors:   authors.Static{authorEmail: true},
 		Warehouse: wh,
 		Images:    cdn,
+		Places:    pl,
 		Static: fstest.MapFS{
 			"index.html":           {Data: []byte("<html>app shell</html>")},
 			"manifest.webmanifest": {Data: []byte(`{"name":"x"}`)},
@@ -158,7 +161,7 @@ func newHarness(t *testing.T) *harness {
 	})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &harness{t: t, srv: srv, store: st, wh: wh, cdn: cdn, cfg: cfg}
+	return &harness{t: t, srv: srv, store: st, wh: wh, cdn: cdn, places: pl, cfg: cfg}
 }
 
 // client returns an http.Client logged in as email ("" = anonymous).

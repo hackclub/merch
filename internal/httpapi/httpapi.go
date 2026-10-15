@@ -54,8 +54,9 @@ type Deps struct {
 	Provider  auth.Provider
 	Authors   authors.Directory
 	Warehouse Warehouse
-	Images    ImageStore // nil disables image uploads
-	Static    fs.FS      // built PWA (web/build); nil disables static serving
+	Images    ImageStore    // nil disables image uploads
+	Places    AddressFinder // nil disables address autocomplete
+	Static    fs.FS         // built PWA (web/build); nil disables static serving
 	Now       func() time.Time
 	Log       *slog.Logger
 }
@@ -94,6 +95,8 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET /api/requests", s.requireUser(s.myRequests))
 	mux.Handle("POST /api/requests", s.requireUser(s.createRequest))
 	mux.Handle("POST /api/requests/{id}/cancel", s.requireUser(s.cancelRequest))
+	mux.Handle("GET /api/address/suggest", s.requireUser(s.addressSuggest))
+	mux.Handle("GET /api/address/place", s.requireUser(s.addressPlace))
 
 	// YSWS authors
 	mux.Handle("GET /api/author/submissions", s.requireAuthor(s.mySubmissions))
