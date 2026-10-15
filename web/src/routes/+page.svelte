@@ -124,6 +124,14 @@
 	let picking = $state<Record<number, boolean>>({});
 	const expanded = (item: Item) => item.variants.length > 0 || !!picking[item.id] || !!cart[item.id];
 
+	// Empty the whole request (asks first, since it can't be undone).
+	function clearAll() {
+		if (!confirm('Clear everything from your request?')) return;
+		setCart(emptyCart());
+		setSizes({});
+		picking = {};
+	}
+
 	function setAmount(item: Item, n: number) {
 		setCart(setQuantity(cart, item, n));
 		if (n === 0) picking[item.id] = false;
@@ -276,7 +284,8 @@
 		{/each}
 
 		{#if !session.me?.user}
-			{#if haul.length && !side.current}<div class="send"><Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} /></div>{/if}
+			{#if haul.length && !side.current}<div class="send"><Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
+				<button type="button" class="link" onclick={clearAll}>Clear request</button></div>{/if}
 			<p id="request" class="send"><a class="button" href="/auth/login" data-sveltekit-reload
 				>{count ? `Sign in with Hack Club to send ${count} item${count === 1 ? '' : 's'}` : 'Sign in with Hack Club to request swag'}</a></p>
 		{:else if asking && !purpose}
@@ -340,7 +349,8 @@
 						<span>I understand, and I'll only request what I'll use.</span>
 					</label>
 				</div>
-				{#if haul.length && !side.current}<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />{/if}
+				{#if haul.length && !side.current}<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
+					<button type="button" class="link" onclick={clearAll}>Clear request</button>{/if}
 				{#if quote && arrivalText(quote.estimate)}<p>{arrivalText(quote.estimate)}, by {quote.estimate.service}.</p>{/if}
 				{#each problems as p}<p class="error">{p}</p>{/each}
 				{#if quoteError}<p class="error">{quoteError}</p>{/if}
@@ -354,7 +364,10 @@
 	{/if}
 	{#if catalog && count > 0 && haul.length && side.current}
 		<aside class="haul-side" aria-label="Your request so far">
-			<strong>Your request · {count} item{count === 1 ? '' : 's'}</strong>
+			<div class="haul-head">
+				<strong>Your request · {count} item{count === 1 ? '' : 's'}</strong>
+				<button type="button" class="link" onclick={clearAll}>Clear</button>
+			</div>
 			<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
 		</aside>
 	{/if}
@@ -445,6 +458,9 @@
 		position: fixed; z-index: 1; bottom: 1.5rem; left: 1.5rem; width: min(24rem, calc((100vw - 40rem) / 2 - 3rem));
 		max-height: calc(100vh - 7rem); overflow-y: auto; display: grid; gap: 0.6rem; padding: 1rem; background: white; font-size: 0.9rem; line-height: 1.45;
 	}
+	.haul-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+	.haul-head button.link { font-size: 0.9rem; }
+	.send button.link { margin-top: 0.5rem; }
 	/* Picking how many of a booklet or an item that plays a clip: the amount, stacked up in 3D, under the row. */
 	.amount-3d { flex-basis: 100%; padding-left: 4.65rem; }
 	@media (max-width: 600px) { .amount-3d { padding-left: 0; } }
