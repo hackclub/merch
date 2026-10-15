@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { byFilename, formatUnitCost, isBooklet, itemIdFromParam, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, preview3D, previewCount, thumbnail } from './items';
+import { byFilename, formatUnitCost, isBooklet, itemIdFromParam, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, previewCount, tilePreview, thumbnail } from './items';
 import type { Item } from './types';
 
 const poster: Item = {
 	id: 681, sku: 'Pri/HPd/11x/1st', name: '11x17 Hackpad Poster (Double-Sided)', description: '',
 	images: ['https://cdn.example/front.jpg', 'https://cdn.example/back.jpg'],
-	visible: true, sort_order: 1, max_per_request: 1, max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false
+	visible: true, sort_order: 1, max_per_request: 1, max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: ''
 };
 
 describe('item URLs', () => {
@@ -100,30 +100,38 @@ describe('sizeStockLabel', () => {
 	});
 });
 
-describe('preview3D', () => {
+describe('tilePreview', () => {
 	it('shows a sized print as a sheet with its front, back, thickness and finish, without the phone', () => {
-		expect(preview3D(poster)).toEqual({
-			front: 'https://cdn.example/front.jpg', back: 'https://cdn.example/back.jpg',
-			widthIn: 11, heightIn: 17, thicknessIn: 0.008, finish: 'matte', phone: false
+		expect(tilePreview(poster)).toEqual({
+			sheet: {
+				front: 'https://cdn.example/front.jpg', back: 'https://cdn.example/back.jpg',
+				widthIn: 11, heightIn: 17, thicknessIn: 0.008, finish: 'matte', phone: false
+			}
 		});
 	});
 
-	it('shows a closed booklet: front cover, back cover, the whole book thick', () => {
-		const mag = { ...poster, images: [], binding: 'staple', pages: ['p1', 'p2', 'p3', 'p4'], width_in: 5.5, height_in: 8.5 };
-		expect(preview3D(mag)).toMatchObject({ front: 'p1', back: 'p4', thicknessIn: 0.016 });
-		expect(preview3D({ ...mag, thickness_in: 0.1 })).toMatchObject({ thicknessIn: 0.1 });
+	it('flips through a booklet on its own, without the phone or what ships with it', () => {
+		const mag = { ...poster, images: [], binding: 'staple', pages: ['p1', 'p2', 'p3', 'p4'], width_in: 5.5, height_in: 8.5, ships_with: ['Pri/M25/4x6/1st'] };
+		expect(tilePreview(mag)).toEqual({
+			book: { pages: ['p1', 'p2', 'p3', 'p4'], widthIn: 5.5, heightIn: 8.5, finish: 'matte', binding: 'staple', thicknessIn: 0.016, extras: [], phone: false }
+		});
+		expect(tilePreview({ ...mag, thickness_in: 0.1 })).toMatchObject({ book: { thicknessIn: 0.1 } });
+	});
+
+	it('plays the clip when there is one', () => {
+		expect(tilePreview({ ...poster, clip: 'https://cdn.example/flip.mp4' })).toEqual({ clip: 'https://cdn.example/flip.mp4' });
 	});
 
 	it('shows stickers as stickers, even without a size', () => {
-		expect(preview3D({ ...poster, packs: 'sticker', width_in: null, height_in: null })).toEqual({
-			kind: 'stickers', front: 'https://cdn.example/front.jpg', widthIn: null, heightIn: null, phone: false
+		expect(tilePreview({ ...poster, packs: 'sticker', width_in: null, height_in: null })).toEqual({
+			stickers: { kind: 'stickers', front: 'https://cdn.example/front.jpg', widthIn: null, heightIn: null, phone: false }
 		});
 	});
 
 	it('is null without a size or without art', () => {
-		expect(preview3D({ ...poster, width_in: null })).toBeNull();
-		expect(preview3D({ ...poster, images: [] })).toBeNull();
-		expect(preview3D({ ...poster, packs: 'sticker', images: [] })).toBeNull();
+		expect(tilePreview({ ...poster, width_in: null })).toBeNull();
+		expect(tilePreview({ ...poster, images: [] })).toBeNull();
+		expect(tilePreview({ ...poster, packs: 'sticker', images: [] })).toBeNull();
 	});
 });
 

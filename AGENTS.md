@@ -293,6 +293,10 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   pages come from the public PDFs on magazine.hackclub.com, split into single pages.
   `ships_with` lists SKUs added to the warehouse order once per unit (the Magazine 2025
   always ships with its intro card, `Pri/M25/4x6/1st`), and the product page shows them.
+  Shop grid tiles (`web/src/lib/Tile3D.svelte`) show the same 3D views without the phone, still
+  until touched: hover or drag turns prints and stickers, and booklets flip through on hover.
+  `clip` (an MP4 or GIF URL, set on the admin Items tab) replaces the tile's 3D view with a
+  real-world loop that plays on hover; the Mini-Magazine uses one.
 - **Print source files** for warehouse SKUs: the Marketing warehouse Airtable
   (`appK53aN0fz3sgJ4w`, table `warehouse_skus`) has `re_order_instructions`, e.g. "Order
   VP_MJR069GX on zach@hackclub.com Vistaprint". The Vistaprint order-confirmation email links a

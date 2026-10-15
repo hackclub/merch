@@ -1077,6 +1077,27 @@ func TestBookletDetailsAreValidated(t *testing.T) {
 	}
 }
 
+func TestItemClipIsAnHTTPURL(t *testing.T) {
+	h := newHarness(t)
+	admin := h.client(adminEmail)
+	it := h.mkItem("Pri/Bok/Mini25/1st", true)
+	path := fmt.Sprintf("/api/admin/items/%d", it.ID)
+	it.Clip = "javascript:alert(1)"
+	if code := h.do(admin, "PUT", path, it, nil); code != 422 {
+		t.Errorf("bad clip = %d, want 422", code)
+	}
+	it.Clip = "https://cdn.example/mini.mp4"
+	var upd swag.Item
+	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || upd.Clip != it.Clip {
+		t.Fatalf("good clip = %d %+v", code, upd)
+	}
+	var cat struct{ Items []swag.Item }
+	h.do(h.client(userEmail), "GET", "/api/catalog", nil, &cat)
+	if len(cat.Items) != 1 || cat.Items[0].Clip != it.Clip {
+		t.Fatalf("catalog = %+v", cat.Items)
+	}
+}
+
 func TestAdminUploadsItemPages(t *testing.T) {
 	h := newHarness(t)
 	it := h.mkItem("Pri/Bok/Mini25/1st", true)

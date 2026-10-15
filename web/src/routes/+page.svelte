@@ -7,7 +7,7 @@
 	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartCosts, cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
-	import { formatUnitCost, itemPath, preview3D, previewCount, thumbnail } from '$lib/items';
+	import { formatUnitCost, itemPath, previewCount, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { session } from '$lib/session.svelte';
 	import SizePicker from '$lib/SizePicker.svelte';
@@ -118,8 +118,8 @@
 		</fieldset>
 	{/if}
 	<section class="grid">
-		{#each shown as item, i (item.id)}
-			{@const three = preview3D(item)}
+		{#each shown as item (item.id)}
+			{@const preview = tilePreview(item)}
 			<div class="item" class:picked={cart[item.id]}>
 				<a href={itemPath(item)} class="item-link">
 					<div class="tile" class:sticker={item.packs === 'sticker'}>
@@ -128,7 +128,7 @@
 						{:else}
 							<span aria-hidden="true">📦</span>
 						{/if}
-						{#if three}<Tile3D opts={three} count={previewCount(item, cart[item.id] ?? 0)} phase={i * 0.9} />{/if}
+						{#if preview}<Tile3D {preview} count={previewCount(item, cart[item.id] ?? 0)} rest={'stickers' in preview ? -0.25 : -0.45} />{/if}
 						{#if item.packs === 'sticker'}<span class="pack label">{bagLabel(previewCount(item, cart[item.id] ?? 0))}</span>{/if}
 					</div>
 					<h3>{item.name}</h3>

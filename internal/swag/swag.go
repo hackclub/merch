@@ -76,6 +76,9 @@ type Item struct {
 	// ShipsWith lists warehouse SKUs packed with every unit of this item, like
 	// the intro card that goes with each magazine.
 	ShipsWith []string `json:"ships_with"`
+	// Clip is a short looping video or GIF of the real item (someone flipping
+	// through it); the shop tile plays it instead of the 3D view.
+	Clip string `json:"clip"`
 
 	// ClubOnly items (the full-size magazine, the T-shirt) aren't offered for
 	// personal requests, only to people running a club or an event.

@@ -1,3 +1,4 @@
+import type { BookOptions } from './book3d';
 import { sheetThickness } from './paper';
 import type { ViewerOptions } from './paper3d';
 import { hasSize } from './scale';
@@ -27,26 +28,40 @@ export const thumbnail = (item: Item): string => item.images[0] ?? item.pages[0]
 /** Booklets with page images open in 3D and flip through. */
 export const isBooklet = (item: Item) => item.binding !== '' && item.pages.length >= 2;
 
+/** What a shop tile shows instead of its photo; null = just the photo. */
+export type TilePreview =
+	| { clip: string } // a looping video or GIF of the real thing
+	| { book: BookOptions } // a booklet that flips through its pages
+	| { sheet: ViewerOptions } // a sized print, front and back
+	| { stickers: StickerOptions };
+
 /**
- * What the shop grid shows in 3D, on its own (no phone): a sized print as its
- * sheet, a booklet closed on its covers, or stickers. null = just the photo.
+ * A tile's preview, on its own (no phone): the item's clip if it has one, a
+ * booklet's pages, a sized print's sheet, or stickers.
  */
-export function preview3D(item: Item): ViewerOptions | StickerOptions | null {
+export function tilePreview(item: Item): TilePreview | null {
+	if (item.clip) return { clip: item.clip };
 	if (item.packs === 'sticker') {
-		return item.images.length ? { kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in, phone: false } : null;
+		return item.images.length
+			? { stickers: { kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in, phone: false } }
+			: null;
 	}
 	if (!hasSize(item)) return null;
 	if (isBooklet(item)) {
 		return {
-			front: item.pages[0], back: item.pages[item.pages.length - 1], widthIn: item.width_in!, heightIn: item.height_in!,
-			// Without a measured thickness, about 0.1 mm per page, as on the product page.
-			thicknessIn: item.thickness_in ?? item.pages.length * 0.004, finish: item.finish, phone: false
+			book: {
+				pages: item.pages, widthIn: item.width_in!, heightIn: item.height_in!, finish: item.finish, binding: item.binding,
+				// Without a measured thickness, about 0.1 mm per page, as on the product page.
+				thicknessIn: item.thickness_in ?? item.pages.length * 0.004, extras: [], phone: false
+			}
 		};
 	}
 	if (!item.images.length) return null;
 	return {
-		front: item.images[0], back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
-		thicknessIn: sheetThickness(item), finish: item.finish, phone: false
+		sheet: {
+			front: item.images[0], back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
+			thicknessIn: sheetThickness(item), finish: item.finish, phone: false
+		}
 	};
 }
 

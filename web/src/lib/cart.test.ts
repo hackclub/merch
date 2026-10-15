@@ -3,10 +3,10 @@ import { cartCosts, cartErrors, cartLines, emptyCart, packQuantities, parseCart,
 import type { Item, ItemStock } from './types';
 
 const items: Item[] = [
-	{ id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false },
-	{ id: 2, sku: 'Swa/Sox', name: 'Socks', description: '', images: [], visible: true, sort_order: 1, max_per_request: 1, max_per_user: 1, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false },
+	{ id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: '' },
+	{ id: 2, sku: 'Swa/Sox', name: 'Socks', description: '', images: [], visible: true, sort_order: 1, max_per_request: 1, max_per_user: 1, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: '' },
 	{
-		id: 3, sku: 'Swa/Shirt/HC', name: 'T-shirt', description: '', images: [], visible: true, sort_order: 2, max_per_request: 1, max_per_user: null, width_in: null, height_in: null, finish: '', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false,
+		id: 3, sku: 'Swa/Shirt/HC', name: 'T-shirt', description: '', images: [], visible: true, sort_order: 2, max_per_request: 1, max_per_user: null, width_in: null, height_in: null, finish: '', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: '',
 		variants: [{ label: 'S', sku: 'Swa/Shirt/HC/S' }, { label: 'M', sku: 'Swa/Shirt/HC/M' }]
 	}
 ];

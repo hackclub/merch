@@ -17,6 +17,7 @@ export type BookOptions = {
 	finish: string; // the cover's
 	binding: string; // 'staple' | 'perfect'
 	extras: ViewerOptions[]; // what ships with it, standing beside it
+	phone?: boolean; // stand a phone beside it for scale (default true)
 };
 
 export type BookViewer = Viewer & {
@@ -43,9 +44,10 @@ export function createBookViewer(canvas: HTMLCanvasElement, opts: BookOptions, o
 		x += e.widthIn + GAP_IN * 0.75;
 		return at;
 	});
+	const withPhone = opts.phone !== false;
 	const phoneX = x + GAP_IN * 0.25 + PHONE.w / 2;
-	const sceneRight = phoneX + PHONE.w / 2;
-	const sceneH = Math.max(h, PHONE.h, ...opts.extras.map((e) => e.heightIn));
+	const sceneRight = withPhone ? phoneX + PHONE.w / 2 : opts.extras.length ? x - GAP_IN * 0.75 : w;
+	const sceneH = Math.max(h, withPhone ? PHONE.h : 0, ...opts.extras.map((e) => e.heightIn));
 	const stage = createStage(canvas, sceneRight + w, sceneH);
 	const { scene, renderer } = stage;
 
@@ -215,9 +217,11 @@ export function createBookViewer(canvas: HTMLCanvasElement, opts: BookOptions, o
 		scene.add(sheet.pivot);
 		return sheet;
 	});
-	const phone = createPhone();
-	phone.position.set(phoneX, PHONE.h / 2, 0);
-	scene.add(phone);
+	if (withPhone) {
+		const phone = createPhone();
+		phone.position.set(phoneX, PHONE.h / 2, 0);
+		scene.add(phone);
+	}
 
 	let lastLeaf = -1;
 	const viewer: BookViewer = {

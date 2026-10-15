@@ -755,6 +755,8 @@ func validItem(it swag.Item) string {
 		return "thickness must be between 0 and 0.5 inches"
 	case !swag.Bindings[it.Binding]:
 		return "binding must be staple or perfect"
+	case it.Clip != "" && !isHTTPURL(it.Clip):
+		return "clip must be an http(s) URL"
 	}
 	for _, u := range it.Pages {
 		if !isHTTPURL(u) {
