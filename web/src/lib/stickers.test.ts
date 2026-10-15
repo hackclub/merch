@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskBounds, packLabel, packLayout, PER_BAG, STICKER_THICKNESS_IN, stickerMask, stickerSize } from './stickers';
+import { bagLabel, maskBounds, packLabel, packLayout, PER_BAG, STICKER_THICKNESS_IN, stickerMask, stickerSize } from './stickers';
 
 // A w×h RGBA image filled with bg, with rects painted on top.
 function image(w: number, h: number, bg: number[], rects: { x: number; y: number; w: number; h: number; rgb: number[] }[]) {
@@ -104,5 +104,14 @@ describe('packLayout', () => {
 	});
 	it('keeps any leftover loose next to the bags', () => {
 		expect(packLayout(60)).toEqual({ loose: 10, bags: [{ pile: 0, level: 0 }] });
+	});
+});
+
+describe('bagLabel', () => {
+	it('names whole bags as packs of 50, and loose stickers by count', () => {
+		expect(bagLabel(50)).toBe('Pack of 50');
+		expect(bagLabel(150)).toBe('3 packs of 50');
+		expect(bagLabel(10)).toBe('10 stickers');
+		expect(bagLabel(3)).toBe('3 stickers');
 	});
 });

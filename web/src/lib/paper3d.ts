@@ -14,6 +14,7 @@ export type ViewerOptions = {
 	heightIn: number;
 	thicknessIn: number;
 	finish: string;
+	phone?: boolean; // stand a phone beside it for scale (default true)
 };
 
 export type Viewer = {
@@ -31,8 +32,9 @@ export const LEAN = THREE.MathUtils.degToRad(-4); // prints lean back a touch, l
 
 export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onReady: () => void): Viewer {
 	const { widthIn: w, heightIn: h } = opts;
-	const sceneW = w + GAP_IN + PHONE.w;
-	const sceneH = Math.max(h, PHONE.h);
+	const withPhone = opts.phone !== false;
+	const sceneW = withPhone ? w + GAP_IN + PHONE.w : w;
+	const sceneH = withPhone ? Math.max(h, PHONE.h) : h;
 	const stage = createStage(canvas, sceneW, sceneH);
 	const { scene, renderer } = stage;
 
@@ -43,9 +45,11 @@ export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onR
 	sheet.pivot.position.set(left + w / 2, 0, 0);
 	scene.add(sheet.pivot);
 
-	const phone = createPhone();
-	phone.position.set(left + w + GAP_IN + PHONE.w / 2, PHONE.h / 2, 0);
-	scene.add(phone);
+	if (withPhone) {
+		const phone = createPhone();
+		phone.position.set(left + w + GAP_IN + PHONE.w / 2, PHONE.h / 2, 0);
+		scene.add(phone);
+	}
 
 	const viewer: Viewer = {
 		angle: 0,
@@ -165,6 +169,8 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 			scene.environment?.dispose();
 			pmrem.dispose();
 			renderer.dispose();
+			// Free the WebGL context now; browsers cap how many a page can hold.
+			renderer.forceContextLoss();
 		}
 	};
 }

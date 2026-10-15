@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byFilename, formatUnitCost, isBooklet, itemIdFromParam, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, thumbnail } from './items';
+import { byFilename, formatUnitCost, isBooklet, itemIdFromParam, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, preview3D, previewCount, thumbnail } from './items';
 import type { Item } from './types';
 
 const poster: Item = {
@@ -97,5 +97,45 @@ describe('sizeStockLabel', () => {
 		];
 		expect(sizeStockLabel({ in_stock: 1214, unit_cost: null, unit_cost_max: null, variants })).toBe('S 92 · XL 1,122');
 		expect(sizeStockLabel({ in_stock: 5, unit_cost: null, unit_cost_max: null, variants: [] })).toBe('');
+	});
+});
+
+describe('preview3D', () => {
+	it('shows a sized print as a sheet with its front, back, thickness and finish, without the phone', () => {
+		expect(preview3D(poster)).toEqual({
+			front: 'https://cdn.example/front.jpg', back: 'https://cdn.example/back.jpg',
+			widthIn: 11, heightIn: 17, thicknessIn: 0.008, finish: 'matte', phone: false
+		});
+	});
+
+	it('shows a closed booklet: front cover, back cover, the whole book thick', () => {
+		const mag = { ...poster, images: [], binding: 'staple', pages: ['p1', 'p2', 'p3', 'p4'], width_in: 5.5, height_in: 8.5 };
+		expect(preview3D(mag)).toMatchObject({ front: 'p1', back: 'p4', thicknessIn: 0.016 });
+		expect(preview3D({ ...mag, thickness_in: 0.1 })).toMatchObject({ thicknessIn: 0.1 });
+	});
+
+	it('shows stickers as stickers, even without a size', () => {
+		expect(preview3D({ ...poster, packs: 'sticker', width_in: null, height_in: null })).toEqual({
+			kind: 'stickers', front: 'https://cdn.example/front.jpg', widthIn: null, heightIn: null, phone: false
+		});
+	});
+
+	it('is null without a size or without art', () => {
+		expect(preview3D({ ...poster, width_in: null })).toBeNull();
+		expect(preview3D({ ...poster, images: [] })).toBeNull();
+		expect(preview3D({ ...poster, packs: 'sticker', images: [] })).toBeNull();
+	});
+});
+
+describe('previewCount', () => {
+	const sticker = { ...poster, packs: 'sticker' };
+	it('shows a sealed bag of 50 stickers until you pick a quantity, then what you picked', () => {
+		expect(previewCount(sticker, 0)).toBe(50);
+		expect(previewCount(sticker, 3)).toBe(3);
+		expect(previewCount(sticker, 150)).toBe(150);
+	});
+	it('is what you picked for everything else', () => {
+		expect(previewCount(poster, 0)).toBe(0);
+		expect(previewCount(poster, 2)).toBe(2);
 	});
 });

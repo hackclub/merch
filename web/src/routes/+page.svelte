@@ -5,10 +5,12 @@
 	import { blankAddress, prefillAddress } from '$lib/address';
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
 	import { cartCosts, cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
-	import { formatUnitCost, itemPath, thumbnail } from '$lib/items';
+	import { formatUnitCost, itemPath, preview3D, previewCount, thumbnail } from '$lib/items';
 	import { session } from '$lib/session.svelte';
 	import SizePicker from '$lib/SizePicker.svelte';
 	import Stepper from '$lib/Stepper.svelte';
+	import Tile3D from '$lib/Tile3D.svelte';
+	import { bagLabel } from '$lib/stickers';
 	import type { Address, Catalog, ItemStock, SwagRequest } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
@@ -86,7 +88,8 @@
 		<p class="error">Requests are closed right now. Check back soon!</p>
 	{/if}
 	<section class="grid">
-		{#each catalog.items as item (item.id)}
+		{#each catalog.items as item, i (item.id)}
+			{@const three = preview3D(item)}
 			<div class="item" class:picked={cart[item.id]}>
 				<a href={itemPath(item)} class="item-link">
 					<div class="tile" class:sticker={item.packs === 'sticker'}>
@@ -95,6 +98,8 @@
 						{:else}
 							<span aria-hidden="true">📦</span>
 						{/if}
+						{#if three}<Tile3D opts={three} count={previewCount(item, cart[item.id] ?? 0)} phase={i * 0.9} />{/if}
+						{#if item.packs === 'sticker'}<span class="pack label">{bagLabel(previewCount(item, cart[item.id] ?? 0))}</span>{/if}
 					</div>
 					<h3>{item.name}</h3>
 				</a>
@@ -173,10 +178,13 @@
 <style>
 	.item { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 	.item-link { color: inherit; text-decoration: none; }
-	.tile { display: grid; place-items: center; aspect-ratio: 4 / 5; background: var(--tile); font-size: 3rem; }
+	.tile { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 5; background: var(--tile); font-size: 3rem; }
 	.tile img { width: 80%; height: 80%; object-fit: contain; mix-blend-mode: multiply; }
 	/* Sticker photos already sit on the tile's grey; multiply would darken it into a box. */
 	.tile.sticker img { mix-blend-mode: normal; }
+	/* Once the 3D view is up it replaces the photo. */
+	.tile:has(:global(.spin.ready)) img { opacity: 0; }
+	.pack { position: absolute; left: 0.5rem; bottom: 0.5rem; padding: 0.2rem 0.45rem; background: var(--dark); color: #fff; font-size: 0.68rem; pointer-events: none; }
 	.item.picked .tile { box-shadow: inset 0 0 0 2px var(--red); }
 	.item-link:hover h3 { text-decoration: underline; text-decoration-thickness: 2px; }
 	.item h3 { margin: 0.6rem 0 0; font-size: 0.9rem; letter-spacing: 0.01em; line-height: 1.2; }

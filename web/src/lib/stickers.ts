@@ -91,6 +91,13 @@ export function packLayout(q: number): Layout {
 	};
 }
 
+/** Short tile label: "Pack of 50", "3 packs of 50", or "10 stickers" when loose. */
+export function bagLabel(q: number): string {
+	const bags = Math.floor(q / PER_BAG);
+	if (bags === 0 || q % PER_BAG) return packLabel(q);
+	return bags === 1 ? `Pack of ${PER_BAG}` : `${bags} packs of ${PER_BAG}`;
+}
+
 /** "150 stickers, in 3 bags of 50": what the preview is showing. */
 export function packLabel(q: number): string {
 	if (q <= 0) return '1 sticker';

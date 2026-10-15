@@ -14,6 +14,7 @@ export type StickerOptions = {
 	front: string;
 	widthIn: number | null;
 	heightIn: number | null;
+	phone?: boolean; // lay a phone beside them for scale (default true)
 };
 
 export type StickerViewer = Viewer & { setCount(n: number): void };
@@ -80,7 +81,8 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 	phone.add(body, screen);
 	phone.rotation.set(-Math.PI / 2, 0, THREE.MathUtils.degToRad(-10)); // lying face up
 	phone.position.y = PHONE_DEPTH / 2;
-	scene.add(phone);
+	const withPhone = opts.phone !== false;
+	if (withPhone) scene.add(phone);
 
 	// Shared by every sticker; filled in once the photo is cut out.
 	let size = { w: 3, h: 2 };
@@ -302,9 +304,9 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 			const r = shownExtent;
 			phone.position.x = r + GAP_IN + PHONE.w / 2;
 			phone.position.z = 0.4;
-			const sceneW = 2 * r + GAP_IN + PHONE.w;
-			const sceneD = Math.max(2 * r, PHONE.h);
-			const cx = (phone.position.x + PHONE.w / 2 - r) / 2;
+			const sceneW = withPhone ? 2 * r + GAP_IN + PHONE.w : 2 * r;
+			const sceneD = withPhone ? Math.max(2 * r, PHONE.h) : 2 * r;
+			const cx = withPhone ? (phone.position.x + PHONE.w / 2 - r) / 2 : 0;
 			const vfov = THREE.MathUtils.degToRad(camera.fov) / 2;
 			const fitW = (sceneW * 0.6) / (Math.tan(vfov) * camera.aspect);
 			const fitD = (sceneD * Math.sin(ELEVATION) * 0.5 + levels * BAG_H) / Math.tan(vfov);
@@ -332,6 +334,8 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 			scene.environment?.dispose();
 			pmrem.dispose();
 			renderer.dispose();
+			// Free the WebGL context now; browsers cap how many a page can hold.
+			renderer.forceContextLoss();
 		}
 	};
 	return viewer;

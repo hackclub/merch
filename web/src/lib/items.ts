@@ -1,3 +1,8 @@
+import { sheetThickness } from './paper';
+import type { ViewerOptions } from './paper3d';
+import { hasSize } from './scale';
+import type { StickerOptions } from './sticker3d';
+import { PER_BAG } from './stickers';
 import type { Item, ItemStock } from './types';
 
 const slugify = (s: string) =>
@@ -21,6 +26,33 @@ export const thumbnail = (item: Item): string => item.images[0] ?? item.pages[0]
 
 /** Booklets with page images open in 3D and flip through. */
 export const isBooklet = (item: Item) => item.binding !== '' && item.pages.length >= 2;
+
+/**
+ * What the shop grid shows in 3D, on its own (no phone): a sized print as its
+ * sheet, a booklet closed on its covers, or stickers. null = just the photo.
+ */
+export function preview3D(item: Item): ViewerOptions | StickerOptions | null {
+	if (item.packs === 'sticker') {
+		return item.images.length ? { kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in, phone: false } : null;
+	}
+	if (!hasSize(item)) return null;
+	if (isBooklet(item)) {
+		return {
+			front: item.pages[0], back: item.pages[item.pages.length - 1], widthIn: item.width_in!, heightIn: item.height_in!,
+			// Without a measured thickness, about 0.1 mm per page, as on the product page.
+			thicknessIn: item.thickness_in ?? item.pages.length * 0.004, finish: item.finish, phone: false
+		};
+	}
+	if (!item.images.length) return null;
+	return {
+		front: item.images[0], back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
+		thicknessIn: sheetThickness(item), finish: item.finish, phone: false
+	};
+}
+
+/** How many the grid shows: stickers come in sealed bags of 50, so show one until you pick a quantity. */
+export const previewCount = (item: Item, inCart: number): number =>
+	item.packs === 'sticker' && inCart <= 0 ? PER_BAG : inCart;
 
 /** Page files in the order people number them: page-2 before page-10. */
 export const byFilename = <T extends { name: string }>(files: Iterable<T>): T[] =>
