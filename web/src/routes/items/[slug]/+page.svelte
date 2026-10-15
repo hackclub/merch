@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import { api, ApiError, formatCents } from '$lib/api';
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
-	import { pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
+	import { pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
 	import { itemsFor, offered } from '$lib/purpose';
 	import { isBooklet, itemIdFromParam, itemPath, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
 	import type { BookOptions } from '$lib/book3d';
@@ -11,7 +11,7 @@
 	import Product3D from '$lib/Product3D.svelte';
 	import { hasSize } from '$lib/scale';
 	import { session } from '$lib/session.svelte';
-	import SizePicker from '$lib/SizePicker.svelte';
+	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Stepper from '$lib/Stepper.svelte';
 	import type { Catalog, ItemStock } from '$lib/types';
 
@@ -24,8 +24,9 @@
 	onMount(async () => {
 		try {
 			catalog = await api.get<Catalog>('/api/catalog');
-			setCart(pruneCart(bag.cart, itemsFor(catalog.items, bag.purpose)));
-			setSizes(pruneSizes(bag.sizes, catalog.items));
+			const listed = itemsFor(catalog.items, bag.purpose);
+			setSizes(pruneSizes(bag.sizes, listed));
+			setCart(pruneCart(bag.cart, listed, bag.sizes));
 		} catch (e) {
 			error = e instanceof ApiError ? e.message : 'Could not load this item.';
 		}
@@ -57,8 +58,7 @@
 	);
 	const shown = $derived(picked ?? (has3D ? '3d' : 0));
 	const tiles = $derived(item ? item.images.length + (has3D ? 1 : 0) : 0);
-	const pickedSize = $derived(item ? bag.sizes[item.id] : undefined);
-	const needsSize = $derived(!!item?.variants.length && !sizeLabel(item, pickedSize));
+	const pickedSizes = $derived(item ? sizesSummary(item, bag.sizes) : '');
 	const finish = $derived(item ? finishInfo(item.finish).label : '');
 	// Reset the gallery when moving between items.
 	$effect(() => {
@@ -181,18 +181,23 @@
 				<p class="muted">This is only for people running a Hack Club or an event. <a href="/">Change what your request is for</a>.</p>
 			{:else}
 				{#if item.variants.length}
-					<p class="size-label">Size{#if pickedSize}: <strong>{sizeLabel(item, pickedSize)}</strong>{/if}</p>
-					<SizePicker variants={item.variants} value={pickedSize} onchange={(sku) => setSizes({ ...bag.sizes, [item.id]: sku })} />
+					<p class="size-label">How many of each size?</p>
+					<SizeSteppers {item} sizes={bag.sizes} onchange={(sku, n) => {
+						const next = setSizeQuantity(bag.cart, bag.sizes, item, sku, n);
+						setSizes(next.sizes);
+						setCart(next.cart);
+					}} />
+				{:else}
+					<div class="buy">
+						<Stepper value={inCart} max={item.max_per_request} options={quantityOptions(item)} onchange={(n) => setCart(setQuantity(bag.cart, item, n))} />
+						{#if inCart === 0}
+							<button onclick={() => setCart(setQuantity(bag.cart, item, 1))}>Add to request</button>
+						{/if}
+					</div>
 				{/if}
-				<div class="buy">
-					<Stepper value={inCart} max={item.max_per_request} options={quantityOptions(item)} onchange={(n) => setCart(setQuantity(bag.cart, item, n))} />
-					{#if inCart === 0}
-						<button disabled={needsSize} onclick={() => setCart(setQuantity(bag.cart, item, 1))}>{needsSize ? 'Pick a size' : 'Add to request'}</button>
-					{/if}
-				</div>
 				{#if total > 0}
 					<p class="ok">
-						{inCart > 0 ? `${inCart}${pickedSize ? ` (${sizeLabel(item, pickedSize)})` : ''} in your request.` : ''}
+						{inCart > 0 ? `${pickedSizes || inCart} in your request.` : ''}
 						<a href="/#request">Review request ({total} item{total === 1 ? '' : 's'}) →</a>
 					</p>
 				{/if}

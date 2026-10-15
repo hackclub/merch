@@ -6,15 +6,15 @@
 	import AddressLine1 from '$lib/AddressLine1.svelte';
 	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
-	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
+	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
 	import { gallery, roughFee } from '$lib/gallery';
 	import { itemPath, thumbnail } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
-	import SizePicker from '$lib/SizePicker.svelte';
+	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Stepper from '$lib/Stepper.svelte';
-	import type { Address, Catalog, Purpose, SwagRequest } from '$lib/types';
+	import type { Address, Catalog, Item, Purpose, SwagRequest } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
 	// Prefilled from the person's Hack Club Auth address when they have one.
@@ -27,8 +27,9 @@
 	onMount(async () => {
 		try {
 			catalog = await api.get<Catalog>('/api/catalog');
-			setCart(pruneCart(bag.cart, itemsFor(catalog.items, bag.purpose)));
-			setSizes(pruneSizes(bag.sizes, catalog.items));
+			const listed = itemsFor(catalog.items, bag.purpose);
+			setSizes(pruneSizes(bag.sizes, listed));
+			setCart(pruneCart(bag.cart, listed, bag.sizes));
 			// "Review request" links from product pages land here as /#request.
 			if (location.hash === '#request') {
 				await tick();
@@ -58,8 +59,20 @@
 
 	function choose(p: Purpose) {
 		setPurpose(p);
-		if (catalog) setCart(pruneCart(cart, itemsFor(catalog.items, p)));
+		if (!catalog) return;
+		const listed = itemsFor(catalog.items, p);
+		setSizes(pruneSizes(sizes, listed));
+		setCart(pruneCart(cart, listed, bag.sizes));
 	}
+
+	function setSize(item: Item, sku: string, n: number) {
+		const next = setSizeQuantity(cart, sizes, item, sku, n);
+		setSizes(next.sizes);
+		setCart(next.cart);
+	}
+
+	// The item whose details float beside the list while the pointer is over its row.
+	let peek = $state<number | null>(null);
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -123,26 +136,35 @@
 			<section class="group" aria-labelledby="group-{section.key}">
 				<h3 id="group-{section.key}">{section.title}</h3>
 				{#each tiles as { item } (item.id)}
-					<div class="line" class:picked={cart[item.id]}>
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="line" class:picked={cart[item.id]} class:sized={item.variants.length > 0}
+						onmouseenter={() => (peek = item.id)} onmouseleave={() => (peek = null)}>
 						<a href={itemPath(item)} class="thumb" class:sticker={item.packs === 'sticker'} tabindex="-1" aria-hidden="true">
 							{#if thumbnail(item)}<img src={thumbnail(item)} alt="" loading="lazy" />{/if}
 						</a>
 						<div class="what">
 							<a href={itemPath(item)}>{item.name}</a>
-							<span class="muted">{tileFact(item)}</span>
+							<span class="muted">{tileFact(item)}{#if sizesSummary(item, sizes)}{' · '}<strong class="in">{sizesSummary(item, sizes)}</strong>{/if}</span>
 						</div>
 						{#if open}
 							<div class="add">
 								{#if item.variants.length}
-									<SizePicker variants={item.variants} value={sizes[item.id]} label="Size of {item.name}"
-										onchange={(sku) => { setSizes({ ...sizes, [item.id]: sku }); if (!cart[item.id]) setCart(setQuantity(cart, item, 1)); }} />
-								{/if}
-								{#if cart[item.id]}
+									<SizeSteppers {item} {sizes} onchange={(sku, n) => setSize(item, sku, n)} />
+								{:else if cart[item.id]}
 									<Stepper value={cart[item.id]} max={item.max_per_request} options={quantityOptions(item)} label="Quantity of {item.name}"
 										onchange={(n) => setCart(setQuantity(cart, item, n))} />
-								{:else if !item.variants.length}
+								{:else}
 									<button type="button" class="secondary" onclick={() => setCart(setQuantity(cart, item, 1))}>Add</button>
 								{/if}
+							</div>
+						{/if}
+						{#if peek === item.id}
+							<div class="peek" aria-hidden="true">
+								{#if thumbnail(item)}<div class="peek-img" class:sticker={item.packs === 'sticker'}><img src={thumbnail(item)} alt="" /></div>{/if}
+								<strong>{item.name}</strong>
+								<span class="muted">{tileFact(item)}</span>
+								{#if item.description}<p>{item.description}</p>{/if}
+								<span class="muted">Click for photos{item.width_in ? ', the 3D view' : ''} and more →</span>
 							</div>
 						{/if}
 					</div>
@@ -235,9 +257,27 @@
 	.what .muted { font-size: 0.9rem; }
 	.add { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.4rem; align-items: center; }
 	.add > button { height: 2.6rem; padding: 0 1.2rem; font-size: 1rem; }
+	.what .in { color: var(--dark); }
+	/* Sizes get their own line under the name. */
+	.line.sized { flex-wrap: wrap; }
+	.line.sized .add { flex-basis: 100%; justify-content: flex-start; padding-left: 4.65rem; }
 	@media (max-width: 600px) {
 		.line { flex-wrap: wrap; }
 		.add { flex-basis: 100%; justify-content: flex-start; padding-left: 4.65rem; }
+	}
+	/* Hovering a row shows its details in the grey space beside the sheet, on screens wide enough for it. */
+	.line { position: relative; }
+	.peek { display: none; }
+	@media (hover: hover) and (min-width: 74rem) {
+		.peek {
+			display: flex; flex-direction: column; gap: 0.35rem; position: absolute; z-index: 2; top: 50%; transform: translateY(-40%);
+			left: calc(100% + 3.5rem); width: min(20rem, calc((100vw - 40rem) / 2 - 3.5rem)); padding: 1rem;
+			background: white; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12); pointer-events: none; font-size: 0.9rem; line-height: 1.45;
+		}
+		.peek p { margin: 0; display: -webkit-box; -webkit-line-clamp: 6; line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+		.peek-img { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 4 / 3; margin-bottom: 0.4rem; background: var(--tile); }
+		.peek-img img { width: 85%; height: 85%; object-fit: contain; mix-blend-mode: multiply; }
+		.peek-img.sticker img { mix-blend-mode: normal; }
 	}
 	.send { margin-top: 1.5rem; }
 	form { display: grid; gap: 1rem; }

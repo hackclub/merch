@@ -1,10 +1,10 @@
-import type { Item, ItemStock, Line } from './types';
+import type { Item, Line } from './types';
 
 /** item id -> quantity */
 export type Cart = Record<number, number>;
 
-/** item id -> chosen size SKU, for items that come in sizes */
-export type Sizes = Record<number, string>;
+/** item id -> size SKU -> quantity, for items that come in sizes. The cart holds each one's total. */
+export type Sizes = Record<number, Record<string, number>>;
 
 export const emptyCart = (): Cart => ({});
 
@@ -41,33 +41,36 @@ export function setQuantity(cart: Cart, item: Item, qty: number): Cart {
 
 export const totalQuantity = (cart: Cart): number => Object.values(cart).reduce((a, b) => a + b, 0);
 
+/** Sets how many of one size of a sized item to send. The item's per-request max counts every size together. */
+export function setSizeQuantity(cart: Cart, sizes: Sizes, item: Item, sku: string, qty: number): { cart: Cart; sizes: Sizes } {
+	const mine = { ...sizes[item.id] };
+	delete mine[sku];
+	const others = Object.values(mine).reduce((a, b) => a + b, 0);
+	const q = Math.min(Math.max(Math.floor(qty) || 0, 0), Math.max(item.max_per_request - others, 0));
+	if (q > 0) mine[sku] = q;
+	const nextSizes = { ...sizes, [item.id]: mine };
+	const nextCart = { ...cart, [item.id]: others + q };
+	if (!Object.keys(mine).length) delete nextSizes[item.id];
+	if (!nextCart[item.id]) delete nextCart[item.id];
+	return { cart: nextCart, sizes: nextSizes };
+}
+
+/** A sized item's sizes in the bag, in the item's size order. */
+const picked = (item: Item, sizes: Sizes) => item.variants.filter((v) => sizes[item.id]?.[v.sku] > 0).map((v) => ({ ...v, quantity: sizes[item.id][v.sku] }));
+
+/** "1 S, 2 M" for what's in the bag of a sized item; "" if none. */
+export const sizesSummary = (item: Item, sizes: Sizes): string => picked(item, sizes).map((v) => `${v.quantity} ${v.label}`).join(', ');
+
 export function cartLines(cart: Cart, items: Item[], sizes: Sizes = {}): Line[] {
 	return items
 		.filter((i) => cart[i.id])
-		.map((i) => (i.variants.length ? { item_id: i.id, quantity: cart[i.id], sku: sizes[i.id] } : { item_id: i.id, quantity: cart[i.id] }));
+		.flatMap((i) => (i.variants.length ? picked(i, sizes).map((v) => ({ item_id: i.id, quantity: v.quantity, sku: v.sku })) : [{ item_id: i.id, quantity: cart[i.id] }]));
 }
 
 const offers = (item: Item, sku: string | undefined) => item.variants.some((v) => v.sku === sku);
 
 /** The size label ("M") of a sized item's SKU, or "" if none is picked. */
 export const sizeLabel = (item: Item, sku: string | undefined): string => item.variants.find((v) => v.sku === sku)?.label ?? '';
-
-export type CostLine = { item: Item; quantity: number; unitCost: string | null; total: number | null };
-
-/** What the cart costs at warehouse unit costs (dollars). A sized item is priced at its picked
- * size; a line is unpriced (null) until its cost is known, and so is the subtotal. */
-export function cartCosts(cart: Cart, items: Item[], sizes: Sizes, stocks: Record<number, ItemStock>) {
-	const lines: CostLine[] = items
-		.filter((i) => cart[i.id])
-		.map((item) => {
-			const stock = stocks[item.id];
-			const unitCost = (item.variants.length ? stock?.variants.find((v) => v.sku === sizes[item.id])?.unit_cost : stock?.unit_cost) ?? null;
-			const n = Number(unitCost);
-			return { item, quantity: cart[item.id], unitCost, total: unitCost && Number.isFinite(n) ? n * cart[item.id] : null };
-		});
-	const subtotal = lines.every((l) => l.total !== null) ? lines.reduce((a, l) => a + (l.total ?? 0), 0) : null;
-	return { lines, subtotal };
-}
 
 /** Client-side mirror of the server's checks, for instant feedback. The server is authoritative. */
 export function cartErrors(cart: Cart, maxItemsPerRequest: number, items: Item[] = [], sizes: Sizes = {}): string[] {
@@ -77,7 +80,7 @@ export function cartErrors(cart: Cart, maxItemsPerRequest: number, items: Item[]
 	const packed = items.filter((i) => i.packs && cart[i.id]).reduce((n, i) => n + cart[i.id] - 1, 0);
 	if (maxItemsPerRequest > 0 && total - packed > maxItemsPerRequest)
 		return [`You can request at most ${maxItemsPerRequest} items at a time.`];
-	return items.filter((i) => cart[i.id] && i.variants.length && !offers(i, sizes[i.id])).map((i) => `Pick a size for ${i.name}.`);
+	return items.filter((i) => cart[i.id] && i.variants.length && !picked(i, sizes).length).map((i) => `Pick a size for ${i.name}.`);
 }
 
 /** Reads a cart saved to localStorage; anything malformed is dropped. */
@@ -97,10 +100,13 @@ export function parseCart(raw: string | null): Cart {
 	return cart;
 }
 
-/** Drops items that are no longer listed and re-clamps quantities to current limits. */
-export function pruneCart(cart: Cart, items: Item[]): Cart {
+/** Drops items that are no longer listed and re-clamps quantities to current limits. A sized item's quantity is the sum of its sizes. */
+export function pruneCart(cart: Cart, items: Item[], sizes: Sizes = {}): Cart {
 	let next = emptyCart();
-	for (const item of items) if (cart[item.id]) next = setQuantity(next, item, cart[item.id]);
+	for (const item of items) {
+		const q = item.variants.length ? picked(item, sizes).reduce((a, v) => a + v.quantity, 0) : cart[item.id];
+		if (q) next = setQuantity(next, item, q);
+	}
 	return next;
 }
 
@@ -116,7 +122,13 @@ export function parseSizes(raw: string | null): Sizes {
 	const sizes: Sizes = {};
 	for (const [k, v] of Object.entries(data)) {
 		const id = Number(k);
-		if (Number.isInteger(id) && id > 0 && typeof v === 'string') sizes[id] = v;
+		if (!Number.isInteger(id) || id <= 0) continue;
+		// Before several sizes, this held the one picked SKU.
+		if (typeof v === 'string') sizes[id] = { [v]: 1 };
+		else if (v && typeof v === 'object' && !Array.isArray(v)) {
+			const counts = Object.fromEntries(Object.entries(v).filter(([, n]) => Number.isInteger(n) && (n as number) > 0)) as Record<string, number>;
+			if (Object.keys(counts).length) sizes[id] = counts;
+		}
 	}
 	return sizes;
 }
@@ -124,6 +136,9 @@ export function parseSizes(raw: string | null): Sizes {
 /** Keeps only sizes the listed items still offer. */
 export function pruneSizes(sizes: Sizes, items: Item[]): Sizes {
 	const next: Sizes = {};
-	for (const item of items) if (offers(item, sizes[item.id])) next[item.id] = sizes[item.id];
+	for (const item of items) {
+		const kept = Object.fromEntries(Object.entries(sizes[item.id] ?? {}).filter(([sku, n]) => offers(item, sku) && n > 0));
+		if (Object.keys(kept).length) next[item.id] = kept;
+	}
 	return next;
 }

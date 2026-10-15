@@ -191,7 +191,13 @@ func Validate(in ValidateInput) error {
 			return fmt.Errorf("%w (next request allowed %s)", ErrCooldown, next.Format("2006-01-02"))
 		}
 	}
-	seen := map[int64]bool{}
+	// A sized item can take one line per size; its limits count every size together.
+	type key struct {
+		item int64
+		sku  string
+	}
+	seen := map[key]bool{}
+	perItem := map[int64]int{}
 	total := 0
 	for _, l := range in.Lines {
 		if l.Quantity < 1 {
@@ -204,10 +210,15 @@ func Validate(in ValidateInput) error {
 		if !item.Offered(in.Purpose) {
 			return fmt.Errorf("%w: %s is only for clubs and events", ErrUnknownItem, item.Name)
 		}
-		if seen[l.ItemID] {
+		k := key{l.ItemID, ""}
+		if len(item.Variants) > 0 {
+			k.sku = l.SKU
+		}
+		if seen[k] {
 			return ErrDuplicateItem
 		}
-		seen[l.ItemID] = true
+		seen[k] = true
+		perItem[l.ItemID] += l.Quantity
 		if len(item.Variants) > 0 {
 			if _, ok := item.Variant(l.SKU); !ok {
 				return fmt.Errorf("%w for %s", ErrBadVariant, item.Name)
@@ -218,10 +229,10 @@ func Validate(in ValidateInput) error {
 		if item.Packs != "" && !PackQuantity(item.Packs, l.Quantity) {
 			return fmt.Errorf("%w: %s comes in %s", ErrBadQuantity, item.Name, PackSizes(item.Packs))
 		}
-		if l.Quantity > item.MaxPerRequest {
+		if perItem[l.ItemID] > item.MaxPerRequest {
 			return fmt.Errorf("%w: at most %d %s per request", ErrItemLimit, item.MaxPerRequest, item.Name)
 		}
-		if item.MaxPerUser != nil && in.PriorQuantities[l.ItemID]+l.Quantity > *item.MaxPerUser {
+		if item.MaxPerUser != nil && in.PriorQuantities[l.ItemID]+perItem[l.ItemID] > *item.MaxPerUser {
 			return fmt.Errorf("%w: at most %d %s per person", ErrItemLimit, *item.MaxPerUser, item.Name)
 		}
 		if item.Packs != "" {

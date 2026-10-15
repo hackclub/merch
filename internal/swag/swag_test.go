@@ -300,3 +300,29 @@ func TestBindings(t *testing.T) {
 		t.Error("spiral isn't rendered")
 	}
 }
+
+func TestValidateSeveralSizes(t *testing.T) {
+	cat := catalog()
+	shirt := cat[4]
+	shirt.MaxPerRequest, shirt.MaxPerUser = 3, intp(3)
+	cat[4] = shirt
+	in := func(prior int, lines ...Line) ValidateInput {
+		return ValidateInput{Settings: settings(), Catalog: cat, Purpose: PurposeClub, Reason: "Shirts for our club officers.",
+			Lines: lines, PriorQuantities: map[int64]int{4: prior}, Now: now}
+	}
+	s := func(size string, q int) Line { return Line{ItemID: 4, Quantity: q, SKU: "Swa/Shirt/HC/" + size} }
+
+	if err := Validate(in(0, s("S", 1), s("M", 2))); err != nil {
+		t.Fatalf("two sizes of one item: %v", err)
+	}
+	if err := Validate(in(0, s("M", 1), s("M", 1))); !errors.Is(err, ErrDuplicateItem) {
+		t.Fatalf("same size twice: err = %v, want ErrDuplicateItem", err)
+	}
+	// Limits count every size of the item together.
+	if err := Validate(in(0, s("S", 2), s("M", 2))); !errors.Is(err, ErrItemLimit) {
+		t.Fatalf("over the per-request max across sizes: err = %v, want ErrItemLimit", err)
+	}
+	if err := Validate(in(2, s("S", 1), s("M", 1))); !errors.Is(err, ErrItemLimit) {
+		t.Fatalf("over the per-person max across sizes: err = %v, want ErrItemLimit", err)
+	}
+}
