@@ -250,6 +250,11 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
 - One container: `Dockerfile`, which builds the PWA and a static Go binary on distroless. It
   listens on `$PORT` (default 8080). Health check: `GET /healthz` (pings the DB).
 - Migrations run automatically at startup (goose, embedded).
+- **Production SQL:** `scripts/prod-psql` connects to `merch-db` through its public TLS endpoint
+  (enabled 2026-10-14), using `PROD_DATABASE_URL` from the shared `.env`. It is read-only by
+  default; pass `--write` first to change data (`scripts/prod-psql --write -c "update …"`). Wrap
+  writes in `begin; … commit;`, match rows by id *and* name (ids differ from dev), and never
+  print the URL. If the password is rotated, rebuild the URL from `get_database`.
 - Required env: `DATABASE_URL`, `BASE_URL` (public https origin), `SESSION_SECRET`,
   `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, `THESEUS_API_KEY`, `ADMIN_EMAILS`. Also needed:
   `AIRTABLE_API_KEY` for authors, `HCB_SHIPPING_PAYMENT_URL` for international payments,

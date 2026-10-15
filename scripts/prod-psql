@@ -1,0 +1,20 @@
+#!/bin/sh
+# psql against the PRODUCTION database (Orchard merch-db), using PROD_DATABASE_URL
+# from the shared .env (scripts/env-file). Read-only unless the first argument is
+# --write. Everything else goes to psql:
+#   scripts/prod-psql -c 'select id, name from items order by id'
+#   scripts/prod-psql --write -c "update items set … where id = 1"
+# Never echo the URL; it holds the password.
+set -e
+write=
+if [ "$1" = "--write" ]; then write=1; shift; fi
+env_file=$(dirname "$0")/env-file
+url=$(sed -n 's/^PROD_DATABASE_URL=//p' "$("$env_file")" | tail -1)
+if [ -z "$url" ]; then
+	echo "PROD_DATABASE_URL is not set in $("$env_file")" >&2
+	exit 1
+fi
+if [ -n "$write" ]; then
+	PGOPTIONS='-c statement_timeout=30000' exec psql "$url" -v ON_ERROR_STOP=1 "$@"
+fi
+PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=30000' exec psql "$url" -v ON_ERROR_STOP=1 "$@"
