@@ -63,12 +63,6 @@
 
 <svelte:head><title>Hack Club Mail Room</title></svelte:head>
 
-<h1>Hack Club swag</h1>
-<p class="muted intro">
-	Pick what you'd like and we'll mail it to you. Shipping inside the US is on us; outside the US we'll ask
-	you to cover shipping through HCB.
-</p>
-
 {#if error}<p class="error">{error}</p>{/if}
 
 {#if catalog}
@@ -143,7 +137,6 @@
 {/if}
 
 <style>
-	.intro { max-width: 44rem; line-height: 1.5; }
 	.item { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 	.item-link { color: inherit; text-decoration: none; }
 	.tile { display: grid; place-items: center; aspect-ratio: 4 / 5; background: var(--tile); font-size: 3rem; }
