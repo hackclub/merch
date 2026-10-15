@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { bookState, leafAngle, leafCount, leafZ, pagesNear } from './book';
 import { finishInfo } from './paper';
-import { createPhone, createSheet, createStage, edgeColor, LEAN, loadArt, pageEdges, paperEdge, type Viewer, type ViewerOptions } from './paper3d';
+import { createPhone, createSheet, createStage, edgeColor, LEAN, loadArt, pageEdges, paperEdge, paperSurface, type Viewer, type ViewerOptions } from './paper3d';
 import { GAP_IN, PHONE } from './scale';
 
 export type BookOptions = {
@@ -80,7 +80,11 @@ export function createBookViewer(canvas: HTMLCanvasElement, opts: BookOptions, o
 	// Open pages dip into the gutter, which shades them near the spine.
 	const gutterAtLeft = gutter(false);
 	const gutterAtRight = gutter(true);
-	const page = () => new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.62, envMapIntensity: 0.6 });
+	// Every page shares the cover stock's fiber surface.
+	const surface = paperSurface(cover);
+	surface.normal.repeat.set(w / surface.tileIn, h / surface.tileIn);
+	const page = () =>
+		new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.62, envMapIntensity: 0.6, normalMap: surface.normal, sheenRoughness: 0.8, sheenColor: 0xffffff });
 	/** Shows page i (or a blank page) on a material, styled as cover or inside page. */
 	const show = (m: THREE.MeshPhysicalMaterial, i: number | null, shade?: THREE.Texture) => {
 		const tex = i == null ? null : cache.get(i);
@@ -97,6 +101,7 @@ export function createBookViewer(canvas: HTMLCanvasElement, opts: BookOptions, o
 		}
 		m.roughness = isCover ? cover.roughness : 0.62;
 		m.clearcoat = isCover ? cover.clearcoat : 0;
+		m.sheen = isCover ? cover.sheen : 0;
 		// A page still loading is a touch grey, so it reads as paper, not a hole.
 		m.color.setHex(map || i == null ? 0xffffff : 0xeeeeee);
 	};
@@ -292,6 +297,7 @@ export function createBookViewer(canvas: HTMLCanvasElement, opts: BookOptions, o
 			stage.render();
 		},
 		dispose() {
+			surface.normal.dispose();
 			gutterAtLeft.dispose();
 			gutterAtRight.dispose();
 			for (const tex of cache.values()) if (tex && tex !== 'loading') tex.dispose();

@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { coverCrop, finishInfo } from './paper';
+import { coverCrop, finishInfo, paperHeight, SURFACE_TILE_IN, type FinishInfo } from './paper';
 import { GAP_IN, PHONE } from './scale';
 
 export type ViewerOptions = {
@@ -241,20 +241,26 @@ export function loadArt(
 	);
 }
 
-/** A printed paper face material with the finish's gloss, roughness and fiber/linen normal map. */
-export function paperFace(finish: string, w: number, h: number): { mat: THREE.MeshPhysicalMaterial; dispose(): void } {
-	const info = finishInfo(finish);
-	const surface = paperSurface(info.weave, info.grain);
-	surface.normal.repeat.set(w / surface.tileIn, h / surface.tileIn);
-	const mat = new THREE.MeshPhysicalMaterial({
+/** Printed paper with the finish's roughness, gloss coat, sheen and fiber/linen normal map, for a w × h face. */
+export function paperMaterial(info: FinishInfo, normal: THREE.Texture) {
+	return new THREE.MeshPhysicalMaterial({
 		color: 0xffffff,
 		roughness: info.roughness,
 		clearcoat: info.clearcoat,
 		clearcoatRoughness: 0.15,
-		normalMap: surface.normal,
-		normalScale: new THREE.Vector2(info.grain, info.grain)
+		sheen: info.sheen,
+		sheenRoughness: 0.8,
+		sheenColor: 0xffffff,
+		normalMap: normal
 	});
-	return { mat, dispose: () => surface.normal.dispose() };
+}
+
+/** A printed paper face material with the finish's surface. */
+export function paperFace(finish: string, w: number, h: number): { mat: THREE.MeshPhysicalMaterial; dispose(): void } {
+	const info = finishInfo(finish);
+	const surface = paperSurface(info);
+	surface.normal.repeat.set(w / surface.tileIn, h / surface.tileIn);
+	return { mat: paperMaterial(info, surface.normal), dispose: () => surface.normal.dispose() };
 }
 
 /**
@@ -265,18 +271,11 @@ export function paperFace(finish: string, w: number, h: number): { mat: THREE.Me
 export function createSheet(opts: ViewerOptions, renderer: THREE.WebGLRenderer, onReady: () => void) {
 	const { widthIn: w, heightIn: h, thicknessIn: t } = opts;
 	const info = finishInfo(opts.finish);
-	const surface = paperSurface(info.weave, info.grain);
+	const surface = paperSurface(info);
 	surface.normal.repeat.set(w / surface.tileIn, h / surface.tileIn);
 	let pending = 0;
 	const face = (url: string | undefined) => {
-		const m = new THREE.MeshPhysicalMaterial({
-			color: 0xffffff,
-			roughness: info.roughness,
-			clearcoat: info.clearcoat,
-			clearcoatRoughness: 0.15,
-			normalMap: surface.normal,
-			normalScale: new THREE.Vector2(info.grain, info.grain)
-		});
+		const m = paperMaterial(info, surface.normal);
 		if (url) {
 			pending++;
 			loadArt(renderer, url, w / h, (tex) => {
@@ -351,36 +350,16 @@ export function createPhone(flat = false): THREE.Group {
 const surfaceCache = new Map<string, HTMLCanvasElement>();
 
 /**
- * A tiling normal map for the paper surface, drawn on a canvas: fine fiber
- * noise for every paper, plus linen's embossed crosshatch. Each tile covers
- * half an inch. The underlying canvas is cached per finish so building sheets
- * and piles never recomputes the heightfield.
+ * A tiling normal map for the paper surface (paperHeight), drawn on a canvas.
+ * Each tile covers SURFACE_TILE_IN. The canvas is cached per finish so
+ * building sheets and piles never recomputes the heightfield.
  */
-export function paperSurface(weave: boolean, grain: number) {
-	const key = `${weave ? 1 : 0}:${grain}`;
+export function paperSurface(info: FinishInfo) {
+	const key = `${info.weave ? 1 : 0}:${info.grain}`;
 	let canvas = surfaceCache.get(key);
 	if (!canvas) {
 		const N = 512;
-		const height = new Float32Array(N * N);
-		// Deterministic noise so the paper looks the same every visit.
-		let seed = 1337;
-		const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-		for (let i = 0; i < N * N; i++) height[i] = rand() * 0.35 * Math.min(1, grain * 3);
-		if (weave) {
-			// ~40 threads per inch each way, with slightly uneven thread thickness.
-			const threads = 20;
-			const rowJitter = Array.from({ length: threads }, () => 0.6 + rand() * 0.8);
-			const colJitter = Array.from({ length: threads }, () => 0.6 + rand() * 0.8);
-			for (let y = 0; y < N; y++) {
-				for (let x = 0; x < N; x++) {
-					const fy = (y / N) * threads;
-					const fx = (x / N) * threads;
-					const row = Math.sin(fy * Math.PI * 2) * 0.5 + 0.5;
-					const col = Math.sin(fx * Math.PI * 2) * 0.5 + 0.5;
-					height[y * N + x] += row * rowJitter[Math.floor(fy)] * 0.9 + col * colJitter[Math.floor(fx)] * 0.9;
-				}
-			}
-		}
+		const height = paperHeight(N, info);
 		// Height → tangent-space normals (central differences, wrapping).
 		canvas = document.createElement('canvas');
 		canvas.width = canvas.height = N;
@@ -405,7 +384,8 @@ export function paperSurface(weave: boolean, grain: number) {
 	const normal = new THREE.CanvasTexture(canvas);
 	normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
 	normal.colorSpace = THREE.NoColorSpace;
-	return { normal, tileIn: 0.5 };
+	normal.anisotropy = 8;
+	return { normal, tileIn: SURFACE_TILE_IN };
 }
 
 /** The cover's color along its spine edge, for a booklet's spine and fold. */
