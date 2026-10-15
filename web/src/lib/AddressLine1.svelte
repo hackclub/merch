@@ -3,7 +3,7 @@
 	// Picking one fills the rest of the address. Without a Places key on the
 	// server (404) it's a plain input.
 	import { api, ApiError } from './api';
-	import { createSearcher, moveHighlight, newSessionToken, type AddressSuggestion } from './addressSearch';
+	import { createSearcher, moveHighlight, newSessionToken, regionOf, type AddressSuggestion } from './addressSearch';
 	import type { Address } from './types';
 
 	let {
@@ -24,7 +24,7 @@
 
 	const search = createSearcher((q) =>
 		api
-			.get<{ suggestions: AddressSuggestion[] }>(`/api/address/suggest?q=${encodeURIComponent(q)}&session=${session}`)
+			.get<{ suggestions: AddressSuggestion[] }>(`/api/address/suggest?q=${encodeURIComponent(q)}&session=${session}&region=${regionOf(navigator.language)}`)
 			.then((r) => r.suggestions)
 	);
 

@@ -53,3 +53,12 @@ export function createSearcher(fetcher: (q: string) => Promise<AddressSuggestion
 
 /** A random token grouping one address search into one billed Places session. */
 export const newSessionToken = () => crypto.randomUUID();
+
+/** The region ("GB") of a browser language ("en-GB", or "ja" → "JP"), to bias address suggestions; "" if unknown. */
+export function regionOf(lang: string): string {
+	try {
+		return new Intl.Locale(lang).maximize().region ?? '';
+	} catch {
+		return '';
+	}
+}

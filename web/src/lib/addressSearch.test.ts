@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyPlace, createSearcher, moveHighlight, wantsSearch } from './addressSearch';
+import { applyPlace, createSearcher, moveHighlight, wantsSearch, regionOf } from './addressSearch';
 import { blankAddress } from './address';
 
 describe('applyPlace', () => {
@@ -74,5 +74,15 @@ describe('createSearcher', () => {
 		const search = createSearcher(fetcher, 10);
 		expect(await search('15')).toEqual([]);
 		expect(fetcher).not.toHaveBeenCalled();
+	});
+});
+
+describe('regionOf', () => {
+	it("reads the region from the browser's language", () => {
+		expect(regionOf('en-GB')).toBe('GB');
+		expect(regionOf('pt-BR')).toBe('BR');
+		// A bare language gets its most likely region.
+		expect(regionOf('ja')).toBe('JP');
+		expect(regionOf('not a locale!')).toBe('');
 	});
 });

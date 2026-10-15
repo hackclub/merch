@@ -31,7 +31,7 @@ func TestSuggest(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	got, err := New(srv.URL, "key", nil).Suggest(context.Background(), "15 falls", "sess")
+	got, err := New(srv.URL, "key", nil).Suggest(context.Background(), "15 falls", "sess", Near{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,68 @@ func TestErrorStatus(t *testing.T) {
 		w.Write([]byte(`{"error":{"message":"API key not valid"}}`))
 	}))
 	defer srv.Close()
-	if _, err := New(srv.URL, "key", nil).Suggest(context.Background(), "x", ""); err == nil {
+	if _, err := New(srv.URL, "key", nil).Suggest(context.Background(), "x", "", Near{}); err == nil {
 		t.Fatal("want error")
+	}
+}
+
+func TestSuggestNear(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body = nil
+		json.NewDecoder(r.Body).Decode(&body)
+		w.Write([]byte(`{"suggestions":[]}`))
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "key", nil)
+
+	if _, err := c.Suggest(context.Background(), "15 falls", "", Near{Lat: 44.38, Lng: -73.22, Region: "US"}); err != nil {
+		t.Fatal(err)
+	}
+	circle, _ := body["locationBias"].(map[string]any)["circle"].(map[string]any)
+	center, _ := circle["center"].(map[string]any)
+	if center["latitude"] != 44.38 || center["longitude"] != -73.22 || circle["radius"] != 50000.0 || body["regionCode"] != "US" {
+		t.Fatalf("near the person: body = %v", body)
+	}
+
+	c.Suggest(context.Background(), "15 falls", "", Near{Region: "GB"})
+	if _, ok := body["locationBias"]; ok || body["regionCode"] != "GB" {
+		t.Fatalf("region only: body = %v", body)
+	}
+	c.Suggest(context.Background(), "15 falls", "", Near{})
+	if _, ok := body["locationBias"]; ok || body["regionCode"] != nil {
+		t.Fatalf("no hint: body = %v", body)
+	}
+}
+
+func TestLocate(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/places:searchText" || r.Header.Get("X-Goog-FieldMask") != "places.location" {
+			t.Errorf("got %s %s mask %q", r.Method, r.URL.Path, r.Header.Get("X-Goog-FieldMask"))
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["textQuery"] == "Shelburne, VT 05482, US" {
+			w.Write([]byte(`{"places":[{"location":{"latitude":44.38,"longitude":-73.22}}]}`))
+		} else {
+			w.Write([]byte(`{}`))
+		}
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "key", nil)
+
+	lat, lng, ok, err := c.Locate(context.Background(), "Shelburne, VT 05482, US")
+	if err != nil || !ok || lat != 44.38 || lng != -73.22 {
+		t.Fatalf("Locate = %v %v %v %v", lat, lng, ok, err)
+	}
+	// Remembered: one billed lookup per address.
+	c.Locate(context.Background(), "Shelburne, VT 05482, US")
+	if hits != 1 {
+		t.Fatalf("hits = %d, want 1 (cached)", hits)
+	}
+	if _, _, ok, err := c.Locate(context.Background(), "Nowhere"); ok || err != nil {
+		t.Fatalf("no match: ok=%v err=%v", ok, err)
 	}
 }

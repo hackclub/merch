@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hackclub/merch/internal/swag"
@@ -22,6 +23,14 @@ type Client struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
+
+	mu     sync.Mutex
+	places map[string]point // Locate's answers, so each address is looked up once
+}
+
+type point struct {
+	lat, lng float64
+	ok       bool
 }
 
 func New(baseURL, apiKey string, hc *http.Client) *Client {
@@ -42,15 +51,34 @@ type text struct {
 	Text string `json:"text"`
 }
 
+// Near says where the person probably is, so suggestions near them come first.
+// Without it Google biases by the caller's IP, which is our server's, not theirs.
+type Near struct {
+	Lat, Lng float64 // centre of the bias circle; both zero means none
+	Region   string  // CLDR region code ("US"): ranking and formatting
+}
+
+// nearRadius is the bias circle's radius in metres (the API's maximum).
+const nearRadius = 50000.0
+
 // Suggest returns street addresses matching input. session groups the
 // keystrokes and the final Lookup into one billed session.
-func (c *Client) Suggest(ctx context.Context, input, session string) ([]Suggestion, error) {
+func (c *Client) Suggest(ctx context.Context, input, session string, near Near) ([]Suggestion, error) {
 	body := map[string]any{
 		"input":                input,
 		"includedPrimaryTypes": []string{"street_address", "premise", "subpremise"},
 	}
 	if session != "" {
 		body["sessionToken"] = session
+	}
+	if near.Lat != 0 || near.Lng != 0 {
+		body["locationBias"] = map[string]any{"circle": map[string]any{
+			"center": map[string]float64{"latitude": near.Lat, "longitude": near.Lng},
+			"radius": nearRadius,
+		}}
+	}
+	if near.Region != "" {
+		body["regionCode"] = near.Region
 	}
 	var out struct {
 		Suggestions []struct {
@@ -64,7 +92,7 @@ func (c *Client) Suggest(ctx context.Context, input, session string) ([]Suggesti
 			} `json:"placePrediction"`
 		} `json:"suggestions"`
 	}
-	if err := c.do(ctx, http.MethodPost, "/v1/places:autocomplete", "", body, &out); err != nil {
+	if err := c.do(ctx, http.MethodPost, "/v1/places:autocomplete", "", "", body, &out); err != nil {
 		return nil, err
 	}
 	res := []Suggestion{}
@@ -105,7 +133,7 @@ func (c *Client) Lookup(ctx context.Context, placeID, session string) (swag.Addr
 			AddressLines       []string `json:"addressLines"`
 		} `json:"postalAddress"`
 	}
-	if err := c.do(ctx, http.MethodGet, "/v1/places/"+url.PathEscape(placeID), q.Encode(), nil, &out); err != nil {
+	if err := c.do(ctx, http.MethodGet, "/v1/places/"+url.PathEscape(placeID), q.Encode(), "addressComponents,postalAddress", nil, &out); err != nil {
 		return swag.Address{}, err
 	}
 
@@ -162,6 +190,39 @@ func (c *Client) Lookup(ctx context.Context, placeID, session string) (swag.Addr
 	return a, nil
 }
 
+// Locate returns the coordinates of a free-text place ("Shelburne, VT 05482, US"),
+// for biasing suggestions toward it; ok is false when nothing matches. Answers,
+// including misses, are remembered for the life of the process.
+func (c *Client) Locate(ctx context.Context, text string) (lat, lng float64, ok bool, err error) {
+	c.mu.Lock()
+	p, seen := c.places[text]
+	c.mu.Unlock()
+	if seen {
+		return p.lat, p.lng, p.ok, nil
+	}
+	var out struct {
+		Places []struct {
+			Location struct {
+				Latitude  float64 `json:"latitude"`
+				Longitude float64 `json:"longitude"`
+			} `json:"location"`
+		} `json:"places"`
+	}
+	if err := c.do(ctx, http.MethodPost, "/v1/places:searchText", "", "places.location", map[string]any{"textQuery": text, "pageSize": 1}, &out); err != nil {
+		return 0, 0, false, err
+	}
+	if len(out.Places) > 0 {
+		p = point{out.Places[0].Location.Latitude, out.Places[0].Location.Longitude, true}
+	}
+	c.mu.Lock()
+	if c.places == nil || len(c.places) > 10000 {
+		c.places = map[string]point{}
+	}
+	c.places[text] = p
+	c.mu.Unlock()
+	return p.lat, p.lng, p.ok, nil
+}
+
 func cmp(a, b string) string {
 	if a != "" {
 		return a
@@ -178,7 +239,7 @@ func init() {
 	}
 }
 
-func (c *Client) do(ctx context.Context, method, path, query string, body, out any) error {
+func (c *Client) do(ctx context.Context, method, path, query, fieldMask string, body, out any) error {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -199,8 +260,9 @@ func (c *Client) do(ctx context.Context, method, path, query string, body, out a
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
-	} else {
-		req.Header.Set("X-Goog-FieldMask", "addressComponents,postalAddress")
+	}
+	if fieldMask != "" {
+		req.Header.Set("X-Goog-FieldMask", fieldMask)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
