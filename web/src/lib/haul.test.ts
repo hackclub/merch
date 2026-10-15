@@ -41,8 +41,35 @@ describe('piles', () => {
 
 	it('treats an unmeasured sticker as a 3 in sticker, not a box', () => {
 		const [p] = piles([{ item: { ...sticker, width_in: null, height_in: null }, quantity: 10 }]);
-		expect(p).toMatchObject({ w: 3, d: 3 });
+		expect(p).toMatchObject({ w: 3, d: 3, kind: 'sticker', count: 10 });
 		expect(p.height).toBeCloseTo(10 * 0.0118);
+		expect(p.bag).toBeFalsy();
+	});
+
+	it('splits stickers into individual packs of 50 plus any loose remainder', () => {
+		const bags = piles([{ item: sticker, quantity: 150 }]);
+		expect(bags).toHaveLength(3);
+		expect(bags.map((p) => [p.label, +p.height.toFixed(4), p.bag, p.count, p.kind])).toEqual([
+			['50 × Sticker', +(50 * 0.0118).toFixed(4), true, 50, 'sticker'],
+			['50 × Sticker', +(50 * 0.0118).toFixed(4), true, 50, 'sticker'],
+			['50 × Sticker', +(50 * 0.0118).toFixed(4), true, 50, 'sticker']
+		]);
+
+		const mixed = piles([{ item: sticker, quantity: 60 }]);
+		expect(mixed.map((p) => [p.label, !!p.bag, p.count])).toEqual([
+			['50 × Sticker', true, 50],
+			['10 × Sticker', false, 10]
+		]);
+	});
+
+	it('includes companion items from ships_with when given catalog includes', () => {
+		const card: Item = { ...base, id: 9, sku: 'Pri/M25/4x6/1st', name: 'Intro Card', width_in: 6, height_in: 4, thickness_in: 0.014 };
+		const fullMag: Item = { ...mag, id: 8, name: 'Magazine 2025', ships_with: ['Pri/M25/4x6/1st'] };
+		const out = piles([{ item: fullMag, quantity: 5 }], [card]);
+		expect(out.map((p) => [p.label, p.kind, p.count])).toEqual([
+			['5 × Magazine 2025', 'booklet', 5],
+			['5 × Intro Card', 'paper', 5]
+		]);
 	});
 });
 

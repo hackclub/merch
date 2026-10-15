@@ -9,7 +9,7 @@
 	import { onMount, untrack } from 'svelte';
 	import { settle } from './book';
 	import type { BookViewer } from './book3d';
-	import type { TilePreview } from './items';
+	import { loadPreviewViewer, type Preview3D, type TilePreview } from './items';
 	import type { Viewer } from './paper3d';
 	import type { StickerViewer } from './sticker3d';
 	import { flipStep, hoverTurn, isGif } from './tile';
@@ -77,23 +77,7 @@
 			viewer?.resize(stage.clientWidth, stage.clientHeight);
 			drawn = false;
 		});
-		const load =
-			'book' in preview
-				? import('./book3d').then((m) => m.createBookViewer(el, (preview as { book: never }).book, () => ((ready = true), (drawn = false))) as Viewer)
-				: 'postcards' in preview
-					? import('./postcard3d').then((m) => {
-							const v = m.createPostcardViewer(el, (preview as { postcards: never }).postcards, () => ((ready = true), (drawn = false)));
-							v.setCount(count);
-							return v as Viewer;
-						})
-				: 'stickers' in preview
-					? import('./sticker3d').then((m) => {
-							const v = m.createStickerViewer(el, (preview as { stickers: never }).stickers, () => ((ready = true), (drawn = false)));
-							v.setCount(count);
-							return v as Viewer;
-						})
-					: import('./paper3d').then((m) => m.createViewer(el, (preview as { sheet: never }).sheet, () => ((ready = true), (drawn = false))));
-		load
+		loadPreviewViewer(el, preview as Preview3D, count, () => ((ready = true), (drawn = false)))
 			.then((v) => {
 				if (disposed) return v.dispose();
 				viewer = v;

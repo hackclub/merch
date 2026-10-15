@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { bookState, leafAngle, leafCount, leafZ, pagesNear } from './book';
 import { finishInfo } from './paper';
-import { createPhone, createSheet, createStage, LEAN, loadArt, paperEdge, type Viewer, type ViewerOptions } from './paper3d';
+import { createPhone, createSheet, createStage, edgeColor, LEAN, loadArt, pageEdges, paperEdge, type Viewer, type ViewerOptions } from './paper3d';
 import { GAP_IN, PHONE } from './scale';
 
 export type BookOptions = {
@@ -319,49 +319,5 @@ function gutter(atRight: boolean): THREE.CanvasTexture {
 	ctx.fillRect(0, 0, 64, 1);
 	const tex = new THREE.CanvasTexture(c);
 	tex.colorSpace = THREE.NoColorSpace;
-	return tex;
-}
-
-/** The cover's color along its spine edge, for the spine and fold. */
-function edgeColor(tex: THREE.Texture): THREE.Color {
-	const c = document.createElement('canvas');
-	c.width = 1;
-	c.height = 16;
-	const ctx = c.getContext('2d', { willReadFrequently: true })!;
-	const img = tex.image as CanvasImageSource & { width: number; height: number };
-	try {
-		ctx.drawImage(img, 0, 0, Math.max(1, img.width * 0.03), img.height, 0, 0, 1, 16);
-		const d = ctx.getImageData(0, 0, 1, 16).data;
-		let r = 0, g = 0, b = 0;
-		for (let i = 0; i < d.length; i += 4) (r += d[i]), (g += d[i + 1]), (b += d[i + 2]);
-		return new THREE.Color().setRGB(r / 16 / 255, g / 16 / 255, b / 16 / 255, THREE.SRGBColorSpace);
-	} catch {
-		return new THREE.Color(0xdddddd); // a cross-origin image we can't read
-	}
-}
-
-/**
- * Stacked page edges: 64 slightly uneven off-white lines per tile, one per
- * leaf. `across` runs them across the texture's u axis (the fore-edge),
- * otherwise along v (the top and bottom).
- */
-function pageEdges(across: boolean): THREE.CanvasTexture {
-	const N = 64;
-	const c = document.createElement('canvas');
-	c.width = across ? N : 1;
-	c.height = across ? 1 : N;
-	const ctx = c.getContext('2d')!;
-	let seed = 7;
-	const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-	for (let i = 0; i < N; i++) {
-		const l = 88 + rand() * 8;
-		ctx.fillStyle = `hsl(40 20% ${l}%)`;
-		if (across) ctx.fillRect(i, 0, 1, 1);
-		else ctx.fillRect(0, i, 1, 1);
-	}
-	const tex = new THREE.CanvasTexture(c);
-	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-	tex.colorSpace = THREE.SRGBColorSpace;
-	tex.anisotropy = 8;
 	return tex;
 }

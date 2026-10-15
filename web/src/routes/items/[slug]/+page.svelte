@@ -5,11 +5,9 @@
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
 	import { pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
 	import { itemsFor, offered } from '$lib/purpose';
-	import { isBooklet, itemIdFromParam, itemPath, postcardOptions, previewCount, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
-	import type { BookOptions } from '$lib/book3d';
+	import { isBooklet, itemIdFromParam, itemPath, previewCount, productPreview, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
 	import { sheetThickness, finishInfo } from '$lib/paper';
 	import Product3D from '$lib/Product3D.svelte';
-	import { hasSize } from '$lib/scale';
 	import { session } from '$lib/session.svelte';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Stepper from '$lib/Stepper.svelte';
@@ -41,21 +39,10 @@
 	// flip through their pages.
 	const isSticker = $derived(item?.packs === 'sticker');
 	const booklet = $derived(!!item && isBooklet(item));
-	const has3D = $derived(!!item && (hasSize(item) || isSticker) && (item.images.length > 0 || booklet));
 	const comesWith = $derived(item && catalog ? shipsWith(item, catalog.includes ?? []) : []);
-	const book = $derived<BookOptions | undefined>(
-		item && booklet && hasSize(item)
-			? {
-					pages: item.pages, widthIn: item.width_in!, heightIn: item.height_in!, finish: item.finish, binding: item.binding,
-					// Without a measured thickness, about 0.1 mm per page.
-					thicknessIn: item.thickness_in ?? item.pages.length * 0.004,
-					extras: comesWith.filter((i) => hasSize(i) && i.images.length).map((i) => ({
-						front: i.images[0], back: i.images[1], widthIn: i.width_in!, heightIn: i.height_in!,
-						thicknessIn: sheetThickness(i), finish: i.finish
-					}))
-				}
-			: undefined
-	);
+	const preview = $derived(item ? productPreview(item, catalog?.includes ?? []) : null);
+	const has3D = $derived(!!preview);
+	const book = $derived(preview && 'book' in preview ? preview.book : undefined);
 	const shown = $derived(picked ?? (has3D ? '3d' : 0));
 	const tiles = $derived(item ? item.images.length + (has3D ? 1 : 0) : 0);
 	const pickedSizes = $derived(item ? sizesSummary(item, bag.sizes) : '');
@@ -94,19 +81,11 @@
 			{#if item.images.length || has3D}
 				{#if shown === '3d'}
 					<div class="main three">
-						{#key item.id}
-							{#if item.packs === 'postcard' && item.images.length}
-								<Product3D name={item.name} count={previewCount(item, inCart)} opts={postcardOptions(item, true)} />
-							{:else if isSticker}
-								<Product3D name={item.name} count={inCart}
-									opts={{ kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in }} />
-							{:else}
-								<Product3D name={item.name} {book} opts={{
-									front: thumbnail(item), back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
-									thicknessIn: sheetThickness(item), finish: item.finish
-								}} />
-							{/if}
-						{/key}
+						{#if preview}
+							{#key item.id}
+								<Product3D name={item.name} {preview} count={item.packs === 'postcard' ? previewCount(item, inCart) : inCart} />
+							{/key}
+						{/if}
 					</div>
 				{:else}
 					<a class="main" class:sticker={isSticker} href={item.images[shown]} target="_blank" rel="noreferrer" title="Open full size">

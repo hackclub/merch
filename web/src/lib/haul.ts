@@ -1,14 +1,16 @@
 // "Everything you're about to get": each line of the request as a pile at true
 // size (inches), as tall as its count makes it, laid out on a table next to a
 // phone for scale. haul3d.ts draws it; this is the geometry, kept pure for tests.
-import { isBooklet, thumbnail } from './items';
+import { isBooklet, shipsWith, thumbnail } from './items';
 import { sheetThickness } from './paper';
 import { CARD_IN, PER_BUNDLE } from './postcards';
 import { PHONE } from './scale';
-import { STICKER_THICKNESS_IN } from './stickers';
+import { PER_BAG, STICKER_THICKNESS_IN } from './stickers';
 import type { Item } from './types';
 
 export type HaulLine = { item: Item; quantity: number; size?: string };
+
+export type PileKind = 'paper' | 'booklet' | 'sticker' | 'shirt' | 'box';
 
 export type Pile = {
 	key: string;
@@ -17,11 +19,18 @@ export type Pile = {
 	w: number; // footprint, left to right
 	d: number; // footprint, front to back
 	height: number; // the whole stack
+	kind?: PileKind;
+	count?: number; // items in this pile
+	finish?: string; // paper finish ('matte' | 'gloss' | 'linen' | 'uncoated' | '')
+	binding?: string; // booklet binding ('staple' | 'perfect')
 	band?: boolean; // a printer's bundle, with a paper band around it
+	bag?: boolean; // a clear zip bag of 50 stickers
+	widthIn?: number | null;
+	heightIn?: number | null;
 };
 
 // A folded T-shirt, roughly.
-const SHIRT = { w: 9.5, d: 12, t: 1.2 };
+export const SHIRT = { w: 9.5, d: 12, t: 1.2 };
 // A die-cut sticker with no measurements: about 3 in across.
 const STICKER = { w: 3, d: 3 };
 // Something we have no measurements for: a small box.
@@ -29,20 +38,43 @@ const UNKNOWN = { w: 6, d: 6, t: 1 };
 // Booklets without a measured thickness: about 0.1 mm a page.
 const PAGE_IN = 0.004;
 
-export function piles(lines: HaulLine[]): Pile[] {
-	return lines
-		.filter((l) => l.quantity > 0)
-		.flatMap((line): Pile[] => {
-			const { item, quantity } = line;
-			// Postcards ship in banded bundles of 50: one pile each, then the rest loose.
-			if (item.packs === 'postcard' && quantity >= PER_BUNDLE) {
-				const one = pileOf({ ...line, quantity: PER_BUNDLE });
-				const bundles = Array.from({ length: Math.floor(quantity / PER_BUNDLE) }, (_, n) => ({ ...one, key: `${one.key}:${n}`, band: true }));
-				const rest = quantity % PER_BUNDLE;
-				return rest ? [...bundles, { ...pileOf({ ...line, quantity: rest }), key: `${one.key}:rest` }] : bundles;
-			}
-			return [pileOf(line)];
-		});
+/** Expands each line with whatever its item always ships with (e.g. the magazine's intro card). */
+export function withIncludes(lines: HaulLine[], includes: Item[] = []): HaulLine[] {
+	const active = lines.filter((l) => l.quantity > 0);
+	if (!includes.length) return active;
+	const pool = [...active.map((l) => l.item), ...includes];
+	const out: HaulLine[] = [];
+	const add = (line: HaulLine) => {
+		const existing = !line.size && out.find((l) => l.item.id === line.item.id && !l.size);
+		if (existing) existing.quantity += line.quantity;
+		else out.push({ ...line });
+	};
+	for (const l of active) {
+		add(l);
+		for (const extra of shipsWith(l.item, pool)) add({ item: extra, quantity: l.quantity });
+	}
+	return out;
+}
+
+export function piles(lines: HaulLine[], includes: Item[] = []): Pile[] {
+	return withIncludes(lines, includes).flatMap((line): Pile[] => {
+		const { item, quantity } = line;
+		// Postcards ship in banded bundles of 50: one pile each, then the rest loose.
+		if (item.packs === 'postcard' && quantity >= PER_BUNDLE) {
+			const one = pileOf({ ...line, quantity: PER_BUNDLE });
+			const bundles = Array.from({ length: Math.floor(quantity / PER_BUNDLE) }, (_, n) => ({ ...one, key: `${one.key}:${n}`, band: true }));
+			const rest = quantity % PER_BUNDLE;
+			return rest ? [...bundles, { ...pileOf({ ...line, quantity: rest }), key: `${one.key}:rest` }] : bundles;
+		}
+		// Stickers ship in sealed clear zip bags of 50: one pack each, then any loose remainder.
+		if (item.packs === 'sticker' && quantity >= PER_BAG) {
+			const one = pileOf({ ...line, quantity: PER_BAG });
+			const bags = Array.from({ length: Math.floor(quantity / PER_BAG) }, (_, n) => ({ ...one, key: `${one.key}:${n}`, bag: true }));
+			const rest = quantity % PER_BAG;
+			return rest ? [...bags, { ...pileOf({ ...line, quantity: rest }), key: `${one.key}:rest` }] : bags;
+		}
+		return [pileOf(line)];
+	});
 }
 
 /** "3 × Poster (M)" for a line of the request. */
@@ -52,19 +84,30 @@ function pileOf({ item, quantity, size }: HaulLine): Pile {
 	const label = lineLabel({ item, quantity, size });
 	const key = `${item.id}:${size ?? ''}`;
 	const art = thumbnail(item);
-	if (item.width_in != null && item.height_in != null) {
-		const unit = isBooklet(item)
-			? (item.thickness_in ?? item.pages.length * PAGE_IN)
-			: item.packs === 'sticker'
-				? STICKER_THICKNESS_IN
-				: item.packs === 'postcard'
-					? (item.thickness_in ?? CARD_IN)
-					: sheetThickness(item);
-		return { key, label, art, w: item.width_in, d: item.height_in, height: unit * quantity };
+	if (item.packs === 'sticker') {
+		const w = item.width_in ?? STICKER.w;
+		const d = item.height_in ?? STICKER.d;
+		return {
+			key, label, art, w, d, height: STICKER_THICKNESS_IN * quantity,
+			kind: 'sticker', count: quantity, widthIn: item.width_in, heightIn: item.height_in
+		};
 	}
-	if (item.packs === 'sticker') return { key, label, art, w: STICKER.w, d: STICKER.d, height: STICKER_THICKNESS_IN * quantity };
-	const box = item.variants.length ? SHIRT : UNKNOWN;
-	return { key, label, art, w: box.w, d: box.d, height: box.t * quantity };
+	if (item.width_in != null && item.height_in != null) {
+		const booklet = isBooklet(item);
+		const unit = booklet
+			? (item.thickness_in ?? item.pages.length * PAGE_IN)
+			: item.packs === 'postcard'
+				? (item.thickness_in ?? CARD_IN)
+				: sheetThickness(item);
+		return {
+			key, label, art, w: item.width_in, d: item.height_in, height: unit * quantity,
+			kind: booklet ? 'booklet' : 'paper', count: quantity, finish: item.finish,
+			binding: booklet ? item.binding : undefined
+		};
+	}
+	const shirt = item.variants.length > 0;
+	const box = shirt ? SHIRT : UNKNOWN;
+	return { key, label, art, w: box.w, d: box.d, height: box.t * quantity, kind: shirt ? 'shirt' : 'box', count: quantity };
 }
 
 export type Placed = Pile & { x: number; z: number }; // centre of the footprint on the table

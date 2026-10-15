@@ -3,7 +3,7 @@
 // scale. setCount() follows the quantity, so bundles appear as you ask for more.
 // Units are inches.
 import * as THREE from 'three';
-import { createPhone, createStage, loadArt, paperBand, paperEdge, type ViewerOptions } from './paper3d';
+import { createPhone, createStage, loadArt, pageEdges, paperBand, paperEdge, paperFace, PHONE_DEPTH, type ViewerOptions } from './paper3d';
 import { CARD_IN, postcardStacks } from './postcards';
 import { PHONE } from './scale';
 
@@ -18,34 +18,31 @@ export type PostcardViewer = {
 	dispose(): void;
 };
 
-const PHONE_DEPTH = 0.31;
 const GAP = 1.5; // between the cards and the phone
 const ELEVATION = THREE.MathUtils.degToRad(36);
 
 export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOptions, onReady: () => void): PostcardViewer {
 	const { widthIn: w, heightIn: d } = opts;
 	const t = opts.thicknessIn ?? CARD_IN;
+	const withPhone = opts.phone !== false;
 	const stage = createStage(canvas, w * 3 + 6, d * 3);
-	const { scene, renderer, camera } = stage;
+	const { scene, renderer } = stage;
 	const turntable = new THREE.Group();
 	scene.add(turntable);
 
-	// One material for every stack's top, so the art loads once.
-	const top = paperEdge();
-	top.polygonOffset = false;
-	top.color.set(0xffffff);
+	// One material for every stack's top (with the card stock's finish), so the art loads once.
+	const face = paperFace(opts.finish, w, d);
 	loadArt(renderer, opts.front, w / d, (tex) => {
 		if (tex) {
-			top.map = tex;
-			top.needsUpdate = true;
+			face.mat.map = tex;
+			face.mat.needsUpdate = true;
 		}
 		onReady();
 	});
-	const edge = paperEdge();
+	const bottom = paperEdge();
 
-	const phone = createPhone();
-	phone.rotation.set(-Math.PI / 2, 0, 0);
-	turntable.add(phone);
+	const phone = createPhone(true);
+	if (withPhone) turntable.add(phone);
 
 	let stacks = new THREE.Group();
 	turntable.add(stacks);
@@ -57,23 +54,29 @@ export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOp
 		stacks.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
 		stacks = new THREE.Group();
 		const { stacks: piles, width, depth } = postcardStacks(n, w, d);
-		// The cards on the left, the phone lying beside them.
-		const sceneW = width + GAP + PHONE.w;
+		// The cards on the left, the phone lying beside them (when shown).
+		const sceneW = withPhone ? width + GAP + PHONE.w : width;
 		const shift = -sceneW / 2 + width / 2;
 		let tallest = 0;
 		for (const s of piles) {
 			const h = Math.max(s.cards * t, t);
 			tallest = Math.max(tallest, h);
+			const side = paperEdge();
+			if (s.cards > 1) {
+				side.map = pageEdges(false);
+				side.map.repeat.set(1, s.cards / 64);
+			}
 			// BoxGeometry faces: +x, -x, +y (top), -y, +z, -z.
-			const pile = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [edge, edge, top, edge, edge, edge]);
+			const pile = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, face.mat, bottom, side, side]);
 			pile.position.set(s.x + shift, h / 2, s.z);
 			pile.castShadow = true;
 			stacks.add(pile);
 			if (s.band) stacks.add(paperBand(w, h, d, s.x + shift, s.z));
 		}
-		phone.position.set(shift + width / 2 + GAP + PHONE.w / 2, PHONE_DEPTH / 2, 0);
+		if (withPhone) phone.position.set(shift + width / 2 + GAP + PHONE.w / 2, PHONE_DEPTH / 2, 0);
 		turntable.add(stacks);
-		extent = { width: sceneW, depth: Math.max(depth, PHONE.h), tallest: Math.max(tallest, PHONE_DEPTH) };
+		extent = { width: sceneW, depth: withPhone ? Math.max(depth, PHONE.h) : depth, tallest: Math.max(tallest, withPhone ? PHONE_DEPTH : t) };
+		stage.fitLight(extent.width, extent.depth);
 	}
 
 	const viewer: PostcardViewer = {
@@ -87,21 +90,11 @@ export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOp
 		resize: stage.resize,
 		render() {
 			turntable.rotation.y = viewer.angle;
-			// Fit the cards and phone, whichever way they're turned.
-			const span = Math.hypot(extent.width, extent.depth);
-			const half = THREE.MathUtils.degToRad(camera.fov) / 2;
-			const fitW = (span * 0.55) / (Math.tan(half) * camera.aspect);
-			const fitH = (span * Math.sin(ELEVATION) * 0.55 + extent.tallest * Math.cos(ELEVATION)) / Math.tan(half);
-			const dist = Math.max(fitW, fitH) * viewer.zoom;
-			camera.near = Math.max(0.1, dist * 0.05);
-			camera.far = dist * 4;
-			camera.updateProjectionMatrix();
-			const lookY = extent.tallest * 0.4;
-			camera.position.set(0, lookY + dist * Math.sin(ELEVATION), dist * Math.cos(ELEVATION));
-			camera.lookAt(0, lookY, 0);
+			stage.frameTable(extent.width, extent.depth, extent.tallest, viewer.zoom, { elevation: ELEVATION, room: 0.55, y: extent.tallest * 0.4 });
 			stage.render();
 		},
 		dispose() {
+			face.dispose();
 			stacks.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
 			stage.dispose();
 		}

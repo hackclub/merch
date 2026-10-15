@@ -5,15 +5,16 @@
 	// or tap a pile to see what it is and how tall. The caption puts the total in
 	// familiar terms, because people tend to ask for too little.
 	import { onMount, untrack } from 'svelte';
-	import { haulSize, layoutHaul, lineLabel, piles, tableCover, type HaulLine } from './haul';
+	import { haulSize, layoutHaul, lineLabel, piles, tableCover, withIncludes, type HaulLine } from './haul';
 	import type { HaulViewer } from './haul3d';
+	import type { Item } from './types';
 
 	// table: lay it all out on 6-foot folding tables (for clubs and events), to show how much of one it fills.
-	let { lines, table: onTable = false }: { lines: HaulLine[]; table?: boolean } = $props();
+	let { lines, includes = [], table: onTable = false }: { lines: HaulLine[]; includes?: Item[]; table?: boolean } = $props();
 
-	const stack = $derived(piles(lines));
+	const allLines = $derived(withIncludes(lines, includes));
+	const stack = $derived(piles(lines, includes));
 	const table = $derived(layoutHaul(stack, { table: onTable }));
-	// Rebuild only when what's on the table changes, not on every re-render.
 	const shape = $derived(JSON.stringify(table));
 	const cover = $derived(Math.round(tableCover(table) * 100));
 
@@ -39,11 +40,16 @@
 		return () => io.disconnect();
 	});
 
+	// Build the WebGL viewer once while near the viewport; update the table in place when items or quantities change.
 	$effect(() => {
-		shape;
 		if (!near || !canvas) return;
 		const el = canvas;
 		return untrack(() => build(el));
+	});
+
+	$effect(() => {
+		shape;
+		viewer?.setTable(untrack(() => table));
 	});
 
 	function build(el: HTMLCanvasElement) {
@@ -79,6 +85,7 @@
 			ro.disconnect();
 			viewer?.dispose();
 			viewer = null;
+			ready = false;
 		};
 	}
 
@@ -156,8 +163,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="stage" class:ready bind:this={stage} onpointerdown={down} onpointermove={move} onpointerup={up}
 		onpointercancel={up} onpointerleave={(e) => e.pointerType === 'mouse' && !pointers.size && (tip = null)} onwheel={wheel}>
-		<!-- A fresh canvas per rebuild: disposing a viewer kills its canvas's WebGL context for good. -->
-		{#if near}{#key shape}<canvas bind:this={canvas} aria-label="Your whole request in 3D, to scale, next to a phone"></canvas>{/key}{/if}
+		{#if near}<canvas bind:this={canvas} aria-label="Your whole request in 3D, to scale, next to a phone"></canvas>{/if}
 		{#if !ready}<span class="loading muted">Loading 3D…</span>{/if}
 		{#if tip}<span class="tip" style="left: {tip.x}px; top: {tip.y}px">{tip.text}</span>{/if}
 		<div class="controls">
@@ -172,7 +178,7 @@
 			{#if onTable && cover < 35}Most people find they need more than they think, so don't be shy about adding more.{/if}
 		</span>
 		<span class="muted">To scale, next to a regular 6-inch phone. Drag to turn and tilt it, pinch or use + and − to zoom, and tap a pile to see what it is.</span>
-		<span class="muted">{lines.filter((l) => l.quantity > 0).map(lineLabel).join(' · ')}</span>
+		<span class="muted">{allLines.map(lineLabel).join(' · ')}</span>
 	</figcaption>
 </figure>
 

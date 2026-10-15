@@ -1,6 +1,6 @@
 import type { BookOptions } from './book3d';
 import { sheetThickness } from './paper';
-import type { ViewerOptions } from './paper3d';
+import type { Viewer, ViewerOptions } from './paper3d';
 import { hasSize } from './scale';
 import type { PostcardOptions } from './postcard3d';
 import type { StickerOptions } from './sticker3d';
@@ -29,35 +29,46 @@ export const thumbnail = (item: Item): string => item.images[0] ?? item.pages[0]
 /** Booklets with page images open in 3D and flip through. */
 export const isBooklet = (item: Item) => item.binding !== '' && item.pages.length >= 2;
 
-/** What a shop tile shows instead of its photo; null = just the photo. */
-export type TilePreview =
-	| { clip: string } // a looping video or GIF of the real thing
+/** A 3D product preview: booklet flip-through, printed sheet, sticker packs, or postcard bundles. */
+export type Preview3D =
 	| { book: BookOptions } // a booklet that flips through its pages
 	| { sheet: ViewerOptions } // a sized print, front and back
 	| { stickers: StickerOptions }
 	| { postcards: PostcardOptions }; // a stack, or bundles of 50
 
+/** What a shop tile shows instead of its photo; null = just the photo. */
+export type TilePreview =
+	| { clip: string } // a looping video or GIF of the real thing
+	| Preview3D;
+
 /**
- * A tile's preview, on its own (no phone): the item's clip if it has one, a
- * booklet's pages, a sized print's sheet, or stickers.
+ * The 3D view for an item: on the product page (phone = true, with any ships_with
+ * extras standing beside a booklet) or alone on a shop tile (phone = false).
  */
-export function tilePreview(item: Item): TilePreview | null {
-	if (item.clip) return { clip: item.clip };
+export function productPreview(item: Item, includes: Item[] = [], phone = true): Preview3D | null {
 	if (item.packs === 'sticker') {
 		return item.images.length
-			? { stickers: { kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in, phone: false } }
+			? { stickers: { kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in, phone } }
 			: null;
 	}
 	if (!hasSize(item)) return null;
 	if (item.packs === 'postcard' && item.images.length) {
-		return { postcards: postcardOptions(item) };
+		return { postcards: postcardOptions(item, phone) };
 	}
 	if (isBooklet(item)) {
+		const extras = phone
+			? shipsWith(item, includes)
+					.filter((i) => hasSize(i) && i.images.length)
+					.map((i) => ({
+						front: i.images[0], back: i.images[1], widthIn: i.width_in!, heightIn: i.height_in!,
+						thicknessIn: sheetThickness(i), finish: i.finish
+					}))
+			: [];
 		return {
 			book: {
 				pages: item.pages, widthIn: item.width_in!, heightIn: item.height_in!, finish: item.finish, binding: item.binding,
-				// Without a measured thickness, about 0.1 mm per page, as on the product page.
-				thicknessIn: item.thickness_in ?? item.pages.length * 0.004, extras: [], phone: false
+				// Without a measured thickness, about 0.1 mm per page.
+				thicknessIn: item.thickness_in ?? item.pages.length * 0.004, extras, phone
 			}
 		};
 	}
@@ -65,9 +76,38 @@ export function tilePreview(item: Item): TilePreview | null {
 	return {
 		sheet: {
 			front: item.images[0], back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
-			thicknessIn: sheetThickness(item), finish: item.finish, phone: false
+			thicknessIn: sheetThickness(item), finish: item.finish, phone
 		}
 	};
+}
+
+/**
+ * A tile's preview, on its own (no phone): the item's clip if it has one, a
+ * booklet's pages, a sized print's sheet, or stickers.
+ */
+export function tilePreview(item: Item): TilePreview | null {
+	if (item.clip) return { clip: item.clip };
+	return productPreview(item, [], false);
+}
+
+/** Lazy-loads the matching WebGL viewer for a Preview3D descriptor. */
+export function loadPreviewViewer(canvas: HTMLCanvasElement, preview: Preview3D, count: number, onReady: () => void): Promise<Viewer> {
+	if ('book' in preview) return import('./book3d').then((m) => m.createBookViewer(canvas, preview.book, onReady));
+	if ('postcards' in preview) {
+		return import('./postcard3d').then((m) => {
+			const v = m.createPostcardViewer(canvas, preview.postcards, onReady);
+			v.setCount(count);
+			return v;
+		});
+	}
+	if ('stickers' in preview) {
+		return import('./sticker3d').then((m) => {
+			const v = m.createStickerViewer(canvas, preview.stickers, onReady);
+			v.setCount(count);
+			return v;
+		});
+	}
+	return import('./paper3d').then((m) => m.createViewer(canvas, preview.sheet, onReady));
 }
 
 /** The postcard view's options for a sized postcard item, no phone (the product page adds one). */

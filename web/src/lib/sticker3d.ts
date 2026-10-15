@@ -3,9 +3,8 @@
 // on a table next to a phone for scale. setCount() follows the quantity
 // stepper, so bags drop in as you ask for more. Units are inches.
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import type { Viewer } from './paper3d';
+import { createPhone, createStage, PHONE_DEPTH, type Viewer } from './paper3d';
 import { GAP_IN, PHONE } from './scale';
 import { ACROSS, maskBounds, packLayout, PER_BAG, STICKER_THICKNESS_IN as T, stickerMask, stickerSize } from './stickers';
 
@@ -19,201 +18,45 @@ export type StickerOptions = {
 
 export type StickerViewer = Viewer & { setCount(n: number): void };
 
-const PHONE_DEPTH = 0.31;
-const BAG_MARGIN = 0.25; // plastic around the stack on each side
-const ZIP_IN = 0.6; // extra bag length for the zip strip
-const BAG_H = PER_BAG * T + 0.04;
+export const BAG_MARGIN = 0.25; // plastic around the stack on each side
+export const ZIP_IN = 0.6; // extra bag length for the zip strip
+export const BAG_H = PER_BAG * T + 0.04;
 const PILE_GAP = 0.5;
 const ELEVATION = THREE.MathUtils.degToRad(42); // camera looks down at the table
 const DROP_IN = 4; // new bags fall from this high
 const MASK_PX = 800; // the photo is cut out at up to this many pixels across
 
-export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOptions, onReady: () => void): StickerViewer {
-	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-	renderer.outputColorSpace = THREE.SRGBColorSpace;
-	renderer.toneMapping = THREE.NeutralToneMapping;
-	renderer.shadowMap.enabled = true;
-	renderer.shadowMap.type = THREE.VSMShadowMap;
+// Thin and clear: enough glint to read as a bag, without fogging the art inside.
+const plasticMat = new THREE.MeshPhysicalMaterial({
+	color: 0xffffff, transparent: true, opacity: 0.06, roughness: 0.12, clearcoat: 0.5, clearcoatRoughness: 0.08, envMapIntensity: 0.35,
+	depthWrite: false
+});
+const zipMat = new THREE.MeshPhysicalMaterial({ color: 0xe9eef2, transparent: true, opacity: 0.55, roughness: 0.3, depthWrite: false });
 
-	const scene = new THREE.Scene();
-	const pmrem = new THREE.PMREMGenerator(renderer);
-	const room = new RoomEnvironment();
-	scene.environment = pmrem.fromScene(room, 0.04).texture;
-	room.dispose();
+export type StickerCutout = {
+	art: THREE.MeshPhysicalMaterial;
+	backing: THREE.MeshStandardMaterial;
+	size: { w: number; h: number };
+	face: THREE.PlaneGeometry;
+	bagGeo: RoundedBoxGeometry;
+	zipGeo: THREE.BoxGeometry;
+	dispose(): void;
+};
 
-	// Softer than the poster view: stickers lie flat, square to the light.
-	const key = new THREE.DirectionalLight(0xffffff, 0.6);
-	key.position.set(-6, 30, 10);
-	key.castShadow = true;
-	key.shadow.mapSize.set(2048, 2048);
-	key.shadow.radius = 12;
-	key.shadow.blurSamples = 20;
-	key.shadow.bias = -0.0005;
-	const sc = key.shadow.camera;
-	sc.left = sc.bottom = -24;
-	sc.right = sc.top = 24;
-	sc.near = 1;
-	sc.far = 80;
-	scene.add(key);
-
-	const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.ShadowMaterial({ opacity: 0.14 }));
-	floor.rotation.x = -Math.PI / 2;
-	floor.position.y = -0.01;
-	floor.receiveShadow = true;
-	scene.add(floor);
-
-	// The packs turn on a turntable; the phone stays put beside them.
-	const turntable = new THREE.Group();
-	scene.add(turntable);
-
-	const phone = new THREE.Group();
-	const body = new THREE.Mesh(
-		new RoundedBoxGeometry(PHONE.w, PHONE.h, PHONE_DEPTH, 6, 0.42),
-		new THREE.MeshPhysicalMaterial({ color: 0x2b2c31, metalness: 0.7, roughness: 0.32 })
-	);
-	body.castShadow = true;
-	const screen = new THREE.Mesh(
-		new RoundedBoxGeometry(PHONE.w - 0.14, PHONE.h - 0.14, 0.02, 4, 0.34),
-		new THREE.MeshPhysicalMaterial({ color: 0x07080b, roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.02 })
-	);
-	screen.position.z = PHONE_DEPTH / 2;
-	phone.add(body, screen);
-	phone.rotation.set(-Math.PI / 2, 0, THREE.MathUtils.degToRad(-10)); // lying face up
-	phone.position.y = PHONE_DEPTH / 2;
-	const withPhone = opts.phone !== false;
-	if (withPhone) scene.add(phone);
-
-	// Shared by every sticker; filled in once the photo is cut out.
-	let size = { w: 3, h: 2 };
-	let face: THREE.PlaneGeometry | null = null;
-	// Vinyl with a satin laminate: a soft sheen without washing out the print.
-	const art = new THREE.MeshPhysicalMaterial({
-		roughness: 0.5, clearcoat: 0.25, clearcoatRoughness: 0.35, envMapIntensity: 0.45, alphaTest: 0.5,
-		polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2
-	});
-	const backing = new THREE.MeshStandardMaterial({ color: 0xf3f1ec, roughness: 0.9, alphaTest: 0.5 });
-	// Thin and clear: enough glint to read as a bag, without fogging the art inside.
-	const plastic = new THREE.MeshPhysicalMaterial({
-		color: 0xffffff, transparent: true, opacity: 0.06, roughness: 0.12, clearcoat: 0.5, clearcoatRoughness: 0.08, envMapIntensity: 0.35,
-		depthWrite: false
-	});
-	const zip = new THREE.MeshPhysicalMaterial({ color: 0xe9eef2, transparent: true, opacity: 0.55, roughness: 0.3, depthWrite: false });
-	let bagGeo: RoundedBoxGeometry | null = null;
-	let zipGeo: THREE.BoxGeometry | null = null;
-
-	let count = 0;
-	let ready = false;
-	// Bags on the table, oldest first; each remembers when it started falling.
-	let bags: { group: THREE.Group; y: number; born: number }[] = [];
-	let loose: THREE.Group | null = null;
-	let levels = 0; // how high the bags are piled
-	let extent = 3; // half-width of what's on the turntable, for framing
-	let shownExtent = 3;
-
-	// A stack of n stickers, bottom at y = 0, centered on x/z. Each sticker is its
-	// artwork with the white backing just under it; stacked, the backings make
-	// the white edge you see on a real bundle (backings stick out a hair). In a
-	// tall vertical bundle (`topOnly`), only the top sticker's face is visible.
-	function stack(n: number, place: (i: number, m: THREE.Matrix4) => void, topOnly = false) {
-		const g = new THREE.Group();
-		const tops = new THREE.InstancedMesh(face!, art, topOnly ? 1 : n);
-		const backs = new THREE.InstancedMesh(face!, backing, n * 3);
-		backs.castShadow = true;
-		const m = new THREE.Matrix4();
-		const under = new THREE.Matrix4();
-		for (let i = 0; i < n; i++) {
-			place(i, m);
-			if (!topOnly) tops.setMatrixAt(i, m);
-			else if (i === n - 1) tops.setMatrixAt(0, m);
-			for (const k of [0, 1, 2]) {
-				under.makeScale(1.012, 1, 1.012).setPosition(0, -T * 0.25 * (k + 1), 0).premultiply(m);
-				backs.setMatrixAt(i * 3 + k, under);
-			}
-		}
-		g.add(backs, tops);
-		return g;
-	}
-
-	function bag(seed: number) {
-		const g = stack(
-			PER_BAG,
-			(i, m) => {
-				// Die-cut stacks are nearly, not perfectly, square.
-				const j = Math.sin(seed * 31 + i * 12.9898) * 43758.5453;
-				const jx = (j - Math.floor(j) - 0.5) * 0.03;
-				m.makeTranslation(jx, (i + 1) * T + 0.01, ZIP_IN / 2 - jx);
-			},
-			true
-		);
-		const shell = new THREE.Mesh(bagGeo!, plastic);
-		shell.position.y = BAG_H / 2;
-		shell.renderOrder = 2;
-		const strip = new THREE.Mesh(zipGeo!, zip);
-		strip.position.set(0, BAG_H / 2, -(size.h + 2 * BAG_MARGIN + ZIP_IN) / 2 + ZIP_IN * 0.45);
-		strip.renderOrder = 1;
-		g.add(shell, strip);
-		return g;
-	}
-
-	function fan(n: number) {
-		// Dealt like cards, five to a row, so you can count them.
-		return stack(n, (i, m) => {
-			const col = i % 5, row = Math.floor(i / 5);
-			const turn = (col - 2) * 0.08 + row * 0.05;
-			m.makeRotationY(turn).setPosition(
-				(col - (Math.min(n, 5) - 1) / 2) * size.w * 0.32,
-				(i + 1) * T * 1.5,
-				(row - (Math.ceil(n / 5) - 1) / 2) * size.h * 0.6
-			);
-		});
-	}
-
-	function layout(now: number) {
-		if (!ready) return;
-		const plan = packLayout(count);
-		const bagW = size.w + 2 * BAG_MARGIN;
-		const piles = Math.min(plan.bags.length, ACROSS);
-		levels = Math.ceil(plan.bags.length / ACROSS);
-		const looseW = plan.loose ? size.w * (1 + 0.32 * (Math.min(plan.loose, 5) - 1)) : 0;
-		const totalW = piles * bagW + Math.max(0, piles - 1) * PILE_GAP + (looseW && piles ? PILE_GAP : 0) + looseW;
-		let x = -totalW / 2;
-
-		// Keep bags that are still requested (so only new ones fall in).
-		let fresh = 0;
-		for (const b of bags.splice(plan.bags.length)) dispose(b.group);
-		plan.bags.forEach((p, i) => {
-			if (!bags[i]) {
-				const group = bag(i);
-				// A slight twist per bag, like they were dropped on the table.
-				group.rotation.y = Math.sin(i * 2.3) * 0.07;
-				turntable.add(group);
-				bags[i] = { group, y: 0, born: now + fresh++ * 120 }; // one after another
-			}
-			bags[i].y = p.level * BAG_H;
-			bags[i].group.position.x = x + p.pile * (bagW + PILE_GAP) + bagW / 2;
-		});
-		x += piles * (bagW + PILE_GAP);
-
-		if (loose) dispose(loose);
-		loose = plan.loose ? fan(plan.loose) : null;
-		if (loose) {
-			loose.position.x = x + looseW / 2;
-			turntable.add(loose);
-		}
-		const rows = Math.ceil(plan.loose / 5);
-		const depth = Math.max(piles ? size.h + 2 * BAG_MARGIN + ZIP_IN : 0, rows ? size.h * (1 + 0.6 * (rows - 1)) : 0);
-		extent = Math.hypot(totalW, depth) / 2;
-	}
-
-	function dispose(g: THREE.Group) {
-		turntable.remove(g);
-		g.traverse((o) => o instanceof THREE.InstancedMesh && o.dispose());
-	}
-
-	// Cut the sticker out of its product photo (the CDN allows cross-origin reads).
+/**
+ * Cuts a die-cut sticker out of its product photo (flooding in from the grey
+ * backdrop and shadow) and prepares its vinyl face, white liner backing, and
+ * zip-bag geometries at true size in inches.
+ */
+export function loadStickerCutout(
+	renderer: THREE.WebGLRenderer,
+	url: string,
+	widthIn: number | null,
+	heightIn: number | null,
+	done: (cutout: StickerCutout | null) => void
+) {
 	new THREE.ImageLoader().setCrossOrigin('anonymous').load(
-		opts.front,
+		url,
 		(img) => {
 			const scale = Math.min(1, MASK_PX / Math.max(img.width, img.height));
 			const w = Math.max(1, Math.round(img.width * scale));
@@ -249,29 +92,192 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 				tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 				return tex;
 			};
-			art.map = cut(false);
-			backing.map = cut(true);
-			art.needsUpdate = backing.needsUpdate = true;
+			// Vinyl with a satin laminate: a soft sheen without washing out the print.
+			const art = new THREE.MeshPhysicalMaterial({
+				map: cut(false), roughness: 0.5, clearcoat: 0.25, clearcoatRoughness: 0.35, envMapIntensity: 0.45, alphaTest: 0.5,
+				polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2
+			});
+			const backing = new THREE.MeshStandardMaterial({ map: cut(true), color: 0xf3f1ec, roughness: 0.9, alphaTest: 0.5 });
+			const size = stickerSize({ width_in: widthIn, height_in: heightIn }, box.w / box.h);
+			const face = new THREE.PlaneGeometry(size.w, size.h).rotateX(-Math.PI / 2);
+			const bagGeo = new RoundedBoxGeometry(size.w + 2 * BAG_MARGIN, BAG_H, size.h + 2 * BAG_MARGIN + ZIP_IN, 2, 0.015);
+			const zipGeo = new THREE.BoxGeometry(size.w + 2 * BAG_MARGIN - 0.02, BAG_H + 0.02, 0.12);
+			done({
+				art,
+				backing,
+				size,
+				face,
+				bagGeo,
+				zipGeo,
+				dispose() {
+					art.map?.dispose();
+					art.dispose();
+					backing.map?.dispose();
+					backing.dispose();
+					face.dispose();
+					bagGeo.dispose();
+					zipGeo.dispose();
+				}
+			});
+		},
+		undefined,
+		() => done(null)
+	);
+}
 
-			size = stickerSize({ width_in: opts.widthIn, height_in: opts.heightIn }, box.w / box.h);
-			face = new THREE.PlaneGeometry(size.w, size.h).rotateX(-Math.PI / 2);
-			bagGeo = new RoundedBoxGeometry(size.w + 2 * BAG_MARGIN, BAG_H, size.h + 2 * BAG_MARGIN + ZIP_IN, 2, 0.015);
-			zipGeo = new THREE.BoxGeometry(size.w + 2 * BAG_MARGIN - 0.02, BAG_H + 0.02, 0.12);
-			ready = true;
+/**
+ * A stack of n die-cut stickers, bottom at y = 0, centered on x/z. Each sticker
+ * is its artwork with the white backing just under it; stacked, the backings
+ * make the white edge you see on a real bundle (backings stick out a hair). In
+ * a tall vertical bundle (`topOnly`), only the top sticker's face is visible.
+ */
+function createStickerStack(cutout: StickerCutout, n: number, place: (i: number, m: THREE.Matrix4) => void, topOnly = false): THREE.Group {
+	const g = new THREE.Group();
+	const tops = new THREE.InstancedMesh(cutout.face, cutout.art, topOnly ? 1 : n);
+	const backs = new THREE.InstancedMesh(cutout.face, cutout.backing, n * 3);
+	backs.castShadow = true;
+	const m = new THREE.Matrix4();
+	const under = new THREE.Matrix4();
+	for (let i = 0; i < n; i++) {
+		place(i, m);
+		if (!topOnly) tops.setMatrixAt(i, m);
+		else if (i === n - 1) tops.setMatrixAt(0, m);
+		for (const k of [0, 1, 2]) {
+			under.makeScale(1.012, 1, 1.012).setPosition(0, -T * 0.25 * (k + 1), 0).premultiply(m);
+			backs.setMatrixAt(i * 3 + k, under);
+		}
+	}
+	g.add(backs, tops);
+	return g;
+}
+
+/** A sealed clear zip-top bag of 50 die-cut stickers, ~15 mm tall. */
+export function createStickerBag(cutout: StickerCutout, seed = 0): THREE.Group {
+	const { size, bagGeo, zipGeo } = cutout;
+	const g = createStickerStack(
+		cutout,
+		PER_BAG,
+		(i, m) => {
+			// Die-cut stacks are nearly, not perfectly, square.
+			const j = Math.sin(seed * 31 + i * 12.9898) * 43758.5453;
+			const jx = (j - Math.floor(j) - 0.5) * 0.03;
+			m.makeTranslation(jx, (i + 1) * T + 0.01, ZIP_IN / 2 - jx);
+		},
+		true
+	);
+	const shell = new THREE.Mesh(bagGeo, plasticMat);
+	shell.position.y = BAG_H / 2;
+	shell.renderOrder = 2;
+	const strip = new THREE.Mesh(zipGeo, zipMat);
+	strip.position.set(0, BAG_H / 2, -(size.h + 2 * BAG_MARGIN + ZIP_IN) / 2 + ZIP_IN * 0.45);
+	strip.renderOrder = 1;
+	g.add(shell, strip);
+	return g;
+}
+
+/**
+ * Loose die-cut stickers (e.g. 3 or 10), dealt out like cards so you can count
+ * them. `compact` keeps the fan tight enough to sit inside a pile's spot on a
+ * shared table without overlapping neighboring piles.
+ */
+export function createStickerFan(cutout: StickerCutout, n: number, compact = false): THREE.Group {
+	const { size } = cutout;
+	const stepX = compact ? 0.14 : 0.32;
+	const stepZ = compact ? 0.22 : 0.6;
+	return createStickerStack(cutout, n, (i, m) => {
+		const col = i % 5, row = Math.floor(i / 5);
+		const turn = (col - (Math.min(n, 5) - 1) / 2) * 0.08 + row * 0.05;
+		m.makeRotationY(turn).setPosition(
+			(col - (Math.min(n, 5) - 1) / 2) * size.w * stepX,
+			(i + 1) * T * 1.5,
+			(row - (Math.ceil(n / 5) - 1) / 2) * size.h * stepZ
+		);
+	});
+}
+
+export function disposeStickerGroup(g: THREE.Group) {
+	g.traverse((o) => o instanceof THREE.InstancedMesh && o.dispose());
+}
+
+export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOptions, onReady: () => void): StickerViewer {
+	const stage = createStage(canvas, 16, 16);
+	const { scene, renderer, camera } = stage;
+
+	// The packs turn on a turntable; the phone stays put beside them.
+	const turntable = new THREE.Group();
+	scene.add(turntable);
+
+	const phone = createPhone(true);
+	phone.rotation.z = THREE.MathUtils.degToRad(-10);
+	const withPhone = opts.phone !== false;
+	if (withPhone) scene.add(phone);
+
+	let cutout: StickerCutout | null = null;
+	let count = 0;
+	// Bags on the table, oldest first; each remembers when it started falling.
+	let bags: { group: THREE.Group; y: number; born: number }[] = [];
+	let loose: THREE.Group | null = null;
+	let levels = 0; // how high the bags are piled
+	let extent = 3; // half-width of what's on the turntable, for framing
+	let shownExtent = 3;
+
+	function layout(now: number) {
+		if (!cutout) return;
+		const { size } = cutout;
+		const plan = packLayout(count);
+		const bagW = size.w + 2 * BAG_MARGIN;
+		const piles = Math.min(plan.bags.length, ACROSS);
+		levels = Math.ceil(plan.bags.length / ACROSS);
+		const looseW = plan.loose ? size.w * (1 + 0.32 * (Math.min(plan.loose, 5) - 1)) : 0;
+		const totalW = piles * bagW + Math.max(0, piles - 1) * PILE_GAP + (looseW && piles ? PILE_GAP : 0) + looseW;
+		let x = -totalW / 2;
+
+		// Keep bags that are still requested (so only new ones fall in).
+		let fresh = 0;
+		for (const b of bags.splice(plan.bags.length)) {
+			turntable.remove(b.group);
+			disposeStickerGroup(b.group);
+		}
+		plan.bags.forEach((p, i) => {
+			if (!bags[i]) {
+				const group = createStickerBag(cutout!, i);
+				// A slight twist per bag, like they were dropped on the table.
+				group.rotation.y = Math.sin(i * 2.3) * 0.07;
+				turntable.add(group);
+				bags[i] = { group, y: 0, born: now + fresh++ * 120 }; // one after another
+			}
+			bags[i].y = p.level * BAG_H;
+			bags[i].group.position.x = x + p.pile * (bagW + PILE_GAP) + bagW / 2;
+		});
+		x += piles * (bagW + PILE_GAP);
+
+		if (loose) {
+			turntable.remove(loose);
+			disposeStickerGroup(loose);
+		}
+		loose = plan.loose ? createStickerFan(cutout, plan.loose) : null;
+		if (loose) {
+			loose.position.x = x + looseW / 2;
+			turntable.add(loose);
+		}
+		const rows = Math.ceil(plan.loose / 5);
+		const depth = Math.max(piles ? size.h + 2 * BAG_MARGIN + ZIP_IN : 0, rows ? size.h * (1 + 0.6 * (rows - 1)) : 0);
+		extent = Math.hypot(totalW, depth) / 2;
+		stage.fitLight(extent * 2 + (withPhone ? PHONE.w + GAP_IN : 0), extent * 2);
+	}
+
+	loadStickerCutout(renderer, opts.front, opts.widthIn, opts.heightIn, (loaded) => {
+		cutout = loaded;
+		if (cutout) {
 			// The first view shouldn't animate in.
 			layout(-1e9);
 			shownExtent = extent;
-			onReady();
-		},
-		undefined,
-		() => onReady()
-	);
+		}
+		onReady();
+	});
 
-	const camera = new THREE.PerspectiveCamera(26, 1, 0.5, 500);
 	const target = new THREE.Vector3();
 	let last = performance.now();
-	let curW = 0;
-	let curH = 0;
 	const viewer: StickerViewer = {
 		angle: 0,
 		zoom: 1,
@@ -280,14 +286,7 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 			count = n;
 			layout(performance.now());
 		},
-		resize(width, height) {
-			if (width <= 0 || height <= 0 || (width === curW && height === curH)) return;
-			curW = width;
-			curH = height;
-			renderer.setSize(width, height, false);
-			camera.aspect = width / height;
-			camera.updateProjectionMatrix();
-		},
+		resize: stage.resize,
 		render() {
 			const now = performance.now();
 			const dt = Math.min(0.05, (now - last) / 1000);
@@ -320,24 +319,11 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 			target.set(THREE.MathUtils.lerp(cx, 0, Math.min(1, zoomed * 1.6)), 0.2, 0);
 			camera.position.set(target.x, target.y + dist * Math.sin(ELEVATION), dist * Math.cos(ELEVATION));
 			camera.lookAt(target);
-			renderer.render(scene, camera);
+			stage.render();
 		},
 		dispose() {
-			scene.traverse((o) => {
-				if (o instanceof THREE.Mesh) {
-					o.geometry.dispose();
-					for (const m of [o.material].flat()) {
-						for (const v of Object.values(m)) if (v instanceof THREE.Texture) v.dispose();
-						m.dispose();
-					}
-				}
-				if (o instanceof THREE.InstancedMesh) o.dispose();
-			});
-			scene.environment?.dispose();
-			pmrem.dispose();
-			renderer.dispose();
-			// Free the WebGL context now; browsers cap how many a page can hold.
-			renderer.forceContextLoss();
+			cutout?.dispose();
+			stage.dispose();
 		}
 	};
 	return viewer;

@@ -27,7 +27,7 @@ export type Viewer = {
 	dispose(): void;
 };
 
-const PHONE_DEPTH = 0.31;
+export const PHONE_DEPTH = 0.31;
 export const LEAN = THREE.MathUtils.degToRad(-4); // prints lean back a touch, like they're propped up
 
 export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onReady: () => void): Viewer {
@@ -71,13 +71,24 @@ export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onR
 	return viewer;
 }
 
+export type TableFrameOptions = {
+	elevation?: number;
+	room?: number;
+	x?: number;
+	y?: number;
+};
+
 export type Stage = {
 	scene: THREE.Scene;
 	renderer: THREE.WebGLRenderer;
 	camera: THREE.PerspectiveCamera;
 	resize(width: number, height: number): void;
-	/** Points the camera at x (mid-height) so a sceneW × sceneH area fills the view at zoom 1. */
+	/** Resizes the shadow frustum and floor when a tabletop scene grows or shrinks. */
+	fitLight(sceneW: number, sceneH: number): void;
+	/** Points the camera at x (mid-height) so an upright sceneW × sceneH area fills the view at zoom 1. */
 	frame(x: number, sceneW: number, sceneH: number, zoom: number): void;
+	/** Points the camera down at a tabletop of width × depth (and stack height tallest) from elevation. */
+	frameTable(width: number, depth: number, tallest: number, zoom: number, opts?: TableFrameOptions): void;
 	render(): void;
 	dispose(): void;
 };
@@ -106,24 +117,31 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 	// Soft studio key light from above and slightly in front, so the shadow pools
 	// under things (a contact shadow) instead of stretching across the floor.
 	const key = new THREE.DirectionalLight(0xffffff, 1.1);
-	key.position.set(-sceneW * 0.25, sceneH * 4, sceneH * 0.9);
 	key.castShadow = true;
 	key.shadow.mapSize.set(2048, 2048);
 	key.shadow.radius = 18;
 	key.shadow.blurSamples = 24;
 	key.shadow.bias = -0.0005;
-	const sc = key.shadow.camera;
-	sc.left = sc.bottom = -sceneW * 1.5;
-	sc.right = sc.top = sceneW * 1.5;
-	sc.near = 0.1;
-	sc.far = sceneH * 8;
 	scene.add(key);
 
-	const floor = new THREE.Mesh(new THREE.PlaneGeometry(sceneW * 6, sceneW * 6), new THREE.ShadowMaterial({ opacity: 0.12 }));
+	const floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.12 }));
 	floor.rotation.x = -Math.PI / 2;
 	floor.position.y = -0.02;
 	floor.receiveShadow = true;
 	scene.add(floor);
+
+	const fitLight = (w: number, h: number) => {
+		const span = Math.max(w, h, 8);
+		key.position.set(-span * 0.25, Math.max(h, 12) * 4, Math.max(h, 12) * 0.9);
+		const sc = key.shadow.camera;
+		sc.left = sc.bottom = -span * 1.5;
+		sc.right = sc.top = span * 1.5;
+		sc.near = 0.1;
+		sc.far = Math.max(h, 12) * 8;
+		sc.updateProjectionMatrix();
+		floor.scale.set(span * 6, span * 6, 1);
+	};
+	fitLight(sceneW, sceneH);
 
 	const camera = new THREE.PerspectiveCamera(26, 1, 0.5, 500);
 	const target = new THREE.Vector3();
@@ -141,6 +159,7 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 			camera.aspect = width / height;
 			camera.updateProjectionMatrix();
 		},
+		fitLight,
 		frame(x, w, h, zoom) {
 			const vfov = THREE.MathUtils.degToRad(camera.fov) / 2;
 			const fitH = (h * 0.56) / Math.tan(vfov);
@@ -151,6 +170,21 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 			camera.updateProjectionMatrix();
 			target.set(x, h * 0.5, 0);
 			camera.position.set(target.x + dist * 0.05, target.y + dist * 0.16, dist);
+			camera.lookAt(target);
+		},
+		frameTable(width, depth, tallest, zoom, opts = {}) {
+			const el = opts.elevation ?? THREE.MathUtils.degToRad(36);
+			const room = opts.room ?? 0.55;
+			const span = Math.hypot(width, depth);
+			const half = THREE.MathUtils.degToRad(camera.fov) / 2;
+			const fitW = (span * room) / (Math.tan(half) * camera.aspect);
+			const fitH = (span * Math.sin(el) * room + tallest * Math.cos(el) * 0.5) / Math.tan(half);
+			const dist = Math.max(fitW, fitH) * zoom;
+			camera.near = Math.max(0.1, dist * 0.05);
+			camera.far = dist * 4;
+			camera.updateProjectionMatrix();
+			target.set(opts.x ?? 0, opts.y ?? tallest * 0.35, 0);
+			camera.position.set(target.x, target.y + dist * Math.sin(el), dist * Math.cos(el));
 			camera.lookAt(target);
 		},
 		render() {
@@ -165,6 +199,7 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 						m.dispose();
 					}
 				}
+				if (o instanceof THREE.InstancedMesh) o.dispose();
 			});
 			scene.environment?.dispose();
 			pmrem.dispose();
@@ -198,6 +233,22 @@ export function loadArt(
 		undefined,
 		() => done(null)
 	);
+}
+
+/** A printed paper face material with the finish's gloss, roughness and fiber/linen normal map. */
+export function paperFace(finish: string, w: number, h: number): { mat: THREE.MeshPhysicalMaterial; dispose(): void } {
+	const info = finishInfo(finish);
+	const surface = paperSurface(info.weave, info.grain);
+	surface.normal.repeat.set(w / surface.tileIn, h / surface.tileIn);
+	const mat = new THREE.MeshPhysicalMaterial({
+		color: 0xffffff,
+		roughness: info.roughness,
+		clearcoat: info.clearcoat,
+		clearcoatRoughness: 0.15,
+		normalMap: surface.normal,
+		normalScale: new THREE.Vector2(info.grain, info.grain)
+	});
+	return { mat, dispose: () => surface.normal.dispose() };
 }
 
 /**
@@ -263,8 +314,8 @@ export function paperBand(w: number, h: number, d: number, x: number, z: number)
 export const paperEdge = () =>
 	new THREE.MeshStandardMaterial({ color: 0xf2eee6, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
 
-/** A dark phone standing at the same lean, turned a little toward the viewer, for scale. */
-export function createPhone(): THREE.Group {
+/** A dark phone standing at the same lean (or lying flat on a table when flat = true), for scale. */
+export function createPhone(flat = false): THREE.Group {
 	const phone = new THREE.Group();
 	const body = new THREE.Mesh(
 		new RoundedBoxGeometry(PHONE.w, PHONE.h, PHONE_DEPTH, 6, 0.42),
@@ -282,58 +333,121 @@ export function createPhone(): THREE.Group {
 	);
 	island.position.set(0, PHONE.h / 2 - 0.22, PHONE_DEPTH / 2 + 0.012);
 	phone.add(body, screen, island);
-	phone.rotation.set(LEAN, THREE.MathUtils.degToRad(-12), 0);
+	if (flat) {
+		phone.rotation.set(-Math.PI / 2, 0, 0);
+		phone.position.y = PHONE_DEPTH / 2;
+	} else {
+		phone.rotation.set(LEAN, THREE.MathUtils.degToRad(-12), 0);
+	}
 	return phone;
 }
+
+const surfaceCache = new Map<string, HTMLCanvasElement>();
 
 /**
  * A tiling normal map for the paper surface, drawn on a canvas: fine fiber
  * noise for every paper, plus linen's embossed crosshatch. Each tile covers
- * half an inch.
+ * half an inch. The underlying canvas is cached per finish so building sheets
+ * and piles never recomputes the heightfield.
  */
 export function paperSurface(weave: boolean, grain: number) {
-	const N = 512;
-	const height = new Float32Array(N * N);
-	// Deterministic noise so the paper looks the same every visit.
-	let seed = 1337;
-	const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
-	for (let i = 0; i < N * N; i++) height[i] = rand() * 0.35 * Math.min(1, grain * 3);
-	if (weave) {
-		// ~40 threads per inch each way, with slightly uneven thread thickness.
-		const threads = 20;
-		const rowJitter = Array.from({ length: threads }, () => 0.6 + rand() * 0.8);
-		const colJitter = Array.from({ length: threads }, () => 0.6 + rand() * 0.8);
-		for (let y = 0; y < N; y++) {
-			for (let x = 0; x < N; x++) {
-				const fy = (y / N) * threads;
-				const fx = (x / N) * threads;
-				const row = Math.sin(fy * Math.PI * 2) * 0.5 + 0.5;
-				const col = Math.sin(fx * Math.PI * 2) * 0.5 + 0.5;
-				height[y * N + x] += row * rowJitter[Math.floor(fy)] * 0.9 + col * colJitter[Math.floor(fx)] * 0.9;
+	const key = `${weave ? 1 : 0}:${grain}`;
+	let canvas = surfaceCache.get(key);
+	if (!canvas) {
+		const N = 512;
+		const height = new Float32Array(N * N);
+		// Deterministic noise so the paper looks the same every visit.
+		let seed = 1337;
+		const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+		for (let i = 0; i < N * N; i++) height[i] = rand() * 0.35 * Math.min(1, grain * 3);
+		if (weave) {
+			// ~40 threads per inch each way, with slightly uneven thread thickness.
+			const threads = 20;
+			const rowJitter = Array.from({ length: threads }, () => 0.6 + rand() * 0.8);
+			const colJitter = Array.from({ length: threads }, () => 0.6 + rand() * 0.8);
+			for (let y = 0; y < N; y++) {
+				for (let x = 0; x < N; x++) {
+					const fy = (y / N) * threads;
+					const fx = (x / N) * threads;
+					const row = Math.sin(fy * Math.PI * 2) * 0.5 + 0.5;
+					const col = Math.sin(fx * Math.PI * 2) * 0.5 + 0.5;
+					height[y * N + x] += row * rowJitter[Math.floor(fy)] * 0.9 + col * colJitter[Math.floor(fx)] * 0.9;
+				}
 			}
 		}
-	}
-	// Height → tangent-space normals (central differences, wrapping).
-	const canvas = document.createElement('canvas');
-	canvas.width = canvas.height = N;
-	const ctx = canvas.getContext('2d')!;
-	const img = ctx.createImageData(N, N);
-	const at = (x: number, y: number) => height[((y + N) % N) * N + ((x + N) % N)];
-	for (let y = 0; y < N; y++) {
-		for (let x = 0; x < N; x++) {
-			const dx = at(x + 1, y) - at(x - 1, y);
-			const dy = at(x, y + 1) - at(x, y - 1);
-			const len = Math.hypot(dx, dy, 1);
-			const i = (y * N + x) * 4;
-			img.data[i] = ((-dx / len) * 0.5 + 0.5) * 255;
-			img.data[i + 1] = ((dy / len) * 0.5 + 0.5) * 255;
-			img.data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
-			img.data[i + 3] = 255;
+		// Height → tangent-space normals (central differences, wrapping).
+		canvas = document.createElement('canvas');
+		canvas.width = canvas.height = N;
+		const ctx = canvas.getContext('2d')!;
+		const img = ctx.createImageData(N, N);
+		const at = (x: number, y: number) => height[((y + N) % N) * N + ((x + N) % N)];
+		for (let y = 0; y < N; y++) {
+			for (let x = 0; x < N; x++) {
+				const dx = at(x + 1, y) - at(x - 1, y);
+				const dy = at(x, y + 1) - at(x, y - 1);
+				const len = Math.hypot(dx, dy, 1);
+				const i = (y * N + x) * 4;
+				img.data[i] = ((-dx / len) * 0.5 + 0.5) * 255;
+				img.data[i + 1] = ((dy / len) * 0.5 + 0.5) * 255;
+				img.data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
+				img.data[i + 3] = 255;
+			}
 		}
+		ctx.putImageData(img, 0, 0);
+		surfaceCache.set(key, canvas);
 	}
-	ctx.putImageData(img, 0, 0);
 	const normal = new THREE.CanvasTexture(canvas);
 	normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
 	normal.colorSpace = THREE.NoColorSpace;
 	return { normal, tileIn: 0.5 };
+}
+
+/** The cover's color along its spine edge, for a booklet's spine and fold. */
+export function edgeColor(tex: THREE.Texture): THREE.Color {
+	const c = document.createElement('canvas');
+	c.width = 1;
+	c.height = 16;
+	const ctx = c.getContext('2d', { willReadFrequently: true })!;
+	const img = tex.image as CanvasImageSource & { width: number; height: number };
+	try {
+		ctx.drawImage(img, 0, 0, Math.max(1, img.width * 0.03), img.height, 0, 0, 1, 16);
+		const d = ctx.getImageData(0, 0, 1, 16).data;
+		let r = 0, g = 0, b = 0;
+		for (let i = 0; i < d.length; i += 4) (r += d[i]), (g += d[i + 1]), (b += d[i + 2]);
+		return new THREE.Color().setRGB(r / 16 / 255, g / 16 / 255, b / 16 / 255, THREE.SRGBColorSpace);
+	} catch {
+		return new THREE.Color(0xdddddd); // a cross-origin image we can't read
+	}
+}
+
+const edgeStripCache = new Map<boolean, HTMLCanvasElement>();
+
+/**
+ * Stacked page or card edges: 64 slightly uneven off-white lines per tile, one
+ * per leaf. `across` runs them across the texture's u axis (an upright book's
+ * fore-edge), otherwise along v (horizontal stack sides and upright top/bottom).
+ */
+export function pageEdges(across: boolean): THREE.CanvasTexture {
+	let c = edgeStripCache.get(across);
+	if (!c) {
+		const N = 64;
+		c = document.createElement('canvas');
+		c.width = across ? N : 1;
+		c.height = across ? 1 : N;
+		const ctx = c.getContext('2d')!;
+		let seed = 7;
+		const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+		for (let i = 0; i < N; i++) {
+			const l = 88 + rand() * 8;
+			ctx.fillStyle = `hsl(40 20% ${l}%)`;
+			if (across) ctx.fillRect(i, 0, 1, 1);
+			else ctx.fillRect(0, i, 1, 1);
+		}
+		edgeStripCache.set(across, c);
+	}
+	const tex = new THREE.CanvasTexture(c);
+	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+	tex.colorSpace = THREE.SRGBColorSpace;
+	tex.anisotropy = 8;
+	return tex;
 }

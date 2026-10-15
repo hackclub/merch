@@ -6,19 +6,17 @@
 	// flat front image without WebGL.
 	import { onMount } from 'svelte';
 	import { settle, spreadLabel } from './book';
-	import type { BookOptions, BookViewer } from './book3d';
+	import type { BookViewer } from './book3d';
+	import { loadPreviewViewer, type Preview3D } from './items';
 	import { finishInfo } from './paper';
 	import { sizeLabel } from './scale';
 	import { packLabel } from './stickers';
-	import type { Viewer, ViewerOptions } from './paper3d';
-	import type { StickerOptions, StickerViewer } from './sticker3d';
-	import type { PostcardOptions } from './postcard3d';
+	import type { Viewer } from './paper3d';
+	import type { StickerViewer } from './sticker3d';
 	import { postcardLabel } from './postcards';
 
-	// count: how many stickers are requested; the sticker view grows to match.
-	// book: a booklet's pages, which open and flip through.
-	let { opts, name, count = 0, book }: { opts: ViewerOptions | StickerOptions | PostcardOptions; name: string; count?: number; book?: BookOptions } =
-		$props();
+	// count: how many stickers or postcards are requested; the view grows to match.
+	let { preview, name, count = 0 }: { preview: Preview3D; name: string; count?: number } = $props();
 
 	let canvas = $state<HTMLCanvasElement>();
 	let stage: HTMLDivElement;
@@ -35,6 +33,11 @@
 	let near = $state(0);
 	let turning = false; // dragging pages rather than spinning the book
 	let dragFrom = { x: 0, position: 0 };
+	const book = $derived('book' in preview ? preview.book : undefined);
+	const front = $derived(
+		'book' in preview ? (preview.book.pages[0] ?? '') : 'sheet' in preview ? preview.sheet.front : 'postcards' in preview ? preview.postcards.front : preview.stickers.front
+	);
+	const back = $derived('sheet' in preview ? preview.sheet.back : undefined);
 	const leaves = $derived(book ? Math.ceil(book.pages.length / 2) : 0);
 	const isOpen = $derived(goal > 0);
 
@@ -44,13 +47,15 @@
 	let resumeAt = 0;
 	let lastX = 0;
 
-	const finish = $derived('finish' in opts ? finishInfo(opts.finish).label : '');
+	const finish = $derived('sheet' in preview ? finishInfo(preview.sheet.finish).label : 'postcards' in preview ? finishInfo(preview.postcards.finish).label : '');
 	const label = $derived(
-		!('kind' in opts)
-			? `${sizeLabel(opts.widthIn, opts.heightIn)}${finish ? ` · ${finish}` : ''}`
-			: opts.kind === 'postcards'
-				? `${postcardLabel(count)} · ${sizeLabel(opts.widthIn, opts.heightIn)}`
-				: packLabel(count)
+		'sheet' in preview
+			? `${sizeLabel(preview.sheet.widthIn, preview.sheet.heightIn)}${finish ? ` · ${finish}` : ''}`
+			: 'postcards' in preview
+				? `${postcardLabel(count)} · ${sizeLabel(preview.postcards.widthIn, preview.postcards.heightIn)}`
+				: 'stickers' in preview
+					? packLabel(count)
+					: ''
 	);
 	$effect(() => {
 		const n = count;
@@ -74,26 +79,11 @@
 		});
 		ro.observe(stage);
 
-		const load = book
-			? import('./book3d').then((m) => m.createBookViewer(canvas!, book, () => (ready = true)))
-			: 'kind' in opts && opts.kind === 'postcards'
-				? import('./postcard3d').then((m) => {
-						const v = m.createPostcardViewer(canvas!, opts as PostcardOptions, () => (ready = true));
-						v.setCount(count);
-						return v as Viewer;
-					})
-			: 'kind' in opts
-				? import('./sticker3d').then((m) => {
-						const v = m.createStickerViewer(canvas!, opts as StickerOptions, () => (ready = true));
-						v.setCount(count);
-						return v;
-					})
-				: import('./paper3d').then((m) => m.createViewer(canvas!, opts as ViewerOptions, () => (ready = true)));
-		load
+		loadPreviewViewer(canvas!, preview, count, () => (ready = true))
 			.then((v) => {
 				if (disposed) return v.dispose();
 				viewer = v;
-				viewer.angle = 'kind' in opts ? -0.25 : -0.45;
+				viewer.angle = 'stickers' in preview || 'postcards' in preview ? -0.25 : -0.45;
 				viewer.resize(stage.clientWidth, stage.clientHeight);
 				const tick = (now: number) => {
 					raf = requestAnimationFrame(tick);
@@ -221,10 +211,10 @@
 		onkeydown={key}
 	>
 		{#if failed}
-			<img class="fallback" src={opts.front} alt={name} />
+			<img class="fallback" src={front} alt={name} />
 		{:else}
 			<canvas bind:this={canvas} class:ready></canvas>
-			{#if !ready}<img class="fallback loading" src={opts.front} alt="" />{/if}
+			{#if !ready}<img class="fallback loading" src={front} alt="" />{/if}
 		{/if}
 		{#if !failed}
 			<div class="controls">
@@ -261,7 +251,7 @@
 		{:else}
 			<span class="muted">{label} · drag to turn</span>
 			<!-- A stack of postcards only shows its top card, so there's no back to show. -->
-			{#if 'back' in opts && opts.back && !('kind' in opts) && !failed}
+			{#if back && !failed}
 				<button type="button" class="secondary small" onclick={flip}>{showingBack ? 'Show front' : 'Show back'}</button>
 			{/if}
 		{/if}

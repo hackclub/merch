@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byFilename, formatUnitCost, isBooklet, itemIdFromParam, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, previewCount, tilePreview, thumbnail } from './items';
+import { byFilename, formatUnitCost, isBooklet, itemIdFromParam, productPreview, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, previewCount, tilePreview, thumbnail } from './items';
 import type { Item } from './types';
 
 const poster: Item = {
@@ -132,6 +132,21 @@ describe('tilePreview', () => {
 		expect(tilePreview({ ...poster, width_in: null })).toBeNull();
 		expect(tilePreview({ ...poster, images: [] })).toBeNull();
 		expect(tilePreview({ ...poster, packs: 'sticker', images: [] })).toBeNull();
+	});
+});
+
+describe('productPreview', () => {
+	it('builds the product-page 3D view with a phone and any ships_with extras, ignoring clips', () => {
+		const card: Item = { ...poster, id: 9, sku: 'Pri/M25/4x6/1st', width_in: 6, height_in: 4, thickness_in: 0.014, finish: 'linen' };
+		const mag: Item = { ...poster, images: [], binding: 'perfect', pages: ['p1', 'p2', 'p3', 'p4'], width_in: 5.5, height_in: 8.5, ships_with: ['Pri/M25/4x6/1st'], clip: 'https://cdn.example/flip.mp4' };
+		expect(productPreview(mag, [card])).toEqual({
+			book: {
+				pages: ['p1', 'p2', 'p3', 'p4'], widthIn: 5.5, heightIn: 8.5, finish: 'matte', binding: 'perfect', thicknessIn: 0.016, phone: true,
+				extras: [{ front: 'https://cdn.example/front.jpg', back: 'https://cdn.example/back.jpg', widthIn: 6, heightIn: 4, thicknessIn: 0.014, finish: 'linen' }]
+			}
+		});
+		expect(productPreview({ ...poster, packs: 'postcard' })).toMatchObject({ postcards: { kind: 'postcards', phone: true } });
+		expect(productPreview({ ...poster, packs: 'sticker', width_in: null, height_in: null })).toMatchObject({ stickers: { kind: 'stickers', phone: true } });
 	});
 });
 
