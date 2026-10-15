@@ -147,17 +147,28 @@ func TestIsInternational(t *testing.T) {
 }
 
 func TestInitialStatus(t *testing.T) {
-	st, fee := InitialStatus(settings(), "US")
+	none := Estimate{}
+	st, fee := InitialStatus(settings(), "US", none)
 	if st != StatusPending || fee != 0 {
 		t.Errorf("US: got %s/%d", st, fee)
 	}
-	st, fee = InitialStatus(settings(), "DE")
+	// With no postage history, abroad pays the admin's fallback fee.
+	st, fee = InitialStatus(settings(), "DE", none)
 	if st != StatusAwaitingPayment || fee != 1500 {
 		t.Errorf("DE: got %s/%d", st, fee)
 	}
+	// With history, it pays what postage for this package typically costs,
+	// rounded up to a whole dollar.
+	est := Estimate{PostageTypicalCents: 843, PostageSamples: 40}
+	if st, fee = InitialStatus(settings(), "DE", est); st != StatusAwaitingPayment || fee != 900 {
+		t.Errorf("DE with history: got %s/%d, want 900", st, fee)
+	}
+	if _, fee = InitialStatus(settings(), "US", est); fee != 0 {
+		t.Errorf("US shipping is free, got %d", fee)
+	}
 	free := settings()
 	free.InternationalShippingFeeCents = 0
-	if st, _ := InitialStatus(free, "DE"); st != StatusPending {
+	if st, _ := InitialStatus(free, "DE", est); st != StatusPending {
 		t.Errorf("free international shipping should skip payment, got %s", st)
 	}
 }

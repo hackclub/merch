@@ -168,7 +168,7 @@
 	<div class="intro">
 		<p>Teenager and want to spread <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a> in your community?</p>
 		<p>Get some awesome hand-designed swag made by your fellow Hack Clubbers!</p>
-		<p>Free shipping in the US.{#if fee > 0}{' '}<span class="fee" title={feeTooltip}>{roughFee(fee)}</span> to help cover shipping globally.{/if}</p>
+		<p>Free shipping in the US.{#if fee > 0}{' '}Globally you cover the postage, usually <span class="fee" title={feeTooltip}>{roughFee(summary?.international.fee_cents || fee)}</span>.{/if}</p>
 		<p>Shipped next day Mon–Fri. {summaryText(summary) || '2–5 day delivery in US. 2–4 week delivery globally.'}</p>
 	</div>
 
@@ -332,9 +332,9 @@
 				{:else}
 					<label>Anything we should know? (optional) <textarea bind:value={note} rows="2"></textarea></label>
 				{/if}
-				{#if intl && catalog.settings.international_shipping_fee_cents > 0}
+				{#if intl && quote?.estimate.fee_cents}
 					<p>
-						International shipping is <strong>{formatCents(catalog.settings.international_shipping_fee_cents)}</strong>.
+						Shipping is <strong>{formatCents(quote.estimate.fee_cents)}</strong>, what postage for this package usually costs.
 						After you submit we'll send you to HCB to pay it; we ship once it's received.
 					</p>
 				{/if}

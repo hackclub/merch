@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { api, ApiError, formatCents } from '$lib/api';
+	import { api, ApiError } from '$lib/api';
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
 	import { pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
 	import { itemsFor, offered } from '$lib/purpose';
@@ -125,8 +125,7 @@
 			<ul class="facts">
 				<li>Up to {item.max_per_request} per request{item.max_per_user != null ? `, ${item.max_per_user} per person` : ''}</li>
 				<li>
-					Free shipping in the US{#if catalog?.settings.international_shipping_fee_cents}; {formatCents(catalog.settings.international_shipping_fee_cents)} flat
-						shipping elsewhere{/if}
+					Free shipping in the US{#if catalog?.settings.international_shipping_fee_cents}; elsewhere you cover the postage{/if}
 				</li>
 				{#if book}
 					<li>

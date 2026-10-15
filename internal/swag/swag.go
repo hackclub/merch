@@ -301,11 +301,19 @@ func IsInternational(country string) bool {
 }
 
 // InitialStatus decides where a new request starts and what shipping it owes.
-func InitialStatus(s Settings, country string) (Status, int) {
-	if IsInternational(country) && s.InternationalShippingFeeCents > 0 {
-		return StatusAwaitingPayment, s.InternationalShippingFeeCents
+// US shipping is free. Abroad, the requester pays the typical postage for
+// their package (e, see EstimateShipping), rounded up to a whole dollar; with
+// no postage history, the admin's flat InternationalShippingFeeCents. A flat
+// fee of 0 makes international shipping free too.
+func InitialStatus(s Settings, country string, e Estimate) (Status, int) {
+	if !IsInternational(country) || s.InternationalShippingFeeCents <= 0 {
+		return StatusPending, 0
 	}
-	return StatusPending, 0
+	fee := s.InternationalShippingFeeCents
+	if e.PostageSamples > 0 && e.PostageTypicalCents > 0 {
+		fee = (e.PostageTypicalCents + 99) / 100 * 100
+	}
+	return StatusAwaitingPayment, fee
 }
 
 var alpha2 = regexp.MustCompile(`^[A-Z]{2}$`)

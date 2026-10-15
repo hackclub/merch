@@ -11,6 +11,8 @@ const est = (over: Partial<ShippingEstimate>): ShippingEstimate => ({
 	arrive_from: '2026-10-21',
 	arrive_by: '2026-10-28',
 	postage_cents: [0, 0],
+	postage_typical_cents: 0,
+	fee_cents: 0,
 	transit_basis: 'GB',
 	transit_samples: 40,
 	postage_basis: '',

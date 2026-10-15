@@ -43,8 +43,8 @@ func TestEstimateUsesTheCountry(t *testing.T) {
 	if e.ArriveFrom != "2026-10-06" || e.ArriveBy != "2026-10-10" {
 		t.Fatalf("arrive %s..%s", e.ArriveFrom, e.ArriveBy)
 	}
-	if e.PostageCents[0] < 600 || e.PostageCents[1] > 700 {
-		t.Fatalf("postage = %v", e.PostageCents)
+	if e.PostageCents[0] < 600 || e.PostageCents[1] > 700 || e.PostageTypicalCents != 650 {
+		t.Fatalf("postage = %v, typical %d", e.PostageCents, e.PostageTypicalCents)
 	}
 }
 

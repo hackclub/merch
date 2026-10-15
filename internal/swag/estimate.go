@@ -31,6 +31,10 @@ type Estimate struct {
 	ArriveFrom   string  `json:"arrive_from"`   // YYYY-MM-DD
 	ArriveBy     string  `json:"arrive_by"`
 	PostageCents [2]int  `json:"postage_cents"`
+	// PostageTypicalCents is the median postage; international requests pay it.
+	PostageTypicalCents int `json:"postage_typical_cents"`
+	// FeeCents is what the requester pays for shipping (see InitialStatus).
+	FeeCents int `json:"fee_cents"`
 	// What each figure is based on: a country code, "US" or "international",
 	// and how many past shipments that was.
 	TransitBasis    string `json:"transit_basis"`
@@ -128,6 +132,7 @@ func EstimateShipping(history []PastShipment, country string, p Packing, now tim
 		level{scope, func(s PastShipment) bool { return sameScope(s) && near(s) }})
 	if postage != nil {
 		e.PostageCents = [2]int{int(math.Round(percentile(postage, 0.2))), int(math.Round(percentile(postage, 0.8)))}
+		e.PostageTypicalCents = int(math.Round(percentile(postage, 0.5)))
 		e.PostageBasis, e.PostageSamples = basis, len(postage)
 	}
 

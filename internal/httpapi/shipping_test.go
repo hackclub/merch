@@ -58,8 +58,12 @@ func TestShippingEstimate(t *testing.T) {
 	if e.Service != "Asendia" || e.TransitBasis != "DE" || e.ArriveBy == "" || out.Packing.Package.Name != "Bubble mailer" {
 		t.Fatalf("got %+v / %+v", e, out.Packing)
 	}
-	if e.PostageCents != [2]int{} {
+	if e.PostageCents != [2]int{} || e.PostageTypicalCents != 0 {
 		t.Fatalf("postage is for admins only, got %v", e.PostageCents)
+	}
+	// Abroad, the requester pays the typical postage for this package.
+	if e.FeeCents != 900 {
+		t.Fatalf("fee = %d, want 900", e.FeeCents)
 	}
 	if h.do(h.client(adminEmail), "POST", "/api/shipping/estimate", body, &out); out.Estimate.PostageCents[0] != 900 {
 		t.Fatalf("admin postage = %v", out.Estimate.PostageCents)
@@ -119,5 +123,19 @@ func TestShippingSummary(t *testing.T) {
 	}
 	if out.International.TransitDays[0] < 10 || out.US.ArriveBy != "" {
 		t.Fatalf("got %+v", out)
+	}
+}
+
+func TestInternationalFeeIsEstimatedPostage(t *testing.T) {
+	h := newHarness(t)
+	_, _, magazine := shippingFixture(t, h)
+	var r struct {
+		store.Request
+		PaymentURL string `json:"payment_url"`
+	}
+	code := h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "club", "note": "for our club", "address": deAddr,
+		"lines": []swag.Line{{ItemID: magazine.ID, Quantity: 1}}}, &r)
+	if code != 201 || r.Status != swag.StatusAwaitingPayment || r.ShippingFeeCents != 900 || !strings.Contains(r.PaymentURL, "amount=900") {
+		t.Fatalf("create = %d %+v", code, r)
 	}
 }

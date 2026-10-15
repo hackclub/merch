@@ -38,12 +38,30 @@ func (s *server) shippingHistory(ctx context.Context) ([]swag.PastShipment, erro
 	return rows, nil
 }
 
-// forViewer hides postage (what Hack Club pays) from everyone but admins.
+// forViewer hides the postage figures from everyone but admins; requesters see
+// only FeeCents, what they'll pay.
 func forViewer(e swag.Estimate, admin bool) swag.Estimate {
 	if !admin {
-		e.PostageCents, e.PostageBasis, e.PostageSamples = [2]int{}, "", 0
+		e.PostageCents, e.PostageTypicalCents, e.PostageBasis, e.PostageSamples = [2]int{}, 0, "", 0
 	}
 	return e
+}
+
+// quote packs lines and estimates their shipping to country, with the fee the
+// requester owes. A request that won't pack gets a zero estimate (Validate
+// refuses it anyway).
+func (s *server) quote(ctx context.Context, st swag.Settings, country string, lines []swag.Line, cat map[int64]swag.Item) (swag.Packing, swag.Estimate, error) {
+	h, err := s.shippingHistory(ctx)
+	if err != nil {
+		return swag.Packing{}, swag.Estimate{}, err
+	}
+	p, err := swag.Pack(lines, cat, swag.IsInternational(country))
+	if err != nil {
+		return p, swag.Estimate{}, err
+	}
+	e := swag.EstimateShipping(h, country, p, s.Now())
+	_, e.FeeCents = swag.InitialStatus(st, country, e)
+	return p, e, nil
 }
 
 func (s *server) isAdmin(r *http.Request) bool {
@@ -85,7 +103,12 @@ func (s *server) shippingEstimate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, swag.ErrNoItems.Error())
 		return
 	}
-	p, err := swag.Pack(lines, cat, swag.IsInternational(country))
+	st, err := s.Store.GetSettings(r.Context())
+	if err != nil {
+		s.serverErr(w, err)
+		return
+	}
+	p, e, err := s.quote(r.Context(), st, country, lines, cat)
 	if errors.Is(err, swag.ErrWontPack) || errors.Is(err, swag.ErrTooHeavy) {
 		writeErr(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -93,31 +116,29 @@ func (s *server) shippingEstimate(w http.ResponseWriter, r *http.Request) {
 		s.serverErr(w, err)
 		return
 	}
-	h, err := s.shippingHistory(r.Context())
-	if err != nil {
-		s.serverErr(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"estimate": forViewer(swag.EstimateShipping(h, country, p, s.Now()), s.isAdmin(r)),
-		"packing":  p,
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"estimate": forViewer(e, s.isAdmin(r)), "packing": p})
 }
 
-// shippingSummary is the typical delivery time in the US and abroad, for the
-// shop's intro.
+// shippingSummary is the typical delivery time in the US and abroad, and the
+// typical international fee, for the shop's intro. "Typical" is a half-pound
+// parcel, about what Asendia usually carries for us.
 func (s *server) shippingSummary(w http.ResponseWriter, r *http.Request) {
 	h, err := s.shippingHistory(r.Context())
 	if err != nil {
 		s.serverErr(w, err)
 		return
 	}
-	parcel := swag.Packing{Package: swag.Package{Name: "Bubble mailer", Class: swag.ClassParcel}}
+	st, err := s.Store.GetSettings(r.Context())
+	if err != nil {
+		s.serverErr(w, err)
+		return
+	}
+	parcel := swag.Packing{Package: swag.Package{Name: "Bubble mailer", Class: swag.ClassParcel}, ContentsOz: 8, WeightOz: 9}
+	us := swag.EstimateShipping(h, "US", parcel, s.Now())
+	intl := swag.EstimateShipping(h, "", parcel, s.Now())
+	_, intl.FeeCents = swag.InitialStatus(st, "", intl)
 	admin := s.isAdmin(r)
-	writeJSON(w, http.StatusOK, map[string]any{
-		"us":            forViewer(swag.EstimateShipping(h, "US", parcel, s.Now()), admin),
-		"international": forViewer(swag.EstimateShipping(h, "", parcel, s.Now()), admin),
-	})
+	writeJSON(w, http.StatusOK, map[string]any{"us": forViewer(us, admin), "international": forViewer(intl, admin)})
 }
 
 // withEstimates adds delivery estimates to requests still waiting to ship.

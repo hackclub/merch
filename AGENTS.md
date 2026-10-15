@@ -22,7 +22,7 @@ through the app, not into migrations or seed files. Before every commit, read `g
 
 | Who | How we know | What they do |
 | --- | --- | --- |
-| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays a flat fee on HCB before we ship. |
+| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage on HCB before we ship (see "Shipping estimates and packing"). |
 | YSWS author | Their HCA email matches `Hack Club Auth Email` in the **YSWS Authors** table of the Unified YSWS Projects DB (Airtable `app3A5kJwYqxMLOgh`) | Submit print-ready material (stickers, posters…) to be printed and stocked in the warehouse. |
 | Admin | Email is in `ADMIN_EMAILS` (admins are also authors) | Manage global limits, list warehouse SKUs as items, set visibility and order, review requests (mark paid → ship → tracking), and review author submissions. |
 
@@ -300,6 +300,10 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   of about the same weight and is shown only to admins. The shop intro, the request form, My
   requests and the admin request list show these estimates (`POST /api/shipping/estimate`,
   `GET /api/shipping`).
+- **International fee:** an international request pays the median postage of past shipments like
+  it (same country, about the same contents weight), rounded up to a whole dollar
+  (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback
+  when there's no postage history; 0 still makes international shipping free.
 - **History** (`shipping_history`, no names or addresses) comes from the Hack Club data warehouse:
   - `scripts/shipping-history/zenventory.sql`: AGH shipments, for postage and Asendia tracking.
   - `theseus-orders.sql`: orders placed through mail.hackclub.com, for handling time.

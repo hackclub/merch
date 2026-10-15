@@ -509,7 +509,13 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 	for _, it := range items {
 		cat[it.ID] = it
 	}
-	status, fee := swag.InitialStatus(st, body.Address.Country)
+	// International requests pay the estimated postage for their package.
+	_, est, err := s.quote(r.Context(), st, body.Address.Country, body.Lines, cat)
+	if err != nil && !isRuleErr(err) {
+		s.serverErr(w, err)
+		return
+	}
+	status, fee := swag.InitialStatus(st, body.Address.Country, est)
 	req, err := s.Store.CreateRequest(r.Context(), store.NewRequest{
 		UserID: v.user.ID, Address: body.Address, Purpose: body.Purpose, Lines: body.Lines, Status: status, ShippingFeeCents: fee, Note: body.Note,
 	}, func(prior map[int64]int, last *time.Time) error {
