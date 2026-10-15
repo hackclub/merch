@@ -95,6 +95,7 @@ func (s *server) shippingEstimate(w http.ResponseWriter, r *http.Request) {
 	var lines []swag.Line
 	for _, l := range body.Lines {
 		if _, ok := cat[l.ItemID]; !ok || l.Quantity < 1 {
+			s.track(r, s.currentUser(r), "shipping_estimate", map[string]any{"country": country, "lines": body.Lines, "error": swag.ErrUnknownItem.Error()})
 			writeErr(w, http.StatusUnprocessableEntity, swag.ErrUnknownItem.Error())
 			return
 		}
@@ -110,15 +111,21 @@ func (s *server) shippingEstimate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, e, err := s.quote(r.Context(), st, country, lines, cat)
+	u := s.currentUser(r)
 	if errors.Is(err, swag.ErrWontPack) || errors.Is(err, swag.ErrTooHeavy) {
+		s.track(r, u, "shipping_estimate", map[string]any{"country": country, "lines": lines, "items": itemCount(lines), "error": err.Error()})
 		writeErr(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	} else if err != nil {
 		s.serverErr(w, err)
 		return
 	}
-	out := map[string]any{"estimate": forViewer(e, s.isAdmin(r)), "packing": p}
-	if s.isAdmin(r) {
+	props := estimateProps(country, lines, p, e)
+	props["items"] = itemCount(lines)
+	s.track(r, u, "shipping_estimate", props)
+	admin := s.rolesFor(r.Context(), u).Admin
+	out := map[string]any{"estimate": forViewer(e, admin), "packing": p}
+	if admin {
 		if out["costs"], err = s.costs(r.Context(), st, country, lines, cat); err != nil {
 			s.serverErr(w, err)
 			return

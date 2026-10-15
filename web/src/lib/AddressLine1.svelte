@@ -97,7 +97,7 @@
 			aria-activedescendant={open && highlight >= 0 ? `${listId}-${highlight}` : undefined} />
 	</label>
 	{#if open}
-		<ul id={listId} role="listbox">
+		<ul id={listId} role="listbox" data-private>
 			{#each suggestions as s, i (s.place_id)}
 				<!-- mousedown, not click: it fires before the input's blur closes the list. -->
 				<li id="{listId}-{i}" role="option" aria-selected={i === highlight} class:on={i === highlight}

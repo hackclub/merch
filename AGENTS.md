@@ -331,6 +331,59 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   deliveries since 2026-04-20, 5,027 US letter scans and 1,833 mail.hackclub.com orders. The
   warehouse's `theseus.*` tables are a snapshot from before 2026-09-14.
 
+## Usage analytics
+
+Everything people do on the site goes to the `usage_events` table, so agents can see how the shop is
+used and improve it. Look at it before you change a flow, and check it again after you land.
+Query production read-only with `scripts/prod-psql` (dev's table has only agent and test traffic).
+
+- Columns: `at`, `source` (`client` from the browser, `server` from handlers), `name`, `visitor`
+  (random id per browser, cookie `zmr_visitor`), `visit` (per tab; renewed after 30 idle minutes),
+  `user_id` (when signed in), `path` (the page), `props` (jsonb).
+- `visitor` links what someone did before they signed in to who they are (`sign_in` has both).
+  Leave out admins (`users.email` in `ADMIN_EMAILS`) and `visit_start.props->>'automated' = 'true'`
+  (headless browsers, agents) when you measure real people.
+- Browser events (`web/src/lib/track.ts`, sent in batches to `POST /api/events`):
+  `visit_start` (referrer, `utm_*`, screen, viewport, language, time zone, touch, PWA, user agent),
+  `page_view` (`pv` id, `from`, `item_id` on product pages), `page_time` (`active_ms` with input
+  in the last minute, `visible_ms`, `scroll_pct`, `clicks`; snapshots, so use the
+  **`usage_page_times`** view, which keeps the latest per page view), `page_return`, `click` (element,
+  its text, `href`, `item_id` and `area` from the nearest `data-item`/`data-track`, `dead` when
+  nothing clickable was hit), `field` (which field changed; the choice for radios, checkboxes and
+  selects, only `chars` for typed text), `cart` and `cart_size` (`item_id`, `sku`, `from`, `to`; from
+  every page, since all cart changes go through `$lib/bag.svelte`), `purpose`, `item_hover` (mouse
+  over an item for ≥ 0.5 s), `api_error`, `js_error`, `pwa_installed`. `/admin` sends only page views and
+  page time.
+- Server events (`s.track` in `internal/httpapi`): `login_start`, `sign_in`, `sign_in_refused`,
+  `sign_out`, `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
+  postage, sample counts, or `error` when it won't pack), `request_created`, `request_refused` (the
+  rule it broke), `request_cancelled`, `submission_created`. They carry the page's `visit` (the
+  `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
+- **Never log what people type or where they live.** No addresses, names, notes, search text,
+  or IPs: just countries, lengths and choices. Put `data-private` on any element that shows
+  personal data, so clicks on it log no text. To track something new, add a `data-item` or `data-track` attribute,
+  or call `track(name, props)` from `$lib/track`; record server outcomes with `s.track`.
+
+```sql
+-- what people add to their requests (last 30 days)
+select i.name, count(*) adds, count(distinct e.visitor) people from usage_events e
+join items i on i.id = (e.props->>'item_id')::bigint
+where e.name = 'cart' and (e.props->>'to')::int > (e.props->>'from')::int and e.at > now() - interval '30 days'
+group by 1 order by 2 desc;
+-- time on product pages
+select i.name, count(*) views, percentile_cont(.5) within group (order by active_ms)/1000 median_s
+from usage_page_times t join items i on i.id = t.item_id group by 1 order by 2 desc;
+-- funnel: visitors → picked something → signed in → requested
+select count(distinct visitor) filter (where name = 'page_view') visitors,
+       count(distinct visitor) filter (where name = 'cart') picked,
+       count(distinct visitor) filter (where name = 'sign_in') signed_in,
+       count(distinct visitor) filter (where name = 'request_created') requested
+from usage_events where at > now() - interval '30 days';
+-- why requests and estimates fail
+select name, props->>'error' error, count(*) from usage_events
+where props ? 'error' group by 1, 2 order by 3 desc;
+```
+
 ## External systems
 
 - **Hack Club Auth**: OAuth2 authorization code flow. The token comes from `/oauth/token`, then

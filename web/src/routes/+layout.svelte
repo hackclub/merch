@@ -1,11 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import { trackPage } from '$lib/track';
 	import { session, loadSession, logout } from '$lib/session.svelte';
 	import '../app.css';
 
 	let { children } = $props();
 	onMount(loadSession);
+	// Usage analytics: page views and time on each page (see $lib/track).
+	afterNavigate(({ to }) => to && trackPage(to.url.pathname));
 
 	const links = $derived([
 		{ href: '/', label: 'Swag', show: true },

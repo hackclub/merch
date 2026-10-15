@@ -175,7 +175,7 @@
 
 	{#if rows && rows[0].length}
 		<!-- Each row renders twice so it loops without a seam; the copy is hidden from screen readers. -->
-		<div class="strips">
+		<div class="strips" data-track="strips">
 			{#each rows as row, r (r)}
 				<div class="strip" class:reverse={r === 1}>
 					<div class="track" style="--n: {row.length}">
@@ -248,7 +248,7 @@
 				<h3 id="group-{section.key}">{section.title}</h3>
 				{#each rows as { item } (item.id)}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
-					<div class="line" class:picked={cart[item.id]} class:sized={open && expanded(item)}
+					<div class="line" data-item={item.id} class:picked={cart[item.id]} class:sized={open && expanded(item)}
 						onmouseenter={() => (peek = item.id)} onmouseleave={() => (peek = null)}>
 						<a href={itemPath(item)} class="thumb" class:sticker={item.packs === 'sticker'} tabindex="-1" aria-hidden="true">
 							{#if thumbnail(item)}<img src={thumbnail(item)} alt="" loading="lazy" />{/if}
@@ -268,7 +268,7 @@
 					<div class="cells">
 						{#each grid as { item } (item.id)}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class="cell" class:picked={cart[item.id]} onmouseenter={() => (peek = item.id)} onmouseleave={() => (peek = null)}>
+							<div class="cell" data-item={item.id} class:picked={cart[item.id]} onmouseenter={() => (peek = item.id)} onmouseleave={() => (peek = null)}>
 								<a href={itemPath(item)} class="thumb" class:sticker={item.packs === 'sticker'} tabindex="-1" aria-hidden="true">
 									{#if thumbnail(item)}<img src={thumbnail(item)} alt="" loading="lazy" />{/if}
 								</a>
@@ -292,13 +292,13 @@
 		{:else if asking && !purpose}
 			<p class="muted">Pick what kind of request this is at the top, then we'll ask where to send it.</p>
 		{:else if asking && totalQuantity(cart) > 0}
-			<form id="request" onsubmit={submit}>
+			<form id="request" onsubmit={submit} data-track="form">
 				<h2>Shipping info</h2>
 				{#if !editing}
 					<div class="ship-to">
 						<div>
 							<span class="muted">Ship to</span>
-							<address>{#each addressSummary(address) as l}<span>{l}</span>{/each}</address>
+							<address data-private>{#each addressSummary(address) as l}<span>{l}</span>{/each}</address>
 						</div>
 						<button type="button" class="link" onclick={() => (editing = manual = true)}>Edit</button>
 					</div>

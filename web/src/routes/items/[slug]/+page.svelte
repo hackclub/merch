@@ -80,8 +80,8 @@
 	<h1>Not found</h1>
 	<p class="muted">That item isn't listed right now. <a href="/">See what is.</a></p>
 {:else if item}
-	<div class="product">
-		<div class="gallery">
+	<div class="product" data-item={item.id}>
+		<div class="gallery" data-track="gallery">
 			{#if item.images.length || has3D}
 				{#if shown === '3d'}
 					<div class="main three">

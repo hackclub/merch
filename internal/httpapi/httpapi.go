@@ -94,6 +94,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/items/{id}/stock", s.itemStock)
 	mux.HandleFunc("GET /api/shipping", s.shippingSummary)
 	mux.HandleFunc("POST /api/shipping/estimate", s.shippingEstimate)
+	mux.HandleFunc("POST /api/events", s.clientEvents)
 
 	// hack clubbers
 	mux.Handle("GET /api/requests", s.requireUser(s.myRequests))
@@ -127,7 +128,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeErr(w, http.StatusNotFound, "not found") })
 	mux.HandleFunc("/", s.static)
 
-	return s.csrf(mux)
+	return s.csrf(s.visitor(mux))
 }
 
 // ---- middleware ----
@@ -247,6 +248,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	b := make([]byte, 24)
 	rand.Read(b)
 	state := base64.RawURLEncoding.EncodeToString(b)
+	s.track(r, nil, "login_start", map[string]any{"referrer": clip(r.Referer(), 300)})
 	http.SetCookie(w, &http.Cookie{
 		Name: stateCookie, Value: state, Path: "/auth", MaxAge: 600,
 		HttpOnly: true, Secure: s.secure(r), SameSite: http.SameSiteLaxMode,
@@ -274,6 +276,7 @@ func (s *server) callback(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.Config.CanSignIn(id.Email) {
 		s.Log.Info("sign-in refused: email not in ALLOWED_EMAILS")
+		s.track(r, nil, "sign_in_refused", nil)
 		http.Error(w, "This site isn't open yet. Only invited accounts can sign in.", http.StatusForbidden)
 		return
 	}
@@ -287,6 +290,7 @@ func (s *server) callback(w http.ResponseWriter, r *http.Request) {
 		s.serverErr(w, err)
 		return
 	}
+	s.track(r, u, "sign_in", map[string]any{"verification_status": u.VerificationStatus, "has_address": u.Address != nil})
 	http.SetCookie(w, &http.Cookie{
 		Name: sessionCookie, Value: tok, Path: "/", MaxAge: int(sessionTTL.Seconds()),
 		HttpOnly: true, Secure: s.secure(r), SameSite: http.SameSiteLaxMode,
@@ -296,6 +300,7 @@ func (s *server) callback(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
+		s.track(r, s.currentUser(r), "sign_out", nil)
 		s.Store.DeleteSession(r.Context(), c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Path: "/", MaxAge: -1})
@@ -525,12 +530,20 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 	})
 	if err != nil {
 		if isRuleErr(err) {
+			s.track(r, v.user, "request_refused", map[string]any{
+				"error": err.Error(), "purpose": body.Purpose, "country": body.Address.Country, "lines": body.Lines, "items": itemCount(body.Lines),
+			})
 			writeErr(w, http.StatusUnprocessableEntity, err.Error())
 			return
 		}
 		s.serverErr(w, err)
 		return
 	}
+	s.track(r, v.user, "request_created", map[string]any{
+		"request_id": req.ID, "status": req.Status, "purpose": body.Purpose, "country": body.Address.Country,
+		"lines": body.Lines, "items": itemCount(body.Lines), "fee_cents": fee, "note_chars": len(body.Note),
+		"package": est.Package, "arrive_from": est.ArriveFrom, "arrive_by": est.ArriveBy,
+	})
 	writeJSON(w, http.StatusCreated, s.userView(req))
 }
 
@@ -555,9 +568,11 @@ func (s *server) cancelRequest(w http.ResponseWriter, r *http.Request, v viewer)
 		writeErr(w, http.StatusNotFound, "request not found")
 		return
 	}
+	from := req.Status
 	req, err = s.Store.TransitionRequest(r.Context(), id, swag.StatusCancelled, "")
 	if err == nil {
 		req.InternalNote = ""
+		s.track(r, v.user, "request_cancelled", map[string]any{"request_id": id, "from": from})
 	}
 	s.respondRequest(w, req, err)
 }
@@ -599,6 +614,7 @@ func (s *server) createSubmission(w http.ResponseWriter, r *http.Request, v view
 		s.serverErr(w, err)
 		return
 	}
+	s.track(r, v.user, "submission_created", map[string]any{"submission_id": sub.ID, "kind": sub.Kind, "program": sub.Program, "quantity": sub.Quantity})
 	writeJSON(w, http.StatusCreated, sub)
 }
 
