@@ -107,7 +107,7 @@
 <section class="hero">
 	<h1>Teenager and want to spread <span class="box">Hack Club</span> in your community?</h1>
 	<p class="lede">Get some awesome hand-designed swag made by your fellow Hack Clubbers!</p>
-	<ul class="facts label">
+	<ul class="facts">
 		<li>Free shipping in the US.{#if fee > 0}{' '}{roughFee(fee)} globally to help cover shipping.{/if}</li>
 		<li>Shipped next day Mon–Fri. 2–5 day delivery in US. 2–4 week delivery globally.</li>
 	</ul>
@@ -313,11 +313,13 @@
 		font-size: 0.85rem; letter-spacing: 0.04em; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); white-space: nowrap;
 	}
 	.bagbar:hover { background: var(--red); }
-	.hero { max-width: 56rem; margin: 0.5rem 0 1.75rem; }
-	.hero h1 { font-size: clamp(2rem, 5.5vw, 3.6rem); line-height: 1.02; margin-bottom: 0.9rem; }
-	.hero h1 .box { background: var(--red); color: #fff; padding: 0 0.25em 0.04em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-	.lede { font-size: 1.2rem; margin: 0 0 1rem; }
-	.facts { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; color: var(--dark); }
+	/* A quiet, centered intro: one font, one text size, only the headline steps up. */
+	.hero { max-width: 44rem; margin: 0.5rem auto 2rem; padding: 2rem 1.5rem; background: var(--tile); text-align: center; }
+	.hero h1 { font-size: 1.9rem; text-transform: none; letter-spacing: 0; line-height: 1.2; margin-bottom: 0.75rem; }
+	.hero h1 .box { background: var(--red); color: #fff; padding: 0 0.2em 0.04em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+	.lede, .facts { font-size: 1rem; line-height: 1.5; }
+	.lede { margin: 0 0 0.75rem; }
+	.facts { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; color: var(--dark); }
 	.facts li::before { content: '→ '; color: var(--red); }
 	/* Edge to edge; it scrolls on its own and pauses under the pointer. */
 	.strip { margin: 0 calc(50% - 50vw) 2.5rem; overflow: hidden; }
