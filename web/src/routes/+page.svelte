@@ -7,6 +7,7 @@
 	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartCosts, cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
+	import { gallery, roughFee } from '$lib/gallery';
 	import { formatUnitCost, itemPath, previewCount, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
@@ -58,6 +59,8 @@
 	const intl = $derived(isInternational(address.country));
 	const costs = $derived(catalog ? cartCosts(cart, catalog.items, sizes, stocks) : null);
 	const shippingCents = $derived(intl ? catalog?.settings.international_shipping_fee_cents ?? 0 : 0);
+	const slides = $derived(catalog ? gallery(catalog.items) : []);
+	const fee = $derived(catalog?.settings.international_shipping_fee_cents ?? 0);
 	const dollars = (n: number) => formatCents(Math.round(n * 100));
 
 	$effect(() => {
@@ -101,6 +104,30 @@
 
 <svelte:head><title>Hack Club Mail Room</title></svelte:head>
 
+<section class="hero">
+	<h1>Teenager and want to spread <span class="box">Hack Club</span> in your community?</h1>
+	<p class="lede">Get some awesome hand-designed swag made by your fellow Hack Clubbers!</p>
+	<ul class="facts label">
+		<li>Free shipping in the US.{#if fee > 0}{' '}{roughFee(fee)} globally to help cover shipping.{/if}</li>
+		<li>Shipped next day Mon–Fri. 2–5 day delivery in US. 2–4 week delivery globally.</li>
+	</ul>
+</section>
+
+{#if slides.length}
+	<!-- The list renders twice so the strip loops without a seam; the copy is hidden from screen readers. -->
+	<div class="strip">
+		<div class="track" style="--n: {slides.length}">
+			{#each [0, 1] as copy}
+				{#each slides as s, i (i)}
+					<a href={s.href} class="slide" class:real={s.real} class:sticker={s.sticker} aria-hidden={copy === 1} tabindex={copy === 1 ? -1 : undefined}>
+						<img src={s.src} alt={copy === 1 ? '' : s.alt} loading="lazy" />
+					</a>
+				{/each}
+			{/each}
+		</div>
+	</div>
+{/if}
+
 {#if error}<p class="error">{error}</p>{/if}
 
 {#if catalog}
@@ -110,10 +137,7 @@
 	{#if asking}
 		<fieldset class="ask" id="purpose">
 			<legend><h2>What kind of request is this?</h2></legend>
-			<p class="muted">
-				Free shipping in the US.{#if catalog.settings.international_shipping_fee_cents > 0}{' '}{formatCents(catalog.settings.international_shipping_fee_cents)}
-					to help cover shipping anywhere else.{/if}
-			</p>
+			<p class="muted">It changes which items you can pick.</p>
 			{#each PURPOSES as p (p.value)}
 				<label class="choice" class:on={purpose === p.value}>
 					<input type="radio" name="purpose" value={p.value} checked={purpose === p.value} onchange={() => choose(p.value)} />
@@ -122,6 +146,7 @@
 			{/each}
 		</fieldset>
 	{/if}
+	<h2 class="pick">What would you like us to send you?</h2>
 	{#each sections as { section, tiles }, n (section.key)}
 		<section class="shelf" aria-labelledby="shelf-{section.key}">
 			<div class="shelf-head">
@@ -176,7 +201,7 @@
 		<p class="muted">Pick what kind of request this is at the top, then we'll ask where to send it.</p>
 	{:else if asking && totalQuantity(cart) > 0}
 		<form class="card" id="request" style="margin-top: 1.5rem" onsubmit={submit}>
-			<h2>Where should we send it?</h2>
+			<h2>Shipping info</h2>
 			{#if costs}
 				<table class="summary">
 					<tbody>
@@ -235,7 +260,7 @@
 			</label>
 			{#each problems as p}<p class="error">{p}</p>{/each}
 			<button disabled={submitting || problems.length > 0 || !understood}>
-				{submitting ? 'Sending…' : `Request ${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'}`}
+				{submitting ? 'Sending…' : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
 			</button>
 		</form>
 	{/if}
@@ -282,6 +307,27 @@
 		font-size: 0.85rem; letter-spacing: 0.04em; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); white-space: nowrap;
 	}
 	.bagbar:hover { background: var(--red); }
+	.hero { max-width: 56rem; margin: 0.5rem 0 1.75rem; }
+	.hero h1 { font-size: clamp(2rem, 5.5vw, 3.6rem); line-height: 1.02; margin-bottom: 0.9rem; }
+	.hero h1 .box { background: var(--red); color: #fff; padding: 0 0.25em 0.04em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+	.lede { font-size: 1.2rem; margin: 0 0 1rem; }
+	.facts { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; color: var(--dark); }
+	.facts li::before { content: '→ '; color: var(--red); }
+	/* Edge to edge; it scrolls on its own and pauses under the pointer. */
+	.strip { margin: 0 calc(50% - 50vw) 2.5rem; overflow: hidden; }
+	.track { display: flex; gap: 0.75rem; width: max-content; animation: scroll calc(var(--n) * 4s) linear infinite; }
+	.strip:hover .track { animation-play-state: paused; }
+	@keyframes scroll { to { transform: translateX(calc(-50% - 0.375rem)); } }
+	@media (prefers-reduced-motion: reduce) {
+		.strip { overflow-x: auto; }
+		.track { animation: none; }
+	}
+	.slide { display: block; flex: none; height: clamp(11rem, 26vw, 17rem); aspect-ratio: 4 / 5; background: var(--tile); }
+	.slide img { width: 100%; height: 100%; object-fit: contain; padding: 8%; box-sizing: border-box; mix-blend-mode: multiply; }
+	.slide.sticker img { mix-blend-mode: normal; }
+	/* Real-world photos fill their frame, wider, at full colour. */
+	.slide.real { aspect-ratio: 4 / 3; }
+	.slide.real img { object-fit: cover; padding: 0; mix-blend-mode: normal; }
 	.item { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 	.item-link { color: inherit; text-decoration: none; }
 	.tile { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 5; background: var(--tile); font-size: 3rem; }
@@ -302,6 +348,7 @@
 	.summary tfoot th { text-align: left; font-family: var(--mono); font-size: 0.72rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.02em; }
 	.summary tfoot tr:first-child th, .summary tfoot tr:first-child td { border-top: 1.5px solid var(--dark); padding-top: 0.5rem; }
 	#request { max-width: 56rem; }
+	.pick { margin: 0 0 1.5rem; }
 	.ask { max-width: 56rem; margin: 0 0 2rem; padding: 0; border: 0; display: grid; gap: 0.5rem; }
 	.ask legend { padding: 0; }
 	.ask legend h2 { margin: 0 0 0.25rem; }
