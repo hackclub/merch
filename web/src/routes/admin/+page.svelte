@@ -240,6 +240,7 @@
 										<option value="">Not a booklet</option>
 										<option value="staple">Stapled (saddle-stitched)</option>
 										<option value="perfect">Square spine (perfect bound)</option>
+										<option value="trifold">Trifold brochure (one sheet: images 1 and 2 are its outside and inside)</option>
 									</select></label>
 								{#if it.pages.length}
 									<div class="pages">

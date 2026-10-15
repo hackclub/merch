@@ -2,7 +2,8 @@
 // size (inches), as tall as its count makes it, laid out on a table next to a
 // phone for scale. haul3d.ts draws it; this is the geometry, kept pure for tests.
 import { presetQuantities } from './cart';
-import { isBooklet, shipsWith, thumbnail } from './items';
+import { foldedSize, panelU } from './fold';
+import { isBooklet, isTrifold, shipsWith, thumbnail } from './items';
 import { sheetThickness } from './paper';
 import { CARD_IN, PER_BUNDLE } from './postcards';
 import { PHONE } from './scale';
@@ -17,6 +18,7 @@ export type Pile = {
 	key: string;
 	label: string; // "3 × Poster"
 	art: string; // image on top of the pile ('' = plain)
+	artPart?: { from: number; to: number; aspect: number }; // only this slice of art (u from…to) shows on top; aspect is the whole art's
 	w: number; // footprint, left to right
 	d: number; // footprint, front to back
 	height: number; // the whole stack
@@ -43,7 +45,7 @@ const PAGE_IN = 0.004;
  * springs open, and a perfect-bound one a little less, so a stack of them stands
  * taller than its paper. Each booklet takes up its thickness times this.
  */
-export const LOFT = { staple: 1.25, perfect: 1.06 } as const;
+export const LOFT = { staple: 1.25, perfect: 1.06, trifold: 1.3 } as const;
 const loft = (binding: string) => LOFT[binding as keyof typeof LOFT] ?? 1;
 
 /** "4 in tall (10 cm)", "0.7 in tall (1.8 cm)". */
@@ -128,6 +130,15 @@ function pileOf({ item, quantity, size }: HaulLine): Pile {
 		return {
 			key, label, art, w, d, height: STICKER_THICKNESS_IN * quantity,
 			kind: 'sticker', count: quantity, widthIn: item.width_in, heightIn: item.height_in
+		};
+	}
+	if (item.width_in != null && item.height_in != null && isTrifold(item)) {
+		// Trifolds ship folded, cover up, springing open a little at the creases.
+		const f = foldedSize(item.width_in, item.height_in, sheetThickness(item));
+		const [from, to] = panelU('cover', 'outside');
+		return {
+			key, label, art, artPart: { from, to, aspect: item.width_in / item.height_in },
+			w: f.w, d: f.h, height: f.t * loft('trifold') * quantity, kind: 'paper', count: quantity, finish: item.finish
 		};
 	}
 	if (item.width_in != null && item.height_in != null) {

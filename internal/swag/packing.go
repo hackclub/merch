@@ -127,6 +127,10 @@ func shapeOf(it Item, qty int) shape {
 	default:
 		s.w, s.h, s.t = bulkySize[0], bulkySize[1], bulkySize[2]
 	}
+	if it.Binding == "trifold" {
+		// A trifold ships folded in thirds: a third as wide, three sheets thick.
+		s.w, s.t = s.w/3, s.t*3
+	}
 	switch {
 	case it.WeightOz != nil:
 		s.oz, s.known = *it.WeightOz, true

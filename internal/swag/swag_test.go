@@ -304,7 +304,7 @@ func TestShipment(t *testing.T) {
 }
 
 func TestBindings(t *testing.T) {
-	for _, b := range []string{"", "staple", "perfect"} {
+	for _, b := range []string{"", "staple", "perfect", "trifold"} {
 		if !Bindings[b] {
 			t.Errorf("binding %q should be valid", b)
 		}

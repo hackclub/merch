@@ -2,10 +2,13 @@
 	// Interactive 3D view of a printed item (see paper3d.ts) or a sticker request
 	// (sticker3d.ts): slowly spins like a store's 3D product view; drag or arrow
 	// keys turn it, + / − zoom in to see the paper. Booklets (book3d.ts) also
-	// open: drag, arrow keys or the slider turn their pages. Falls back to the
-	// flat front image without WebGL.
+	// open: drag, arrow keys or the slider turn their pages. A trifold brochure
+	// (fold3d.ts) opens and folds itself back up on a loop until you touch it;
+	// then tap, drag or the arrows fold it. Falls back to the flat front image
+	// without WebGL.
 	import { onMount } from 'svelte';
 	import { settle, spreadLabel } from './book';
+	import { FOLD_STEPS, foldCycle, foldLabel } from './fold';
 	import type { BookViewer } from './book3d';
 	import { loadPreviewViewer, type Preview3D } from './items';
 	import { finishInfo } from './paper';
@@ -34,11 +37,14 @@
 	let turning = false; // dragging pages rather than spinning the book
 	let dragFrom = { x: 0, position: 0 };
 	const book = $derived('book' in preview ? preview.book : undefined);
+	const fold = $derived('fold' in preview ? preview.fold : undefined);
+	const opens = $derived(!!book || !!fold); // turns through positions (BookViewer.position)
 	const front = $derived(
-		'book' in preview ? (preview.book.pages[0] ?? '') : 'sheet' in preview ? preview.sheet.front : 'postcards' in preview ? preview.postcards.front : preview.stickers.front
+		'book' in preview ? (preview.book.pages[0] ?? '') : 'fold' in preview ? preview.fold.outside : 'sheet' in preview ? preview.sheet.front : 'postcards' in preview ? preview.postcards.front : preview.stickers.front
 	);
 	const back = $derived('sheet' in preview ? preview.sheet.back : undefined);
-	const leaves = $derived(book ? Math.ceil(book.pages.length / 2) : 0);
+	const leaves = $derived(book ? Math.ceil(book.pages.length / 2) : fold ? FOLD_STEPS : 0);
+	const stepLabel = (k: number) => (book ? spreadLabel(k, book.pages.length) : foldLabel(k));
 	const isOpen = $derived(goal > 0);
 
 	const ZOOMS = [1, 0.5, 0.22];
@@ -46,6 +52,7 @@
 	let target: number | null = null; // angle we're animating to (flip)
 	let resumeAt = 0;
 	let lastX = 0;
+	let cycleFrom = 0; // when a trifold's open-and-fold loop started
 
 	const finish = $derived('sheet' in preview ? finishInfo(preview.sheet.finish).label : 'postcards' in preview ? finishInfo(preview.postcards.finish).label : '');
 	const label = $derived(
@@ -65,6 +72,7 @@
 	onMount(() => {
 		const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 		if (reduceMotion) spinning = false;
+		cycleFrom = performance.now();
 		let raf = 0;
 		let visible = true;
 		let disposed = false;
@@ -90,16 +98,23 @@
 					const dt = Math.min(0.05, (now - last) / 1000);
 					last = now;
 					if (!viewer || !visible || document.hidden) return;
-					const bv = book ? (viewer as BookViewer) : null;
+					const bv = opens ? (viewer as BookViewer) : null;
+					// A trifold left alone opens and folds itself back up.
+					if (fold && spinning && !dragging) goal = foldCycle(now - cycleFrom);
 					if (bv && !turning) {
-						// Turn toward the goal: quickly at first, never slower than a leaf a second.
+						// Turn toward the goal: books quickly at first, never slower than a leaf a
+						// second; a trifold's panels at an even pace, like a hand folding it.
 						const d = goal - bv.position;
 						if (Math.abs(d) < 0.0005) bv.position = goal;
+						else if (fold) bv.position += Math.sign(d) * Math.min(Math.abs(d), dt * 1.1);
 						else bv.position += Math.sign(d) * Math.min(Math.abs(d), Math.max(Math.abs(d) * dt * 5, dt * 1.6));
 					}
 					if (bv && (goal > 0 || bv.position > 0.001)) {
 						// Open books face you squarely.
 						target = Math.round(viewer.angle / (2 * Math.PI)) * 2 * Math.PI;
+					} else if (fold && spinning) {
+						// Folded, it shows its cover at an angle.
+						target = Math.round(viewer.angle / (2 * Math.PI)) * 2 * Math.PI - 0.45;
 					}
 					if (bv) near = Math.round(bv.position);
 					if (target !== null) {
@@ -108,7 +123,7 @@
 							viewer.angle = target;
 							target = null;
 						}
-					} else if (spinning && !dragging && now > resumeAt) {
+					} else if (spinning && !fold && !dragging && now > resumeAt) {
 						viewer.angle += SPIN * dt;
 					}
 					const wantZoom = ZOOMS[zoomLevel];
@@ -130,24 +145,30 @@
 		};
 	});
 
-	const pause = () => (resumeAt = performance.now() + 2500);
+	const pause = () => {
+		resumeAt = performance.now() + 2500;
+		if (fold) spinning = false; // once you take hold of it, it stays how you leave it
+	};
 
 	function down(e: PointerEvent) {
 		dragging = true;
 		target = null;
 		lastX = e.clientX;
 		// An open book's pages follow your finger; a closed one turns around.
-		turning = !!book && isOpen;
+		turning = opens && isOpen;
+		if (fold) spinning = false;
 		dragFrom = { x: e.clientX, position: (viewer as BookViewer | null)?.position ?? 0 };
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 	}
 	function move(e: PointerEvent) {
 		if (!dragging || !viewer) return;
 		if (turning) {
-			// Dragging across most of a page turns one leaf.
+			// Dragging across most of a page turns one leaf; dragging a trifold right
+			// pulls it open (the flap opens that way), left folds it up.
 			const perLeaf = stage.clientWidth * 0.4;
 			const bv = viewer as BookViewer;
-			bv.position = Math.min(leaves, Math.max(0, dragFrom.position + (dragFrom.x - e.clientX) / perLeaf));
+			const moved = (fold ? e.clientX - dragFrom.x : dragFrom.x - e.clientX) / perLeaf;
+			bv.position = Math.min(leaves, Math.max(0, dragFrom.position + moved));
 		} else {
 			viewer.angle += (e.clientX - lastX) * 0.012;
 		}
@@ -158,8 +179,8 @@
 		if (turning && viewer) {
 			const bv = viewer as BookViewer;
 			goal = settle(bv.position, Math.sign(bv.position - dragFrom.position));
-		} else if (book && !isOpen && Math.abs(e.clientX - dragFrom.x) < 4) {
-			goal = 1; // a tap on the closed book opens it
+		} else if (opens && !isOpen && Math.abs(e.clientX - dragFrom.x) < 4) {
+			goal = fold ? FOLD_STEPS : 1; // a tap on the closed book opens it; a trifold opens all the way
 		}
 		turning = false;
 		pause();
@@ -170,7 +191,7 @@
 	};
 	function key(e: KeyboardEvent) {
 		if (!viewer) return;
-		if (book && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+		if (opens && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
 			turnTo(goal + (e.key === 'ArrowLeft' ? -1 : 1));
 		} else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
 			target = (target ?? viewer.angle) + (e.key === 'ArrowLeft' ? -0.35 : 0.35);
@@ -199,11 +220,13 @@
 		tabindex="0"
 		aria-label={book
 			? `${name} in 3D: ${sizeLabel(book.widthIn, book.heightIn)}, ${book.pages.length} pages. Left and right arrow keys turn the pages, plus and minus zoom.`
-			: `${name} in 3D: ${label.toLowerCase()}, next to a phone for scale. Drag or use the arrow keys to turn it, plus and minus to zoom.`}
-		aria-valuenow={book ? near : 0}
+			: fold
+				? `${name} in 3D: a trifold brochure, ${sizeLabel(fold.widthIn, fold.heightIn)} open. Left and right arrow keys fold and unfold it, plus and minus zoom.`
+				: `${name} in 3D: ${label.toLowerCase()}, next to a phone for scale. Drag or use the arrow keys to turn it, plus and minus to zoom.`}
+		aria-valuenow={opens ? near : 0}
 		aria-valuemin={0}
-		aria-valuemax={book ? leaves : 0}
-		aria-valuetext={book ? spreadLabel(near, book.pages.length) : showingBack ? 'showing the back' : 'showing the front'}
+		aria-valuemax={leaves}
+		aria-valuetext={opens ? stepLabel(near) : showingBack ? 'showing the back' : 'showing the front'}
 		onpointerdown={down}
 		onpointermove={move}
 		onpointerup={up}
@@ -222,17 +245,20 @@
 					onpointerdown={(e) => e.stopPropagation()} onclick={() => (zoomLevel++, pause())}>+</button>
 				<button type="button" class="ctl" aria-label="Zoom out" disabled={zoomLevel === 0}
 					onpointerdown={(e) => e.stopPropagation()} onclick={() => (zoomLevel--, pause())}>−</button>
-				{#if !isOpen}
+				{#if fold}
+					<button type="button" class="ctl" aria-label={spinning ? 'Stop folding' : 'Fold and unfold on its own'}
+						onpointerdown={(e) => e.stopPropagation()} onclick={() => ((spinning = !spinning), (cycleFrom = performance.now() - (goal === 2 ? 3600 : 0)))}>{spinning ? '❚❚' : '⟳'}</button>
+				{:else if !isOpen}
 					<button type="button" class="ctl" aria-label={spinning ? 'Stop spinning' : 'Spin'}
 						onpointerdown={(e) => e.stopPropagation()} onclick={() => (spinning = !spinning)}>{spinning ? '❚❚' : '⟳'}</button>
 				{/if}
 			</div>
-			{#if book && ready}
-				<div class="pager" role="group" aria-label="Turn the pages">
-					<button type="button" class="ctl" aria-label="Previous page" disabled={goal === 0}
+			{#if opens && ready}
+				<div class="pager" role="group" aria-label={fold ? 'Fold and unfold it' : 'Turn the pages'}>
+					<button type="button" class="ctl" aria-label={fold ? 'Fold it' : 'Previous page'} disabled={goal === 0}
 						onpointerdown={(e) => e.stopPropagation()} onclick={() => turnTo(goal - 1)}>‹</button>
-					<span class="page-label">{spreadLabel(near, book.pages.length)}</span>
-					<button type="button" class="ctl" aria-label="Next page" disabled={goal === leaves}
+					<span class="page-label">{stepLabel(near)}</span>
+					<button type="button" class="ctl" aria-label={fold ? 'Unfold it' : 'Next page'} disabled={goal === leaves}
 						onpointerdown={(e) => e.stopPropagation()} onclick={() => turnTo(goal + 1)}>›</button>
 				</div>
 			{/if}
@@ -247,6 +273,11 @@
 			<span class="muted">{sizeLabel(book.widthIn, book.heightIn)} · {book.pages.length} pages{book.binding === 'staple' ? ', stapled' : ''} · {isOpen ? 'drag to turn the page' : 'tap to open'}</span>
 			{#if !failed}
 				<button type="button" class="secondary small" onclick={() => turnTo(isOpen ? 0 : 1)}>{isOpen ? 'Close it' : 'Look inside'}</button>
+			{/if}
+		{:else if fold}
+			<span class="muted">{sizeLabel(fold.widthIn, fold.heightIn)}, folded in thirds · {isOpen ? 'drag to fold it' : 'tap to open'}</span>
+			{#if !failed}
+				<button type="button" class="secondary small" onclick={() => turnTo(isOpen ? 0 : FOLD_STEPS)}>{isOpen ? 'Fold it up' : 'Open it'}</button>
 			{/if}
 		{:else}
 			<span class="muted">{label} · drag to turn</span>

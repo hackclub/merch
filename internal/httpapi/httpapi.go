@@ -781,7 +781,7 @@ func validItem(it swag.Item) string {
 	case it.WeightOz != nil && !(*it.WeightOz > 0 && *it.WeightOz <= 800):
 		return "weight must be between 0 and 800 ounces"
 	case !swag.Bindings[it.Binding]:
-		return "binding must be staple or perfect"
+		return "binding must be staple, perfect or trifold"
 	case it.Clip != "" && !isHTTPURL(it.Clip):
 		return "clip must be an http(s) URL"
 	}

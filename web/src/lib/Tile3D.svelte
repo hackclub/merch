@@ -2,12 +2,14 @@
 	// A shop tile's preview (see items.ts tilePreview). It sits still until you
 	// touch it: hover turns a print or stickers with the pointer and drag turns
 	// them further; a booklet opens on hover and flips through its pages, and
-	// dragging across turns them by hand. A clip plays while hovered (or while
+	// dragging across turns them by hand. A trifold brochure unfolds on hover,
+	// cover then flap, and folds back up when you leave. A clip plays while hovered (or while
 	// on screen, on touch screens); a clip can also be a GIF or a still photo. A click still follows the tile's link.
 	// Viewers exist only while the tile is near the screen, so a long grid never
 	// runs out of WebGL contexts; the photo underneath shows until it's ready.
 	import { onMount, untrack } from 'svelte';
 	import { settle } from './book';
+	import { FOLD_STEPS, foldCycle } from './fold';
 	import type { BookViewer } from './book3d';
 	import { loadPreviewViewer, type Preview3D, type TilePreview } from './items';
 	import type { Viewer } from './paper3d';
@@ -39,7 +41,9 @@
 	let busyUntil = 0; // sticker bags are dropping in until then
 
 	const book = $derived('book' in preview ? preview.book : null);
-	const leaves = $derived(book ? Math.ceil(book.pages.length / 2) : 0);
+	const fold = $derived('fold' in preview);
+	const opens = $derived(!!book || fold); // turns through positions (BookViewer.position)
+	const leaves = $derived(book ? Math.ceil(book.pages.length / 2) : fold ? FOLD_STEPS : 0);
 
 	$effect(() => {
 		const n = count;
@@ -84,7 +88,8 @@
 				v.angle = target;
 				v.resize(stage.clientWidth, stage.clientHeight);
 				ro.observe(stage);
-				const bv = book ? (v as BookViewer) : null;
+				const bv = opens ? (v as BookViewer) : null;
+				const started = performance.now();
 				const tick = (now: number) => {
 					raf = requestAnimationFrame(tick);
 					const dt = Math.min(0.05, (now - last) / 1000);
@@ -92,15 +97,20 @@
 					if (document.hidden) return;
 					let moving = !drawn || now < busyUntil;
 					if (bv) {
-						if ((hovering || active) && !dragging && !still && now > flipAt && goal < leaves) {
+						if (fold && active && !hovering && !dragging && !still) {
+							// Nobody's pointing at it: it opens and folds itself back up, on a loop.
+							goal = foldCycle(now - started);
+						} else if ((hovering || active) && !dragging && !still && now > flipAt && goal < leaves) {
 							goal = flipStep(goal, leaves);
 							flipAt = now + FLIP_EVERY;
 						}
 						if (!dragging) {
-							// Turn toward the goal: quickly at first, never slower than a leaf a second.
+							// Turn toward the goal: books quickly at first, never slower than a leaf
+							// a second; a trifold's panels at an even pace, like a hand folding it.
 							const d = goal - bv.position;
+							const step = fold ? dt * 1.1 : Math.max(Math.abs(d) * dt * 5, dt * 1.6);
 							if (Math.abs(d) < 0.0005) bv.position = goal;
-							else (bv.position += Math.sign(d) * Math.min(Math.abs(d), Math.max(Math.abs(d) * dt * 5, dt * 1.6))), (moving = true);
+							else (bv.position += Math.sign(d) * Math.min(Math.abs(d), step)), (moving = true);
 						}
 						// Open books face you squarely; closed, they sit at rest.
 						target = goal > 0 || bv.position > 0.001 ? 0 : at;
@@ -154,17 +164,18 @@
 	}
 	function move(e: PointerEvent) {
 		if (!dragging) {
-			if (hovering && !book) target = hoverTurn(at, fromX, e.clientX, stage.clientWidth);
+			if (hovering && !opens) target = hoverTurn(at, fromX, e.clientX, stage.clientWidth);
 			return;
 		}
 		if (!viewer) return;
 		if (!dragged && Math.abs(e.clientX - dragFrom.x) < 4) return;
 		if (!dragged) (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		dragged = true;
-		if (book) {
-			// Dragging across most of the tile turns one leaf.
+		if (opens) {
+			// Dragging across most of the tile turns one leaf; dragging a trifold right pulls it open.
 			const bv = viewer as BookViewer;
-			bv.position = Math.min(leaves, Math.max(0, dragFrom.position + (dragFrom.x - e.clientX) / (stage.clientWidth * 0.6)));
+			const moved = (fold ? e.clientX - dragFrom.x : dragFrom.x - e.clientX) / (stage.clientWidth * 0.6);
+			bv.position = Math.min(leaves, Math.max(0, dragFrom.position + moved));
 		} else {
 			viewer.angle += (e.clientX - lastX) * 0.012;
 		}
@@ -174,7 +185,7 @@
 		if (!dragging) return;
 		dragging = false;
 		if (!dragged || !viewer) return;
-		if (book) {
+		if (opens) {
 			const bv = viewer as BookViewer;
 			goal = settle(bv.position, Math.sign(bv.position - dragFrom.position));
 			flipAt = performance.now() + 3000; // let them look before flipping on

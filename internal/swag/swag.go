@@ -35,8 +35,10 @@ var Finishes = map[string]bool{"": true, "matte": true, "gloss": true, "linen": 
 
 // Bindings are how a multi-page printed item is bound, for the 3D flip-through:
 // "" is a single sheet, "staple" is saddle-stitched (folded sheets, stapled on
-// the fold) and "perfect" is a glued square spine, like a paperback.
-var Bindings = map[string]bool{"": true, "staple": true, "perfect": true}
+// the fold) and "perfect" is a glued square spine, like a paperback. "trifold"
+// is a single sheet letter-folded in thirds (a brochure): images[0] is its
+// outside, images[1] its inside, and it ships folded.
+var Bindings = map[string]bool{"": true, "staple": true, "perfect": true, "trifold": true}
 
 // Photo is a real-world picture of an item, credited to whoever took it.
 type Photo struct {

@@ -23,6 +23,8 @@ func shopCatalog() map[int64]Item {
 			WidthIn: f(6), HeightIn: f(6), ThicknessIn: f(0.04), Binding: "staple", WeightOz: f(1)},
 		6: {ID: 6, SKU: "Swa/Shirt/HC", Name: "T-Shirt", Visible: true, MaxPerRequest: 1, WeightOz: f(6.5),
 			Variants: []Variant{{Label: "M", SKU: "Swa/Shirt/HC/M"}}},
+		7: {ID: 7, SKU: "Pri/Hac/Tea/T26", Name: "Teacher Trifold Brochure", Visible: true, MaxPerRequest: 50,
+			WidthIn: f(11), HeightIn: f(8.5), ThicknessIn: f(0.005), Binding: "trifold"},
 	}
 }
 
@@ -50,6 +52,7 @@ func TestPack(t *testing.T) {
 		{"a few prints go in a StayFlat", []Line{{ItemID: 2, Quantity: 10}, {ItemID: 3, Quantity: 3}, {ItemID: 5, Quantity: 1}}, false, "9x12 StayFlat", nil},
 		{"a poster never goes in a box", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 6, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}, false, "", ErrWontPack},
 		{"50 mini-magazines don't", []Line{{ItemID: 5, Quantity: 50}}, true, "", ErrTooHeavy},
+		{"a trifold brochure ships folded, so it fits an envelope", []Line{{ItemID: 7, Quantity: 1}}, false, "Envelope", nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

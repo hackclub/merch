@@ -1,4 +1,5 @@
 import type { BookOptions } from './book3d';
+import type { FoldOptions } from './fold3d';
 import { sheetThickness } from './paper';
 import type { Viewer, ViewerOptions } from './paper3d';
 import { hasSize } from './scale';
@@ -27,11 +28,15 @@ export function itemIdFromParam(param: string): number | null {
 export const thumbnail = (item: Item): string => item.images[0] ?? item.pages[0] ?? '';
 
 /** Booklets with page images open in 3D and flip through. */
-export const isBooklet = (item: Item) => item.binding !== '' && item.pages.length >= 2;
+export const isBooklet = (item: Item) => item.binding !== '' && item.binding !== 'trifold' && item.pages.length >= 2;
 
-/** A 3D product preview: booklet flip-through, printed sheet, sticker packs, or postcard bundles. */
+/** A trifold brochure with its outside (images[0]) and inside (images[1]) art folds and unfolds in 3D. */
+export const isTrifold = (item: Item) => item.binding === 'trifold' && item.images.length >= 2;
+
+/** A 3D product preview: booklet flip-through, trifold, printed sheet, sticker packs, or postcard bundles. */
 export type Preview3D =
 	| { book: BookOptions } // a booklet that flips through its pages
+	| { fold: FoldOptions } // a trifold brochure that opens and folds up
 	| { sheet: ViewerOptions } // a sized print, front and back
 	| { stickers: StickerOptions }
 	| { postcards: PostcardOptions }; // a stack, or bundles of 50
@@ -73,6 +78,14 @@ export function productPreview(item: Item, includes: Item[] = [], phone = true):
 		};
 	}
 	if (!item.images.length) return null;
+	if (isTrifold(item)) {
+		return {
+			fold: {
+				outside: item.images[0], inside: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
+				thicknessIn: sheetThickness(item), finish: item.finish, phone
+			}
+		};
+	}
 	return {
 		sheet: {
 			front: item.images[0], back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
@@ -100,6 +113,7 @@ export const showsAmountIn3D = (item: Item): boolean =>
 /** Lazy-loads the matching WebGL viewer for a Preview3D descriptor. */
 export function loadPreviewViewer(canvas: HTMLCanvasElement, preview: Preview3D, count: number, onReady: () => void): Promise<Viewer> {
 	if ('book' in preview) return import('./book3d').then((m) => m.createBookViewer(canvas, preview.book, onReady));
+	if ('fold' in preview) return import('./fold3d').then((m) => m.createFoldViewer(canvas, preview.fold, onReady));
 	if ('postcards' in preview) {
 		return import('./postcard3d').then((m) => {
 			const v = m.createPostcardViewer(canvas, preview.postcards, onReady);

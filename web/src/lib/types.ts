@@ -21,7 +21,7 @@ export type Item = {
 	weight_oz: number | null; // one unit's shipping weight; null = worked out from its paper size
 	photos: Photo[]; // real-world pictures people posted
 	packs: string; // '' (any quantity) | 'fives' (5, 10, 15…) | 'postcard' (5, 10…25) | 'sticker' (3, 10), then multiples of 50
-	binding: string; // '' (a single sheet) | 'staple' | 'perfect': booklets open in 3D
+	binding: string; // '' (a single sheet) | 'staple' | 'perfect': booklets open in 3D | 'trifold': a sheet folded in thirds
 	pages: string[]; // a booklet's page images in reading order, front cover first
 	ships_with: string[]; // warehouse SKUs packed with every unit (the magazine's card)
 	club_only: boolean; // not offered for personal requests, only clubs and events

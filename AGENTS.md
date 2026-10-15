@@ -369,6 +369,10 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   Booklets (`binding` = `staple` or `perfect`) open in the 3D view and flip through
   `items.pages` (page images, front cover first; `web/src/lib/book3d.ts`). The magazines'
   pages come from the public PDFs on magazine.hackclub.com, split into single pages.
+  A trifold brochure (`binding` = `trifold`; images[0] is the outside, reading flap | back | cover,
+  and images[1] the inside) is one sheet letter-folded in thirds (`fold.ts`, `fold3d.ts`): the
+  product page opens it and folds it back up on a loop until touched, tiles unfold it on hover, and
+  the haul and `Pack` treat it as folded (a third as wide, three sheets thick).
   `ships_with` lists SKUs added to the warehouse order once per unit (the Magazine 2025
   always ships with its intro card, `Pri/M25/4x6/1st`), and the product page shows them.
   Shop grid tiles (`web/src/lib/Tile3D.svelte`) show the same 3D views without the phone, still

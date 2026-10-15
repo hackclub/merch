@@ -191,3 +191,24 @@ describe('tall', () => {
 		expect(tall(0.7)).toBe('0.7 in tall (1.8 cm)');
 	});
 });
+
+describe('trifold brochures', () => {
+	const brochure: Item = { ...base, id: 5, name: 'Brochure', binding: 'trifold', images: ['out.jpg', 'in.jpg'], width_in: 11, height_in: 8.5, thickness_in: 0.005 };
+
+	it('lie folded, cover up: a third as wide, three sheets thick each, a little puffed at the creases', () => {
+		const [p] = piles([{ item: brochure, quantity: 10 }]);
+		expect(p.w).toBeCloseTo(11 / 3);
+		expect(p.d).toBe(8.5);
+		expect(LOFT.trifold).toBeGreaterThan(1);
+		expect(p.height).toBeCloseTo(10 * 0.015 * LOFT.trifold);
+		expect(p.art).toBe('out.jpg');
+		// The cover is the right third of the outside art.
+		expect(p.artPart).toEqual({ from: 2 / 3, to: 1, aspect: 11 / 8.5 });
+	});
+
+	it('is a flat sheet without its inside art', () => {
+		const [p] = piles([{ item: { ...brochure, images: ['out.jpg'] }, quantity: 1 }]);
+		expect(p.w).toBe(11);
+		expect(p.artPart).toBeUndefined();
+	});
+});

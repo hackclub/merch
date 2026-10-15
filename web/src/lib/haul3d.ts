@@ -205,6 +205,7 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 		const faces = [side, spine, face.mat, bottom, side, side];
 		const booklets = p.kind === 'booklet' && cards <= MAX_BOOKLETS;
 		const geo = booklets ? bookletGeometry(p.w, h / cards, p.d) : new THREE.BoxGeometry(p.w, h, p.d);
+		if (p.artPart && !booklets) topShows(geo, p.artPart.from, p.artPart.to);
 		if (booklets) side.map!.repeat.set(1, Math.max(2, h / cards / 0.012) / 64); // page edges per booklet
 		let pile: THREE.Mesh;
 		if (booklets) {
@@ -249,7 +250,7 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 		});
 
 		if (!p.art) return doneOne();
-		getArt(p.art, p.w / p.d, (tex) => {
+		getArt(p.art, p.artPart?.aspect ?? p.w / p.d, (tex) => {
 			if (gen !== generation) return;
 			if (tex) {
 				face.mat.map = tex;
@@ -441,4 +442,11 @@ function bookletGeometry(w: number, t: number, d: number): THREE.BufferGeometry 
 	}
 	geo.computeVertexNormals();
 	return geo;
+}
+
+/** Shows only the slice from…to (u, left to right) of the art on a box's top face, e.g. a folded brochure's cover. */
+function topShows(geo: THREE.BufferGeometry, from: number, to: number) {
+	const normal = geo.attributes.normal;
+	const uv = geo.attributes.uv;
+	for (let i = 0; i < uv.count; i++) if (normal.getY(i) > 0.5) uv.setX(i, from + uv.getX(i) * (to - from));
 }

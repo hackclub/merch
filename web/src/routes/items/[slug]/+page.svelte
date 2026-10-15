@@ -8,6 +8,7 @@
 	import { isBooklet, itemIdFromParam, itemPath, previewCount, productPreview, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
 	import { sheetThickness, finishInfo } from '$lib/paper';
 	import { programFor } from '$lib/programs';
+	import { sizeLabel } from '$lib/scale';
 	import Product3D from '$lib/Product3D.svelte';
 	import { session } from '$lib/session.svelte';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
@@ -44,6 +45,7 @@
 	const preview = $derived(item ? productPreview(item, catalog?.includes ?? []) : null);
 	const has3D = $derived(!!preview);
 	const book = $derived(preview && 'book' in preview ? preview.book : undefined);
+	const fold = $derived(preview && 'fold' in preview ? preview.fold : undefined);
 	const shown = $derived(picked ?? (has3D ? '3d' : 0));
 	const tiles = $derived(item ? item.images.length + (has3D ? 1 : 0) : 0);
 	const pickedSizes = $derived(item ? sizesSummary(item, bag.sizes) : '');
@@ -98,7 +100,7 @@
 					<div class="thumbs">
 						{#if has3D}
 							<button type="button" class="thumb three-thumb" class:active={shown === '3d'}
-								aria-label={booklet ? 'Flip through it in 3D' : 'Show it in 3D, to scale'} onclick={() => (picked = '3d')}>
+								aria-label={booklet ? 'Flip through it in 3D' : fold ? 'Unfold it in 3D' : 'Show it in 3D, to scale'} onclick={() => (picked = '3d')}>
 								<img src={thumbnail(item)} alt="" loading="lazy" />
 								<span>3D</span>
 							</button>
@@ -131,6 +133,12 @@
 					<li>
 						{item.pages.length} pages, {item.binding === 'staple' ? 'stapled' : 'with a square spine'}, about
 						{(book.thicknessIn * 25.4).toFixed(0)} mm thick{finish ? `; ${finish.toLowerCase()} cover` : ''}
+					</li>
+				{:else if fold}
+					<li>
+						A trifold brochure, {sizeLabel(fold.widthIn / 3, fold.heightIn)} folded and {sizeLabel(fold.widthIn, fold.heightIn)} open{finish
+							? `; printed on ${finish.toLowerCase()}`
+							: ''}
 					</li>
 				{:else if finish}
 					<li>Printed on {finish.toLowerCase()}, about {(sheetThickness(item) * 25.4).toFixed(1)} mm thick</li>

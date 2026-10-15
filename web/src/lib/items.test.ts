@@ -118,6 +118,19 @@ describe('tilePreview', () => {
 		expect(tilePreview({ ...mag, thickness_in: 0.1 })).toMatchObject({ book: { thicknessIn: 0.1 } });
 	});
 
+	it('folds a trifold brochure: its outside and inside art on one sheet, folded in thirds', () => {
+		const brochure = { ...poster, binding: 'trifold', width_in: 11, height_in: 8.5, thickness_in: 0.005 };
+		expect(tilePreview(brochure)).toEqual({
+			fold: {
+				outside: 'https://cdn.example/front.jpg', inside: 'https://cdn.example/back.jpg',
+				widthIn: 11, heightIn: 8.5, thicknessIn: 0.005, finish: 'matte', phone: false
+			}
+		});
+		expect(productPreview(brochure)).toMatchObject({ fold: { phone: true } });
+		// Without its inside art, it's just a sheet.
+		expect(tilePreview({ ...brochure, images: ['https://cdn.example/front.jpg'] })).toMatchObject({ sheet: {} });
+	});
+
 	it('plays the clip when there is one', () => {
 		expect(tilePreview({ ...poster, clip: 'https://cdn.example/flip.mp4' })).toEqual({ clip: 'https://cdn.example/flip.mp4' });
 	});
