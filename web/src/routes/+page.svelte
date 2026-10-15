@@ -412,7 +412,9 @@
 	/* The rest of a grid section (the other stickers) under its lead row: a compact grid of picture, name, add. */
 	.cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr)); gap: 1rem 0.6rem; padding-top: 0.75rem; }
 	.cell { display: grid; gap: 0.35rem; align-content: start; font-size: 0.9rem; line-height: 1.3; }
-	.cell .thumb { width: 100%; height: auto; aspect-ratio: 1; }
+	.cell .thumb { width: 100%; height: auto; aspect-ratio: 1; position: relative; }
+	/* Out of flow, so a tall sticker fits the square instead of stretching it. */
+	.cell .thumb img { position: absolute; inset: 7.5%; }
 	.cell.picked .thumb { box-shadow: inset 0 0 0 2px var(--red); }
 	.cell .name { font-weight: 700; text-decoration: none; }
 	.cell .name:hover { text-decoration: underline; }
