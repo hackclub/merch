@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrivalText, dateRange, ozText, spanText, summaryText, type ShippingEstimate } from './shipping';
+import { arrivalText, costRows, dateRange, ozText, spanText, summaryText, type Costs, type ShippingEstimate } from './shipping';
 
 const est = (over: Partial<ShippingEstimate>): ShippingEstimate => ({
 	package: 'Mailer',
@@ -51,5 +51,25 @@ describe('shipping', () => {
 	it('shows weights', () => {
 		expect(ozText(3.25)).toBe('3.3 oz');
 		expect(ozText(45.2)).toBe('2.8 lb');
+	});
+});
+
+describe('costRows', () => {
+	const c = (over: Partial<Costs>): Costs => ({
+		items_cents: 945, labor_cents: 260, packing_cents: 50, postage_cents: 512, total_cents: 1767, unpriced_skus: [], ...over
+	});
+	it('lines up the US and abroad, labor and packing together', () => {
+		expect(costRows({ us: c({}), international: c({ postage_cents: 1400, total_cents: 2655 }) })).toEqual([
+			['Items', '$9.45', '$9.45'],
+			['Labor + packing', '$3.10', '$3.10'],
+			['Postage (estimated)', '$5.12', '$14.00'],
+			['Total', '$17.67', '$26.55']
+		]);
+	});
+	it('marks what it has no figure for', () => {
+		const rows = costRows({ us: c({ postage_cents: 0, unpriced_skus: ['Sti/New/1st'] }), international: null });
+		expect(rows[0]).toEqual(['Items', '$9.45 + 1 unpriced', '—']);
+		expect(rows[2]).toEqual(['Postage (estimated)', 'no history', '—']);
+		expect(rows[3]).toEqual(['Total', '$17.67+', 'over 3 lb']);
 	});
 });

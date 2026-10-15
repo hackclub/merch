@@ -1,6 +1,8 @@
 // Shipping estimates from the server (internal/swag/estimate.go): when a
 // package should arrive, read off how similar packages went before.
 
+import { formatCents } from './api';
+
 export type ShippingEstimate = {
 	package: string;
 	weight_oz: number; // packed
@@ -65,3 +67,31 @@ export function summaryText(s: ShippingSummary | null): string {
 }
 
 export const ozText = (oz: number) => (oz >= 16 ? `${(oz / 16).toFixed(1)} lb` : `${oz.toFixed(1)} oz`);
+
+// What a request costs Hack Club to send (internal/swag/costs.go); admins only.
+export type Costs = {
+	items_cents: number; // at the warehouse's unit costs, leaving out unpriced_skus
+	labor_cents: number; // AGH: $1.80 an order + $0.20 a SKU
+	packing_cents: number;
+	postage_cents: number; // typical postage; 0 without history
+	total_cents: number;
+	unpriced_skus: string[];
+};
+// null when it can't ship that way (over 3 lb abroad).
+export type CostSides = { us: Costs | null; international: Costs | null };
+
+// The cost table's rows: [label, US, abroad].
+export function costRows(c: CostSides): [string, string, string][] {
+	const side = (x: Costs | null, f: (x: Costs) => string) => (x ? f(x) : '—');
+	const items = (x: Costs) => formatCents(x.items_cents) + (x.unpriced_skus.length ? ` + ${x.unpriced_skus.length} unpriced` : '');
+	const postage = (x: Costs) => (x.postage_cents ? formatCents(x.postage_cents) : 'no history');
+	// A total missing an item's cost or the postage is a floor.
+	const total = (x: Costs) => formatCents(x.total_cents) + (x.unpriced_skus.length || !x.postage_cents ? '+' : '');
+	const row = (label: string, f: (x: Costs) => string): [string, string, string] => [label, side(c.us, f), side(c.international, f)];
+	return [
+		row('Items', items),
+		row('Labor + packing', (x) => formatCents(x.labor_cents + x.packing_cents)),
+		row('Postage (estimated)', postage),
+		['Total', side(c.us, total), c.international ? total(c.international) : 'over 3 lb']
+	];
+}

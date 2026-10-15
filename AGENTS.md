@@ -304,6 +304,11 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   it (same country, about the same contents weight), rounded up to a whole dollar
   (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback
   when there's no postage history; 0 still makes international shipping free.
+- **Cost to Hack Club** (`internal/swag/costs.go`, admins only, under Submit on the request form):
+  items at the warehouse's unit costs (mail.hackclub.com `unit_cost`, ships-with SKUs included),
+  AGH labor ($1.80 an order + $0.20 for each different SKU, from its invoices; the warehouse's
+  `agh_fulfillment_zenventory.invoices`), the package's `CostCents`, and the typical postage, for
+  the US and abroad. Out-of-stock SKUs have no unit cost and show as unpriced.
 - **History** (`shipping_history`, no names or addresses) comes from the Hack Club data warehouse:
   - `scripts/shipping-history/zenventory.sql`: AGH shipments, for postage and Asendia tracking.
   - `theseus-orders.sql`: orders placed through mail.hackclub.com, for handling time.

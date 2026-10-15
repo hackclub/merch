@@ -33,6 +33,9 @@ type Package struct {
 	DepthIn  float64 `json:"depth_in"` // how thick the contents can be
 	MaxOz    float64 `json:"max_oz"`   // heaviest it can be, packed
 	TareOz   float64 `json:"tare_oz"`  // the packaging itself
+	// CostCents is what one costs Hack Club: AGH's invoice rate, or Uline's
+	// price for what we stock there ourselves.
+	CostCents int `json:"cost_cents"`
 	// Piles reports whether contents can sit side by side. A StayFlat is one
 	// stack, poster on the bottom.
 	Piles bool `json:"-"`
@@ -45,33 +48,36 @@ type Package struct {
 // 0.44 lb for 376 sq in of board, about 0.0187 oz per sq in.
 func cartonOz(l, w, h float64) float64 { return 0.0187 * 2 * (l*w + l*h + w*h) }
 
-func carton(l, w, h float64) Package {
+func carton(l, w, h float64, cents int) Package {
 	return Package{Name: fmt.Sprintf("%gx%gx%g box", l, w, h), Class: ClassParcel, WidthIn: l, HeightIn: w, DepthIn: h,
-		MaxOz: 800, TareOz: math.Round(cartonOz(l, w, h)*10) / 10, Piles: true}
+		MaxOz: 800, TareOz: math.Round(cartonOz(l, w, h)*10) / 10, CostCents: cents, Piles: true}
 }
 
 // Packages are what AGH, our warehouse, packs requests in, in the order a
 // request tries them; it ships in the first one everything fits in. They come
 // from AGH's invoices (bubble mailers, the 6x4x2 box mailers and the cartons
 // they bill) and the Uline Black Self-Seal Stayflats we stock there (sizes are
-// Uline's usable sizes; weights are a case's weight over 100).
+// Uline's usable sizes; weights are a case's weight over 100). Costs are AGH's
+// invoice rates (2024-2026), what we paid for the 6x4x2 box mailers (1,000 for
+// $708.76 in 2025), and Uline's carton price over 100 for the StayFlats
+// (2026-10-15). AGH doesn't bill for envelopes.
 var Packages = []Package{
 	// #6x9 envelope: First Class letter mail, max 1/4" thick and 3.5 oz.
 	{Name: "Envelope", Class: ClassLetter, WidthIn: 5.75, HeightIn: 8.75, DepthIn: 0.25, MaxOz: 3.5, TareOz: 0.3, Piles: true},
 	// Uline S-11837 (#5, 9 3/4 x 12 1/4), S-11838 (#3, 11 x 13 1/2) and
 	// S-11839 (#6, 13 x 18): rigid, for contents up to 1/4" thick.
-	{Name: "9x12 StayFlat", Class: ClassParcel, WidthIn: 9.25, HeightIn: 12, DepthIn: 0.25, MaxOz: 48, TareOz: 3.5, KeepsFlat: true},
-	{Name: "11x13 StayFlat", Class: ClassParcel, WidthIn: 10.5, HeightIn: 13.25, DepthIn: 0.25, MaxOz: 48, TareOz: 4.3, KeepsFlat: true},
-	{Name: "13x18 StayFlat", Class: ClassParcel, WidthIn: 12.5, HeightIn: 17.75, DepthIn: 0.25, MaxOz: 64, TareOz: 6.7, KeepsFlat: true},
+	{Name: "9x12 StayFlat", Class: ClassParcel, WidthIn: 9.25, HeightIn: 12, DepthIn: 0.25, MaxOz: 48, TareOz: 3.5, CostCents: 95, KeepsFlat: true},
+	{Name: "11x13 StayFlat", Class: ClassParcel, WidthIn: 10.5, HeightIn: 13.25, DepthIn: 0.25, MaxOz: 48, TareOz: 4.3, CostCents: 106, KeepsFlat: true},
+	{Name: "13x18 StayFlat", Class: ClassParcel, WidthIn: 12.5, HeightIn: 17.75, DepthIn: 0.25, MaxOz: 64, TareOz: 6.7, CostCents: 148, KeepsFlat: true},
 	// AGH's invoices don't give the bubble mailers' size; this is a standard #4.
-	{Name: "Bubble mailer", Class: ClassParcel, WidthIn: 9, HeightIn: 13.5, DepthIn: 1.5, MaxOz: 64, TareOz: 1, Piles: true},
-	{Name: "6x4x2 box mailer", Class: ClassParcel, WidthIn: 6, HeightIn: 4, DepthIn: 2, MaxOz: 160, TareOz: 2, Piles: true},
-	carton(8, 6, 6),
-	carton(10, 8, 6),
-	carton(13, 10, 4),
-	carton(14, 10, 6),
-	carton(18, 12, 6),
-	carton(18, 14, 10),
+	{Name: "Bubble mailer", Class: ClassParcel, WidthIn: 9, HeightIn: 13.5, DepthIn: 1.5, MaxOz: 64, TareOz: 1, CostCents: 50, Piles: true},
+	{Name: "6x4x2 box mailer", Class: ClassParcel, WidthIn: 6, HeightIn: 4, DepthIn: 2, MaxOz: 160, TareOz: 2, CostCents: 71, Piles: true},
+	carton(8, 6, 6, 60),
+	carton(10, 8, 6, 70),
+	carton(13, 10, 4, 80),
+	carton(14, 10, 6, 100),
+	carton(18, 12, 6, 125),
+	carton(18, 14, 10, 200),
 }
 
 var (

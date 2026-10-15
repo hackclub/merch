@@ -14,7 +14,7 @@
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
-	import { arrivalText, summaryText, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
+	import { arrivalText, costRows, summaryText, type CostSides, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Haul3D from '$lib/Haul3D.svelte';
 	import QuantityPicker from '$lib/QuantityPicker.svelte';
@@ -35,7 +35,8 @@
 	let submitting = $state(false);
 	// Delivery times from past shipments, and this request's packing and arrival estimate.
 	let summary = $state<ShippingSummary | null>(null);
-	let quote = $state<{ estimate: ShippingEstimate; packing: Packing } | null>(null);
+	// Admins also get `costs`: what it costs Hack Club to send, in the US and abroad.
+	let quote = $state<{ estimate: ShippingEstimate; packing: Packing; costs?: CostSides } | null>(null);
 	let quoteError = $state('');
 
 	onMount(async () => {
@@ -357,6 +358,14 @@
 				<button disabled={submitting || problems.length > 0 || !!quoteError || !understood}>
 					{submitting ? 'Sending…' : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
 				</button>
+				{#if quote?.costs}
+					<table class="costs">
+						<thead><tr><th>Cost to Hack Club</th><th>US</th><th>{intl ? address.country.trim().toUpperCase() : 'Global'}</th></tr></thead>
+						<tbody>
+							{#each costRows(quote.costs) as [label, us, abroad]}<tr><td>{label}</td><td>{us}</td><td>{abroad}</td></tr>{/each}
+						</tbody>
+					</table>
+				{/if}
 			</form>
 		{/if}
 	{:else if !error}
@@ -501,4 +510,8 @@
 	.understand { display: grid; gap: 0.6rem; padding: 1rem 1.25rem; background: var(--tile); }
 	.understand p { margin: 0; }
 	.understand .choice { background: white; }
+	/* Admins only: the plain sheet's one font, no mono labels. */
+	.costs th { font: inherit; text-transform: none; letter-spacing: 0; color: var(--dark); }
+	.costs :is(th, td):not(:first-child) { text-align: right; white-space: nowrap; }
+	.costs tr:last-child td { font-weight: 700; }
 </style>

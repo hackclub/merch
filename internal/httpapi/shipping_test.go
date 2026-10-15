@@ -139,3 +139,32 @@ func TestInternationalFeeIsEstimatedPostage(t *testing.T) {
 		t.Fatalf("create = %d %+v", code, r)
 	}
 }
+
+func TestShippingEstimateCostsForAdmins(t *testing.T) {
+	h := newHarness(t)
+	_, _, magazine := shippingFixture(t, h)
+	sticker, err := h.store.CreateItem(context.Background(), swag.Item{SKU: "Sti/A", Name: "Sticker A", Packs: "sticker", Visible: true, MaxPerRequest: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{"country": "US", "lines": []swag.Line{{ItemID: magazine.ID, Quantity: 1}, {ItemID: sticker.ID, Quantity: 2}}}
+	var out struct {
+		Costs *struct{ US, International *swag.Costs }
+	}
+	if code := h.do(h.client(userEmail), "POST", "/api/shipping/estimate", body, &out); code != 200 || out.Costs != nil {
+		t.Fatalf("requesters don't see costs: %d %+v", code, out.Costs)
+	}
+	if code := h.do(h.client(adminEmail), "POST", "/api/shipping/estimate", body, &out); code != 200 || out.Costs == nil {
+		t.Fatalf("admin = %d %+v", code, out.Costs)
+	}
+	us, intl := out.Costs.US, out.Costs.International
+	// Stickers at $0.25 from the warehouse; it has no cost for the magazine.
+	// AGH: $1.80 + $0.20 for each of the 2 SKUs, and a bubble mailer.
+	if us.ItemsCents != 50 || len(us.UnpricedSKUs) != 1 || us.LaborCents != 220 || us.PackingCents != 50 {
+		t.Fatalf("us = %+v", us)
+	}
+	// Postage comes from history: none in the US, $9 parcels abroad.
+	if us.PostageCents != 0 || intl.PostageCents != 900 || intl.TotalCents != 50+220+50+900 {
+		t.Fatalf("us = %+v, intl = %+v", us, intl)
+	}
+}

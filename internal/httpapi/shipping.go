@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -116,7 +117,59 @@ func (s *server) shippingEstimate(w http.ResponseWriter, r *http.Request) {
 		s.serverErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"estimate": forViewer(e, s.isAdmin(r)), "packing": p})
+	out := map[string]any{"estimate": forViewer(e, s.isAdmin(r)), "packing": p}
+	if s.isAdmin(r) {
+		if out["costs"], err = s.costs(r.Context(), st, country, lines, cat); err != nil {
+			s.serverErr(w, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// costs is what lines cost Hack Club to send in the US and abroad (to country
+// if it's abroad, else anywhere abroad), for admins. A side that can't ship
+// as one package (over 3 lb abroad) is nil.
+func (s *server) costs(ctx context.Context, st swag.Settings, country string, lines []swag.Line, cat map[int64]swag.Item) (map[string]*swag.Costs, error) {
+	var shipped []swag.Shipped
+	shipsWith := map[int64][]string{}
+	for _, l := range lines {
+		sku := l.SKU
+		if sku == "" {
+			sku = cat[l.ItemID].SKU
+		}
+		shipped = append(shipped, swag.Shipped{ItemID: l.ItemID, SKU: sku, Quantity: l.Quantity})
+		shipsWith[l.ItemID] = cat[l.ItemID].ShipsWith
+	}
+	contents := swag.Shipment(shipped, shipsWith)
+	// Without the warehouse, every SKU just shows as unpriced.
+	unit := map[string]float64{}
+	if skus, err := s.cachedSKUs(ctx); err != nil {
+		s.Log.Error("warehouse sku lookup failed", "err", err)
+	} else {
+		for _, k := range skus {
+			if c, err := strconv.ParseFloat(k.UnitCost, 64); err == nil {
+				unit[k.SKU] = c
+			}
+		}
+	}
+	abroad := country
+	if !swag.IsInternational(abroad) {
+		abroad = ""
+	}
+	out := map[string]*swag.Costs{}
+	for key, to := range map[string]string{"us": "US", "international": abroad} {
+		p, e, err := s.quote(ctx, st, to, lines, cat)
+		if errors.Is(err, swag.ErrWontPack) || errors.Is(err, swag.ErrTooHeavy) {
+			out[key] = nil
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+		c := swag.CostToShip(contents, unit, p, e)
+		out[key] = &c
+	}
+	return out, nil
 }
 
 // shippingSummary is the typical delivery time in the US and abroad, and the
