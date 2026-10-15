@@ -255,6 +255,15 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   default; pass `--write` first to change data (`scripts/prod-psql --write -c "update …"`). Wrap
   writes in `begin; … commit;`, match rows by id *and* name (ids differ from dev), and never
   print the URL. If the password is rotated, rebuild the URL from `get_database`.
+- **Backups:** Orchard takes a base backup of `merch-db` daily at 03:00 UTC and archives WAL
+  continuously to R2, so it can restore to any point since the first backup (2026-10-15 03:00
+  UTC). Check with `get_database` (`liveStatus.archiving`, `lastSuccessfulBackup`). Orchard can
+  only restore *over* the live database, and deleting the project deletes its backups. So
+  porygon also runs `scripts/prod-backup` nightly at 04:30 local (launchd
+  `com.hackclub.merch.prod-backup`, from the main worktree): it `pg_dump`s production to
+  `~/backups/merch` (30 days kept), test-restores the dump into a scratch DB on the dev
+  container, and logs to `~/backups/merch/backup.log`. To restore: `createdb` a scratch DB,
+  `pg_restore --no-owner` the dump into it, and check it before you touch production.
 - Required env: `DATABASE_URL`, `BASE_URL` (public https origin), `SESSION_SECRET`,
   `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, `THESEUS_API_KEY`, `ADMIN_EMAILS`. Also needed:
   `AIRTABLE_API_KEY` for authors, `HCB_SHIPPING_PAYMENT_URL` for international payments,

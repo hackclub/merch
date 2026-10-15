@@ -1,0 +1,36 @@
+#!/bin/sh
+# Off-Orchard backup of the PRODUCTION database. Orchard keeps its own nightly base
+# backups plus WAL in R2, but those go away with the project; this keeps a second copy.
+# Dumps PROD_DATABASE_URL (read-only) to $MERCH_BACKUP_DIR (default ~/backups/merch),
+# test-restores it into a scratch database on the dev Postgres container, and deletes
+# dumps older than $MERCH_BACKUP_DAYS (default 30). Dumps hold personal data: they
+# stay outside the repo, mode 600. Never echo the URL; it holds the password.
+set -eu
+dir=${MERCH_BACKUP_DIR:-$HOME/backups/merch}
+days=${MERCH_BACKUP_DAYS:-30}
+env_file=$(dirname "$0")/env-file
+url=$(sed -n 's/^PROD_DATABASE_URL=//p' "$("$env_file")" | tail -1)
+if [ -z "$url" ]; then
+	echo "PROD_DATABASE_URL is not set in $("$env_file")" >&2
+	exit 1
+fi
+umask 077
+mkdir -p "$dir"
+f=$dir/merch-prod-$(date -u +%Y%m%dT%H%MZ).dump
+PGOPTIONS='-c default_transaction_read_only=on' pg_dump "$url" -Fc -Z 6 --no-owner --no-privileges -f "$f.tmp"
+mv "$f.tmp" "$f"
+
+# Restore test: the dump must load and hold the same request count as production.
+scratch=merch_backup_check_$$
+docker exec merch-postgres-1 createdb -U mailroom "$scratch"
+trap 'docker exec merch-postgres-1 dropdb -U mailroom --if-exists "$scratch"' EXIT
+docker exec -i merch-postgres-1 pg_restore -U mailroom -d "$scratch" --no-owner --no-privileges --exit-on-error <"$f"
+want=$(PGOPTIONS='-c default_transaction_read_only=on' psql "$url" -At -c 'select count(*) from swag_requests')
+got=$(docker exec merch-postgres-1 psql -U mailroom -d "$scratch" -At -c 'select count(*) from swag_requests')
+if [ "$want" != "$got" ]; then
+	echo "restore check failed: production has $want requests, restored dump has $got" >&2
+	exit 1
+fi
+
+find "$dir" -name 'merch-prod-*.dump' -mtime +"$days" -delete
+echo "$(date -u +%FT%TZ) ok $f ($(wc -c <"$f" | tr -d ' ') bytes, $got requests)"
