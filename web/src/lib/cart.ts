@@ -160,3 +160,23 @@ export function pruneSizes(sizes: Sizes, items: Item[]): Sizes {
 /** Amounts typed on the admin Items tab ("1, 3, 5, 10"): positive whole numbers, ascending, no repeats. */
 export const parseQuickPicks = (text: string): number[] =>
 	[...new Set(text.split(/[\s,]+/).map(Number).filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b);
+
+/** Whether q is a pack size for the kind of pack. Mirrors swag.PackQuantity. */
+function packQuantity(packs: string, q: number): boolean {
+	if (packs === 'fives') return q > 0 && q % 5 === 0;
+	return (PACKS[packs] ?? []).includes(q) || (q > 0 && q % 50 === 0);
+}
+
+const PACK_RULES: Record<string, string> = {
+	fives: 'These come in multiples of 5.',
+	postcard: 'Postcards come in 5, 10, 15, 20 or 25, then multiples of 50.',
+	sticker: 'Stickers come in 3 or 10, then packs of 50.'
+};
+
+/** What's wrong with a typed amount of an item, or '' if it can be requested (the server checks again). */
+export function quantityProblem(item: Item, q: number): string {
+	if (q > item.max_per_request) return `At most ${item.max_per_request} per request.`;
+	if (q < item.min_per_request) return `At least ${item.min_per_request} per request.`;
+	if (item.packs && !packQuantity(item.packs, q)) return PACK_RULES[item.packs] ?? 'That amount isn’t a pack size.';
+	return '';
+}

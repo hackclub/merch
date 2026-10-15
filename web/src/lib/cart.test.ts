@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cartErrors, cartLines, emptyCart, packQuantities, parseCart, parseQuickPicks, presetQuantities, parseSizes, pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from './cart';
+import { cartErrors, cartLines, emptyCart, packQuantities, parseCart, parseQuickPicks, presetQuantities, quantityProblem, parseSizes, pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from './cart';
 import type { Item } from './types';
 
 const items: Item[] = [
@@ -207,5 +207,24 @@ describe('parseQuickPicks', () => {
 		expect(parseQuickPicks('1, 3,5 10')).toEqual([1, 3, 5, 10]);
 		expect(parseQuickPicks('10, 3, 3, x, 0')).toEqual([3, 10]);
 		expect(parseQuickPicks('')).toEqual([]);
+	});
+});
+
+describe('quantityProblem', () => {
+	it('accepts any amount the pack rules allow, typed by hand', () => {
+		for (const q of [5, 10, 15, 25, 50, 150]) expect(quantityProblem(postcard, q)).toBe('');
+		for (const q of [3, 10, 50, 100]) expect(quantityProblem(sticker, q)).toBe('');
+		for (const q of [5, 20, 25]) expect(quantityProblem(miniMag, q)).toBe('');
+		expect(quantityProblem(items[0], 2)).toBe('');
+	});
+
+	it('says what the rule is when an amount breaks it', () => {
+		expect(quantityProblem(postcard, 7)).toBe('Postcards come in 5, 10, 15, 20 or 25, then multiples of 50.');
+		expect(quantityProblem(postcard, 30)).toBe('Postcards come in 5, 10, 15, 20 or 25, then multiples of 50.');
+		expect(quantityProblem(sticker, 20)).toBe('Stickers come in 3 or 10, then packs of 50.');
+		expect(quantityProblem(miniMag, 12)).toBe('These come in multiples of 5.');
+		expect(quantityProblem(postcard, 200)).toBe('At most 150 per request.');
+		expect(quantityProblem(items[0], 4)).toBe('At most 3 per request.');
+		expect(quantityProblem({ ...items[0], min_per_request: 2 }, 1)).toBe('At least 2 per request.');
 	});
 });
