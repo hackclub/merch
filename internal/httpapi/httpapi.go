@@ -741,6 +741,8 @@ func validItem(it swag.Item) string {
 		return "sku and name are required"
 	case it.MaxPerRequest < 1:
 		return "max_per_request must be at least 1"
+	case it.MinPerRequest > it.MaxPerRequest:
+		return "min_per_request can't be more than max_per_request"
 	case it.MaxPerUser != nil && *it.MaxPerUser < 0:
 		return "max_per_user can't be negative"
 	case (it.WidthIn == nil) != (it.HeightIn == nil):

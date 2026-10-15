@@ -28,7 +28,9 @@ export function presetQuantities(item: Item): number[] {
 	// Postcards: the amounts people actually ask for (all of them valid pack sizes).
 	if (item.packs === 'postcard') return [5, 10, 25, 50, 100].filter((q) => q <= item.max_per_request);
 	if (item.packs) return packQuantities(item.packs, item.max_per_request).slice(0, 6);
-	return [1, 2, 3, 5, 10, 25, 50, 100].filter((q) => q <= item.max_per_request);
+	const min = item.min_per_request;
+	const round = [1, 2, 3, 5, 10, 15, 20, 25, 50, 100].filter((q) => q > min && q <= item.max_per_request);
+	return [min, ...round].filter((q) => q <= item.max_per_request).slice(0, 6);
 }
 
 /** Snaps a pack quantity to the largest allowed size not above it; below the smallest pack rounds up to it. */
@@ -40,7 +42,9 @@ function snapPack(item: Item, q: number): number {
 
 export function setQuantity(cart: Cart, item: Item, qty: number): Cart {
 	const next = { ...cart };
-	const n = Math.max(Math.floor(qty) || 0, 0);
+	let n = Math.max(Math.floor(qty) || 0, 0);
+	// Below the item's minimum: adding goes up to it, stepping down from it takes the item out.
+	if (n > 0 && n < item.min_per_request) n = (cart[item.id] ?? 0) > n ? 0 : item.min_per_request;
 	const q = item.packs ? snapPack(item, n) : Math.min(n, item.max_per_request);
 	if (q === 0) delete next[item.id];
 	else next[item.id] = q;

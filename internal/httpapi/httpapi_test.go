@@ -1126,6 +1126,36 @@ func TestItemClipIsAnHTTPURL(t *testing.T) {
 	}
 }
 
+func TestItemMinimum(t *testing.T) {
+	h := newHarness(t)
+	admin := h.client(adminEmail)
+	it := h.mkItem("Pri/HPd/11x/1st", true)
+	path := fmt.Sprintf("/api/admin/items/%d", it.ID)
+	it.MinPerRequest, it.MaxPerRequest = 3, 2
+	if code := h.do(admin, "PUT", path, it, nil); code != 422 {
+		t.Errorf("min above max = %d, want 422", code)
+	}
+	it.MinPerRequest = 0
+	var upd swag.Item
+	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || upd.MinPerRequest != 1 {
+		t.Fatalf("no minimum = %d, min %d, want 1", code, upd.MinPerRequest)
+	}
+	it.MinPerRequest, it.MaxPerRequest = 2, 20
+	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || upd.MinPerRequest != 2 || upd.MaxPerRequest != 20 {
+		t.Fatalf("2 to 20 = %d %+v", code, upd)
+	}
+	var cat struct{ Items []swag.Item }
+	h.do(h.client(userEmail), "GET", "/api/catalog", nil, &cat)
+	if len(cat.Items) != 1 || cat.Items[0].MinPerRequest != 2 {
+		t.Fatalf("catalog = %+v", cat.Items)
+	}
+	var errBody map[string]string
+	one := map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}
+	if code := h.do(h.client(userEmail), "POST", "/api/requests", one, &errBody); code != 422 || !strings.Contains(errBody["error"], "at least 2") {
+		t.Fatalf("one poster = %d %v", code, errBody)
+	}
+}
+
 func TestAdminUploadsItemPages(t *testing.T) {
 	h := newHarness(t)
 	it := h.mkItem("Pri/Bok/Mini25/1st", true)

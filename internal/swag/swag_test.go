@@ -3,6 +3,7 @@ package swag
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -324,5 +325,32 @@ func TestValidateSeveralSizes(t *testing.T) {
 	}
 	if err := Validate(in(2, s("S", 1), s("M", 1))); !errors.Is(err, ErrItemLimit) {
 		t.Fatalf("over the per-person max across sizes: err = %v, want ErrItemLimit", err)
+	}
+}
+
+func TestValidateMinimum(t *testing.T) {
+	cat := catalog()
+	poster := cat[1]
+	poster.MinPerRequest, poster.MaxPerRequest = 2, 20
+	cat[1] = poster
+	shirt := cat[4]
+	shirt.MinPerRequest, shirt.MaxPerRequest = 2, 5
+	cat[4] = shirt
+	in := func(lines ...Line) ValidateInput {
+		return ValidateInput{Settings: settings(), Catalog: cat, Purpose: PurposeClub, Reason: "For our club.", Lines: lines, Now: now}
+	}
+	err := Validate(in(Line{ItemID: 1, Quantity: 1}))
+	if !errors.Is(err, ErrBadQuantity) || !strings.Contains(err.Error(), "at least 2") {
+		t.Fatalf("below the minimum: err = %v", err)
+	}
+	if err := Validate(in(Line{ItemID: 1, Quantity: 2})); err != nil {
+		t.Fatalf("at the minimum: %v", err)
+	}
+	// Sizes count together toward the minimum, as they do toward the maximum.
+	if err := Validate(in(Line{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/S"}, Line{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"})); err != nil {
+		t.Fatalf("one of each size: %v", err)
+	}
+	if err := Validate(in(Line{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/S"})); !errors.Is(err, ErrBadQuantity) {
+		t.Fatalf("one shirt with a minimum of 2: err = %v", err)
 	}
 }

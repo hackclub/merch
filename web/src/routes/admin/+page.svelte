@@ -268,6 +268,7 @@
 							</details>
 						</td>
 						<td>
+							<label>Min per request <input type="number" min="1" bind:value={it.min_per_request} /></label>
 							<label>Per request <input type="number" min="1" bind:value={it.max_per_request} /></label>
 							<label>Packs
 								<select bind:value={it.packs}>

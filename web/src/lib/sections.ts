@@ -71,6 +71,7 @@ export function tileFact(item: Item): string {
 	else if (item.width_in && item.height_in && item.packs !== 'sticker') facts.push(`${item.width_in}×${item.height_in} in`);
 	if (item.packs === 'sticker') facts.push('3, 10 or packs of 50');
 	else if (item.packs) facts.push('in fives');
+	if (item.min_per_request > 1) facts.push(`at least ${item.min_per_request}`);
 	if (item.max_per_user != null) facts.push(`limit ${item.max_per_user}`);
 	return facts.join(' · ');
 }

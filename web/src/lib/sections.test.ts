@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { sectionize, tileFact } from './sections';
 import type { Item } from './types';
 
-const base: Item = { id: 0, sku: '', name: '', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: '' };
+const base: Item = { id: 0, sku: '', name: '', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, min_per_request: 1, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: '' };
 const item = (id: number, sku: string, sort_order = id): Item => ({ ...base, id, sku, name: sku, sort_order });
 
 const mag = item(1, 'Pri/Bok/M25/1st');
@@ -56,6 +56,7 @@ describe('tileFact', () => {
 		expect(tileFact({ ...mini, packs: 'fives', binding: 'staple', pages: Array(12).fill('p') })).toBe('Free · 12 pages · in fives');
 		expect(tileFact({ ...postcard, packs: 'postcard', width_in: 6, height_in: 4 })).toBe('Free · 6×4 in · in fives');
 		expect(tileFact({ ...poster, width_in: 11, height_in: 17 })).toBe('Free · 11×17 in');
+		expect(tileFact({ ...poster, width_in: 11, height_in: 17, min_per_request: 2 })).toBe('Free · 11×17 in · at least 2');
 		expect(tileFact(mystery)).toBe('Free');
 	});
 });

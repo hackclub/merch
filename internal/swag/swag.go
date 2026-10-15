@@ -55,7 +55,8 @@ type Item struct {
 	Visible       bool     `json:"visible"`
 	SortOrder     int      `json:"sort_order"`
 	MaxPerRequest int      `json:"max_per_request"`
-	MaxPerUser    *int     `json:"max_per_user"` // lifetime cap; nil = unlimited
+	MinPerRequest int      `json:"min_per_request"` // fewest per request (all sizes together); 1 for most things
+	MaxPerUser    *int     `json:"max_per_user"`    // lifetime cap; nil = unlimited
 	// Physical size in inches, for printed items; both nil when it doesn't apply.
 	WidthIn  *float64 `json:"width_in"`
 	HeightIn *float64 `json:"height_in"`
@@ -239,6 +240,11 @@ func Validate(in ValidateInput) error {
 			total++
 		} else {
 			total += l.Quantity
+		}
+	}
+	for id, q := range perItem {
+		if item := in.Catalog[id]; q < item.MinPerRequest {
+			return fmt.Errorf("%w: at least %d %s per request", ErrBadQuantity, item.MinPerRequest, item.Name)
 		}
 	}
 	if in.Settings.MaxItemsPerRequest > 0 && total > in.Settings.MaxItemsPerRequest {
