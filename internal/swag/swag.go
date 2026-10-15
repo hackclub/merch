@@ -64,6 +64,9 @@ type Item struct {
 	// How it was printed: paper finish (see Finishes) and thickness in inches.
 	Finish      string   `json:"finish"`
 	ThicknessIn *float64 `json:"thickness_in"`
+	// WeightOz is one unit's shipping weight in ounces; nil = worked out from
+	// its paper size, if it has one (see Pack).
+	WeightOz *float64 `json:"weight_oz"`
 	// Real-world photos people have posted of it.
 	Photos []Photo `json:"photos"`
 	// Packs names how the item is packed (see Packs; "" = any quantity).
@@ -166,6 +169,9 @@ type ValidateInput struct {
 	// note); personal requests don't need one.
 	Reason string
 	Lines  []Line
+	// Country is where it ships (alpha-2); outside the US, packages are capped
+	// at 3 lb.
+	Country string
 	// PriorQuantities is how many of each item the user has already received
 	// or has in flight (non-rejected, non-cancelled requests).
 	PriorQuantities map[int64]int
@@ -247,6 +253,9 @@ func Validate(in ValidateInput) error {
 		if item := in.Catalog[id]; q < item.MinPerRequest {
 			return fmt.Errorf("%w: at least %d %s per request", ErrBadQuantity, item.MinPerRequest, item.Name)
 		}
+	}
+	if _, err := Pack(in.Lines, in.Catalog, in.Country != "" && IsInternational(in.Country)); err != nil {
+		return err
 	}
 	if in.Settings.MaxItemsPerRequest > 0 && total > in.Settings.MaxItemsPerRequest {
 		return fmt.Errorf("%w (max %d)", ErrTooManyItems, in.Settings.MaxItemsPerRequest)

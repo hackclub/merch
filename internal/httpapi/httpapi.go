@@ -67,6 +67,8 @@ type server struct {
 	skuMu  sync.Mutex
 	skus   []theseus.SKU
 	skusAt time.Time
+
+	history historyCache
 }
 
 // skuCacheTTL bounds how often product pages hit mail.hackclub.com.
@@ -90,6 +92,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/me", s.me)
 	mux.HandleFunc("GET /api/catalog", s.catalog)
 	mux.HandleFunc("GET /api/items/{id}/stock", s.itemStock)
+	mux.HandleFunc("GET /api/shipping", s.shippingSummary)
+	mux.HandleFunc("POST /api/shipping/estimate", s.shippingEstimate)
 
 	// hack clubbers
 	mux.Handle("GET /api/requests", s.requireUser(s.myRequests))
@@ -421,7 +425,8 @@ func (s *server) cachedSKUs(ctx context.Context) ([]theseus.SKU, error) {
 
 type requestView struct {
 	*store.Request
-	PaymentURL string `json:"payment_url,omitempty"`
+	PaymentURL string         `json:"payment_url,omitempty"`
+	Estimate   *swag.Estimate `json:"estimate,omitempty"` // when it should arrive, while it waits to ship
 }
 
 func (s *server) view(r *store.Request) requestView {
@@ -464,6 +469,10 @@ func (s *server) myRequests(w http.ResponseWriter, r *http.Request, v viewer) {
 	for i, r := range rs {
 		out[i] = s.userView(r)
 	}
+	if err := s.withEstimates(r.Context(), out, false); err != nil {
+		s.serverErr(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"requests": out})
 }
 
@@ -505,7 +514,7 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 		UserID: v.user.ID, Address: body.Address, Purpose: body.Purpose, Lines: body.Lines, Status: status, ShippingFeeCents: fee, Note: body.Note,
 	}, func(prior map[int64]int, last *time.Time) error {
 		return swag.Validate(swag.ValidateInput{
-			Settings: st, Catalog: cat, Purpose: body.Purpose, Reason: body.Note, Lines: body.Lines, PriorQuantities: prior, LastRequestAt: last, Now: s.Now(),
+			Settings: st, Catalog: cat, Purpose: body.Purpose, Reason: body.Note, Lines: body.Lines, Country: body.Address.Country, PriorQuantities: prior, LastRequestAt: last, Now: s.Now(),
 		})
 	})
 	if err != nil {
@@ -521,7 +530,8 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 
 func isRuleErr(err error) bool {
 	for _, e := range []error{swag.ErrRequestsClosed, swag.ErrNoItems, swag.ErrBadQuantity, swag.ErrUnknownItem,
-		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrTooManyItems, swag.ErrCooldown, swag.ErrBadAddress, swag.ErrBadPurpose, swag.ErrNoReason} {
+		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrTooManyItems, swag.ErrCooldown, swag.ErrBadAddress, swag.ErrBadPurpose, swag.ErrNoReason,
+		swag.ErrWontPack, swag.ErrTooHeavy} {
 		if errors.Is(err, e) {
 			return true
 		}
@@ -599,7 +609,12 @@ func (s *server) adminRequests(w http.ResponseWriter, r *http.Request, v viewer)
 		s.serverErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"requests": s.views(rs)})
+	out := s.views(rs)
+	if err := s.withEstimates(r.Context(), out, true); err != nil {
+		s.serverErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"requests": out})
 }
 
 func (s *server) adminMarkPaid(w http.ResponseWriter, r *http.Request, v viewer) {
@@ -757,6 +772,8 @@ func validItem(it swag.Item) string {
 		return "packs must be fives, postcard or sticker"
 	case it.ThicknessIn != nil && !(*it.ThicknessIn > 0 && *it.ThicknessIn <= 0.5):
 		return "thickness must be between 0 and 0.5 inches"
+	case it.WeightOz != nil && !(*it.WeightOz > 0 && *it.WeightOz <= 800):
+		return "weight must be between 0 and 800 ounces"
 	case !swag.Bindings[it.Binding]:
 		return "binding must be staple or perfect"
 	case it.Clip != "" && !isHTTPURL(it.Clip):

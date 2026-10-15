@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api, ApiError, formatCents, statusLabel } from '$lib/api';
 	import { purposeLabel } from '$lib/purpose';
+	import { arrivalText } from '$lib/shipping';
 	import { session } from '$lib/session.svelte';
 	import type { SwagRequest } from '$lib/types';
 
@@ -52,6 +53,7 @@
 					{#if r.payment_url}<a class="button" href={r.payment_url}>Pay shipping on HCB</a>{/if}
 				</p>
 			{/if}
+			{#if arrivalText(r.estimate)}<p>{arrivalText(r.estimate)}, by {r.estimate?.service}.</p>{/if}
 			{#if r.mailed_at}<p>Mailed {new Date(r.mailed_at).toLocaleDateString()}</p>{/if}
 			{#if r.tracking_number}<p>Tracking: {r.carrier} {r.tracking_number}</p>{/if}
 			{#if r.admin_note}<p class="muted">Note from Hack Club: {r.admin_note}</p>{/if}

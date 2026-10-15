@@ -13,6 +13,7 @@
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
+	import { arrivalText, summaryText, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Haul3D from '$lib/Haul3D.svelte';
 	import QuantityPicker from '$lib/QuantityPicker.svelte';
@@ -31,8 +32,13 @@
 	let understood = $state(false);
 	let error = $state('');
 	let submitting = $state(false);
+	// Delivery times from past shipments, and this request's packing and arrival estimate.
+	let summary = $state<ShippingSummary | null>(null);
+	let quote = $state<{ estimate: ShippingEstimate; packing: Packing } | null>(null);
+	let quoteError = $state('');
 
 	onMount(async () => {
+		api.get<ShippingSummary>('/api/shipping').then((s) => (summary = s), () => {});
 		try {
 			catalog = await api.get<Catalog>('/api/catalog');
 			const listed = itemsFor(catalog.items, bag.purpose);
@@ -71,6 +77,23 @@
 		})
 	);
 	const fee = $derived(catalog?.settings.international_shipping_fee_cents ?? 0);
+
+	// Re-quote shipping as the bag or country changes. The server refuses what won't pack together
+	// (a poster with a stack of postcards) or is over 3 lb abroad, so this also catches those before Submit.
+	$effect(() => {
+		if (!catalog || !asking || count === 0) return;
+		const body = { country: address.country.trim().toUpperCase(), lines: cartLines(cart, catalog.items, sizes) };
+		const timer = setTimeout(async () => {
+			try {
+				quote = await api.post('/api/shipping/estimate', body);
+				quoteError = '';
+			} catch (e) {
+				quote = null;
+				quoteError = e instanceof ApiError && e.status === 422 ? e.message : '';
+			}
+		}, 300);
+		return () => clearTimeout(timer);
+	});
 
 	function choose(p: Purpose) {
 		setPurpose(p);
@@ -135,7 +158,7 @@
 		<p>Teenager and want to spread <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a> in your community?</p>
 		<p>Get some awesome hand-designed swag made by your fellow Hack Clubbers!</p>
 		<p>Free shipping in the US.{#if fee > 0}{' '}<span class="fee" title={feeTooltip}>{roughFee(fee)}</span> to help cover shipping globally.{/if}</p>
-		<p>Shipped next day Mon–Fri. 2–5 day delivery in US. 2–4 week delivery globally.</p>
+		<p>Shipped next day Mon–Fri. {summaryText(summary) || '2–5 day delivery in US. 2–4 week delivery globally.'}</p>
 	</div>
 
 	{#if rows && rows[0].length}
@@ -315,8 +338,10 @@
 					</label>
 				</div>
 				{#if haul.length}<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />{/if}
+				{#if quote && arrivalText(quote.estimate)}<p>{arrivalText(quote.estimate)}, by {quote.estimate.service}.</p>{/if}
 				{#each problems as p}<p class="error">{p}</p>{/each}
-				<button disabled={submitting || problems.length > 0 || !understood}>
+				{#if quoteError}<p class="error">{quoteError}</p>{/if}
+				<button disabled={submitting || problems.length > 0 || !!quoteError || !understood}>
 					{submitting ? 'Sending…' : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
 				</button>
 			</form>

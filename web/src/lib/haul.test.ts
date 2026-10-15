@@ -4,7 +4,7 @@ import type { Item } from './types';
 
 const base: Item = {
 	id: 1, sku: 'Pri/A', name: 'Poster', description: '', images: ['poster.jpg'], visible: true, sort_order: 0, max_per_request: 10, min_per_request: 1, quick_picks: [], max_per_user: null,
-	width_in: 11, height_in: 17, variants: [], finish: '', thickness_in: 0.01, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: ''
+	width_in: 11, height_in: 17, variants: [], finish: '', thickness_in: 0.01, weight_oz: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: ''
 };
 const mag: Item = { ...base, id: 2, name: 'Mini-Magazine', images: [], pages: ['p1.jpg', 'p2.jpg', 'p3.jpg', 'p4.jpg'], binding: 'staple', width_in: 6, height_in: 6, thickness_in: null };
 const shirt: Item = { ...base, id: 3, name: 'T-Shirt', images: ['tee.jpg'], width_in: null, height_in: null, variants: [{ label: 'M', sku: 'T/M' }] };
@@ -29,12 +29,12 @@ describe('piles', () => {
 	});
 
 	it('gives postcards card-stock thickness when none is set', () => {
-		const card: Item = { ...base, id: 5, name: 'Postcard', width_in: 6, height_in: 4, thickness_in: null, packs: 'postcard' };
+		const card: Item = { ...base, id: 5, name: 'Postcard', width_in: 6, height_in: 4, thickness_in: null, weight_oz: null, packs: 'postcard' };
 		expect(piles([{ item: card, quantity: 25 }])[0].height).toBeCloseTo(0.35);
 	});
 
 	it('splits postcards into banded bundles of 50, as they ship', () => {
-		const card: Item = { ...base, id: 6, name: 'Postcard', width_in: 6, height_in: 4, thickness_in: 0.014, packs: 'postcard' };
+		const card: Item = { ...base, id: 6, name: 'Postcard', width_in: 6, height_in: 4, thickness_in: 0.014, weight_oz: null, packs: 'postcard' };
 		const out = piles([{ item: card, quantity: 100 }]);
 		expect(out.map((p) => [+p.height.toFixed(3), p.band])).toEqual([[0.7, true], [0.7, true]]);
 		expect(piles([{ item: card, quantity: 25 }]).map((p) => !!p.band)).toEqual([false]);

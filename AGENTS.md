@@ -41,13 +41,16 @@ cancelled requests don't count toward limits or cooldowns.
 ```
 cmd/server/          main: env config → migrate → wire deps → HTTP server
 internal/config/     env-var config (12-factor), no file reads
-internal/swag/       pure business rules: limits, cooldown, intl shipping, status transitions
+internal/swag/       pure business rules: limits, cooldown, intl shipping, status transitions,
+                     packing (packing.go) and shipping estimates (estimate.go)
 internal/store/      Postgres persistence (pgx); per-user lock around limit check + insert
 internal/db/         pool, embedded goose migrations (internal/db/migrations/*.sql)
 internal/db/dbtest/  per-test throwaway database (CREATE DATABASE test_<rand> … DROP)
 internal/auth/       Hack Club Auth OAuth client (auth.hackclub.com, GET /api/v1/me)
 internal/authors/    YSWS author lookup (Airtable REST, 10 min cache)
 internal/theseus/    mail.hackclub.com warehouse client (SKUs, warehouse_orders)
+internal/asendia/    Asendia tracking lookups (delivery dates for shipping history)
+cmd/shiphistory/     loads past shipments for estimates (see "Shipping estimates and packing")
 internal/cdn/        cdn.hackclub.com upload client (item images)
 internal/imgprep/    shrinks uploaded artwork to ≤1600px JPEGs before upload
 internal/httpapi/    routes, role middleware, CSRF guard, SPA static serving
@@ -269,6 +272,47 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   autocomplete.
 - `$BASE_URL/auth/callback` must be registered as a redirect URI on the Hack Club Auth app.
 - Read the `orchard-ops` skill before touching Orchard (`pdw call hack_club_orchard_k8s__…`).
+
+## Shipping estimates and packing
+
+International parcels go by **Asendia, up to 3 lb**. Stickers in an envelope go USPS First Class
+letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or UPS SurePost.
+
+- **Packing** (`internal/swag/packing.go`): `Pack` puts a request in the first of `swag.Packages`
+  that it fits: Envelope, Mailer (10x13), Poster mailer (12x18, one flat stack), Box, then Large
+  box (too small for posters on purpose). It uses item sizes (`width_in`, `height_in`,
+  `thickness_in`; stickers and postcards have defaults; anything else counts as a bulky 10x8x1)
+  and `items.weight_oz`. With no weight set, the weight comes from the paper size (0.625 oz/in³).
+  `Validate` refuses requests that don't fit in one package (a poster with 50 postcards) and
+  international requests over 3 lb packed. The package sizes are standard sizes, not AGH's exact
+  stock. Tune them in `swag.Packages`.
+- **Estimates** (`internal/swag/estimate.go`): arrival window = handling + transit, from the
+  20th to the 80th percentile of past shipments to the same country and class. With fewer than
+  10 samples, it uses all US or all international shipments instead. Postage compares packages
+  of about the same weight and is shown only to admins. The shop intro, the request form, My
+  requests and the admin request list show these estimates (`POST /api/shipping/estimate`,
+  `GET /api/shipping`).
+- **History** (`shipping_history`, no names or addresses) comes from the Hack Club data warehouse:
+  - `scripts/shipping-history/zenventory.sql`: AGH shipments, for postage and Asendia tracking.
+  - `theseus-orders.sql`: orders placed through mail.hackclub.com, for handling time.
+  - `theseus-letters.sql`: letters. US transit is the day after the last USPS IV scan. Abroad,
+    it's the day the recipient marked the letter received.
+  - Asendia delivery dates come from Asendia's public tracking API
+    (`cmd/shiphistory track`, `internal/asendia`). It keeps only about 6 months, so keep the
+    `-cache` file.
+  - US parcels have no delivery data yet, so they use the US letter transit times.
+
+  Refresh (keep every file outside the repo; the raw exports contain tracking numbers):
+
+  ```sh
+  # export each .sql to CSV (one `r` column per row; the query tool caps at 10k rows, so page by date)
+  go run ./cmd/shiphistory track -since <6 months ago> -cache ~/merch-ship/asendia.csv \
+      zenventory.csv letters.csv > history.csv
+  DATABASE_URL=… go run ./cmd/shiphistory load history.csv orders.csv   # replaces those sources
+  ```
+  Loaded 2026-10-15 into dev and production: 47,167 shipments since 2025-01. That's 499 Asendia
+  deliveries since 2026-04-20, 5,027 US letter scans and 1,833 mail.hackclub.com orders. The
+  warehouse's `theseus.*` tables are a snapshot from before 2026-09-14.
 
 ## External systems
 

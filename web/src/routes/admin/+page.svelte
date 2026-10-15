@@ -5,6 +5,7 @@
 	import { purposeLabel } from '$lib/purpose';
 	import { byFilename, itemPath, moveImage } from '$lib/items';
 	import { session } from '$lib/session.svelte';
+	import { arrivalText, ozText } from '$lib/shipping';
 	import type { Item, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
 
 	type Tab = 'requests' | 'items' | 'settings' | 'submissions';
@@ -172,6 +173,13 @@
 							{#if r.shipping_fee_cents}<div class="muted">fee {formatCents(r.shipping_fee_cents)}{r.paid_at ? ' (paid)' : ''}</div>{/if}
 							{#if r.mailed_at}<div class="muted">mailed {new Date(r.mailed_at).toLocaleDateString()}</div>{/if}
 							{#if r.tracking_number}<div class="muted">{r.carrier} {r.tracking_number}</div>{/if}
+							{#if r.estimate}
+								<div class="muted" title="From past shipments: {r.estimate.transit_samples} like it to {r.estimate.transit_basis}, postage from {r.estimate.postage_samples} to {r.estimate.postage_basis}">
+									{r.estimate.package} · {ozText(r.estimate.weight_oz)} · {r.estimate.service}
+									{#if r.estimate.postage_cents[1]}· postage {formatCents(r.estimate.postage_cents[0])}–{formatCents(r.estimate.postage_cents[1])}{/if}
+									{#if arrivalText(r.estimate)}<br />{arrivalText(r.estimate)}{/if}
+								</div>
+							{/if}
 						</td>
 						<td class="row">
 							{#if r.status === 'awaiting_payment'}<button onclick={() => act(r.id, 'mark-paid')}>Mark paid</button>{/if}
@@ -312,6 +320,10 @@
 							<label>Thickness, inches (e.g. 0.016 for 16 pt card)
 								<input type="number" min="0" step="0.001" placeholder="0.008" value={it.thickness_in ?? ''}
 									oninput={(e) => (it.thickness_in = e.currentTarget.value === '' ? null : +e.currentTarget.value)} />
+							</label>
+							<label>Shipping weight, ounces each (blank: worked out from the paper size)
+								<input type="number" min="0" step="0.01" placeholder={it.width_in ? 'from size' : '6.5'} value={it.weight_oz ?? ''}
+									oninput={(e) => (it.weight_oz = e.currentTarget.value === '' ? null : +e.currentTarget.value)} />
 							</label>
 						</td>
 						<td><button onclick={() => saveItem(it)}>Save</button></td>

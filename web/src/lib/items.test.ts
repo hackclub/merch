@@ -5,7 +5,7 @@ import type { Item } from './types';
 const poster: Item = {
 	id: 681, sku: 'Pri/HPd/11x/1st', name: '11x17 Hackpad Poster (Double-Sided)', description: '',
 	images: ['https://cdn.example/front.jpg', 'https://cdn.example/back.jpg'],
-	visible: true, sort_order: 1, max_per_request: 1, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: ''
+	visible: true, sort_order: 1, max_per_request: 1, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, weight_oz: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: ''
 };
 
 describe('item URLs', () => {
@@ -137,7 +137,7 @@ describe('tilePreview', () => {
 
 describe('productPreview', () => {
 	it('builds the product-page 3D view with a phone and any ships_with extras, ignoring clips', () => {
-		const card: Item = { ...poster, id: 9, sku: 'Pri/M25/4x6/1st', width_in: 6, height_in: 4, thickness_in: 0.014, finish: 'linen' };
+		const card: Item = { ...poster, id: 9, sku: 'Pri/M25/4x6/1st', width_in: 6, height_in: 4, thickness_in: 0.014, weight_oz: null, finish: 'linen' };
 		const mag: Item = { ...poster, images: [], binding: 'perfect', pages: ['p1', 'p2', 'p3', 'p4'], width_in: 5.5, height_in: 8.5, ships_with: ['Pri/M25/4x6/1st'], clip: 'https://cdn.example/flip.mp4' };
 		expect(productPreview(mag, [card])).toEqual({
 			book: {

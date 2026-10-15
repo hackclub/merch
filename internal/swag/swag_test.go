@@ -248,7 +248,8 @@ func TestValidatePacks(t *testing.T) {
 	cat := catalog()
 	cat[5] = Item{ID: 5, SKU: "Pri/Wel/4x6/1st", Name: "Postcard", Visible: true, MaxPerRequest: 200, Packs: "postcard"}
 	cat[6] = Item{ID: 6, SKU: "Sti/Sti/Kaw/1st", Name: "Kawaii sticker", Visible: true, MaxPerRequest: 150, Packs: "sticker"}
-	cat[7] = Item{ID: 7, SKU: "Pri/Bok/Mini25/1st", Name: "Mini-Magazine", Visible: true, MaxPerRequest: 100, Packs: "fives"}
+	cat[7] = Item{ID: 7, SKU: "Pri/Bok/Mini25/1st", Name: "Mini-Magazine", Visible: true, MaxPerRequest: 100, Packs: "fives",
+		WidthIn: f(6), HeightIn: f(6), ThicknessIn: f(0.04)}
 	in := func(id int64, q int) ValidateInput {
 		return ValidateInput{Settings: settings(), Catalog: cat, Purpose: PurposePersonal, Lines: []Line{{ItemID: id, Quantity: q}, {ItemID: 1, Quantity: 3}}, Now: now}
 	}

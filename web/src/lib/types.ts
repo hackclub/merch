@@ -1,4 +1,5 @@
 // Mirrors the Go JSON types in internal/swag and internal/store.
+import type { ShippingEstimate } from './shipping';
 
 export type Item = {
 	id: number;
@@ -17,6 +18,7 @@ export type Item = {
 	variants: Variant[]; // sizes, each its own warehouse SKU; empty = one size
 	finish: string; // '' | 'matte' | 'gloss' | 'linen' | 'uncoated'
 	thickness_in: number | null;
+	weight_oz: number | null; // one unit's shipping weight; null = worked out from its paper size
 	photos: Photo[]; // real-world pictures people posted
 	packs: string; // '' (any quantity) | 'fives' (5, 10, 15…) | 'postcard' (5, 10…25) | 'sticker' (3, 10), then multiples of 50
 	binding: string; // '' (a single sheet) | 'staple' | 'perfect': booklets open in 3D
@@ -82,6 +84,7 @@ export type SwagRequest = {
 	created_at: string;
 	lines: { item_id: number; sku: string; name: string; variant?: string; quantity: number }[];
 	payment_url?: string;
+	estimate?: ShippingEstimate; // while it waits to ship; postage only for admins
 };
 
 export type SubmissionStatus = 'submitted' | 'approved' | 'printing' | 'stocked' | 'rejected';
