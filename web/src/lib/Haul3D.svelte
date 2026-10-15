@@ -5,12 +5,13 @@
 	// or tap a pile to see what it is and how tall. The caption puts the total in
 	// familiar terms, because people tend to ask for too little.
 	import { onMount, untrack } from 'svelte';
-	import { haulSize, layoutHaul, lineLabel, piles, tableCover, withIncludes, type HaulLine } from './haul';
+	import { haulSize, layoutHaul, lineLabel, piles, tableCover, tall, withIncludes, type HaulLine } from './haul';
 	import type { HaulViewer } from './haul3d';
 	import type { Item } from './types';
 
 	// table: lay it all out on 6-foot folding tables (for clubs and events), to show how much of one it fills.
-	let { lines, includes = [], table: onTable = false }: { lines: HaulLine[]; includes?: Item[]; table?: boolean } = $props();
+	// compact: one item's amount (beside its clip while picking how many), with a one-line caption.
+	let { lines, includes = [], table: onTable = false, compact = false }: { lines: HaulLine[]; includes?: Item[]; table?: boolean; compact?: boolean } = $props();
 
 	const allLines = $derived(withIncludes(lines, includes));
 	const stack = $derived(piles(lines, includes));
@@ -159,7 +160,7 @@
 	}
 </script>
 
-<figure class="haul">
+<figure class="haul" class:compact>
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="stage" class:ready bind:this={stage} onpointerdown={down} onpointermove={move} onpointerup={up}
 		onpointercancel={up} onpointerleave={(e) => e.pointerType === 'mouse' && !pointers.size && (tip = null)} onwheel={wheel}>
@@ -172,6 +173,9 @@
 			{#if touched}<button type="button" aria-label="Reset the view" onclick={reset}>↺</button>{/if}
 		</div>
 	</div>
+	{#if compact}
+		<figcaption class="muted">{allLines.map(lineLabel).join(' · ')}, {tall(Math.max(...stack.map((p) => p.height)))} stacked up, next to a 6-inch phone.</figcaption>
+	{:else}
 	<figcaption>
 		<span>
 			Altogether it's {haulSize(stack)}{#if onTable}, and covers about {cover}% of {table.tables.length === 1 ? 'a 6-foot folding table' : `${table.tables.length} 6-foot folding tables`}{/if}.
@@ -180,12 +184,14 @@
 		<span class="muted">To scale, next to a regular 6-inch phone. Drag to turn and tilt it, pinch or use + and − to zoom, and tap a pile to see what it is.</span>
 		<span class="muted">{allLines.map(lineLabel).join(' · ')}</span>
 	</figcaption>
+	{/if}
 </figure>
 
 <style>
 	.haul { margin: 0; display: grid; gap: 0.5rem; }
 	.stage { position: relative; aspect-ratio: 16 / 10; background: var(--tile); touch-action: pan-y; cursor: grab; overflow: hidden; }
 	.stage:active { cursor: grabbing; }
+	.compact .stage { aspect-ratio: 4 / 3; }
 	canvas { width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 0.4s; }
 	.ready canvas { opacity: 1; }
 	.loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 0.9rem; }

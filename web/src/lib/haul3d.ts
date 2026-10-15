@@ -4,7 +4,7 @@
 // next to a phone for scale, seen from above at an angle. Units are inches.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { SHIRT, type HaulLayout, type Placed } from './haul';
+import { bookletStack, SHIRT, tall, type HaulLayout, type Placed } from './haul';
 import { finishInfo } from './paper';
 import { createPhone, createStage, edgeColor, loadArt, pageEdges, paperBand, paperEdge, paperFace, PHONE_DEPTH } from './paper3d';
 import { BAG_H, createStickerBag, createStickerFan, disposeStickerGroup, loadStickerCutout, type StickerCutout } from './sticker3d';
@@ -28,6 +28,8 @@ export type HaulViewer = {
 
 export const ELEVATION = THREE.MathUtils.degToRad(34); // low enough that stack heights read
 const TABLE_TOP = 1; // inches thick
+// More booklets than this draw as one block (bigger piles are too far away to tell).
+const MAX_BOOKLETS = 400;
 const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
 
 export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout, onReady: () => void): HaulViewer {
@@ -183,10 +185,29 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 				: side;
 
 		const h = Math.max(p.height, 0.014);
-		const geo = new THREE.BoxGeometry(p.w, h, p.d);
 		// BoxGeometry faces: +x (fore-edge), -x (spine), +y (top), -y (bottom), +z, -z.
-		const pile = new THREE.Mesh(geo, [side, spine, face.mat, bottom, side, side]);
-		pile.position.set(p.x, h / 2, p.z);
+		const faces = [side, spine, face.mat, bottom, side, side];
+		const booklets = p.kind === 'booklet' && cards <= MAX_BOOKLETS;
+		const geo = booklets ? bookletGeometry(p.w, h / cards, p.d) : new THREE.BoxGeometry(p.w, h, p.d);
+		if (booklets) side.map!.repeat.set(1, Math.max(2, h / cards / 0.012) / 64); // page edges per booklet
+		let pile: THREE.Mesh;
+		if (booklets) {
+			// One by one, each puffed at the fold and a little askew, so the pile shows they don't lie flat.
+			const many = new THREE.InstancedMesh(geo, faces, cards);
+			const m = new THREE.Matrix4();
+			const turn = new THREE.Quaternion();
+			const up = new THREE.Vector3(0, 1, 0);
+			const one = new THREE.Vector3(1, 1, 1);
+			bookletStack(cards, h / cards).forEach((b, i) => {
+				m.compose(new THREE.Vector3(p.x + b.dx, b.y, p.z + b.dz), turn.setFromAxisAngle(up, b.yaw), one);
+				many.setMatrixAt(i, m);
+			});
+			many.computeBoundingSphere();
+			pile = many;
+		} else {
+			pile = new THREE.Mesh(geo, faces);
+			pile.position.set(p.x, h / 2, p.z);
+		}
 		pile.castShadow = true;
 		pile.userData.label = `${p.label} · ${tall(p.height)}`;
 		contents.add(pile);
@@ -343,9 +364,21 @@ function sampleShirtColor(tex: THREE.Texture): THREE.Color {
 	return new THREE.Color(0x2b2c31);
 }
 
-/** "4 in tall (10 cm)", "0.7 in tall (1.8 cm)". */
-function tall(inches: number): string {
-	const n = inches >= 1 ? inches.toFixed(1).replace(/\.0$/, '') : inches.toFixed(2).replace(/0$/, '');
-	const cm = inches * 2.54;
-	return `${n} in tall (${cm >= 10 ? Math.round(cm) : cm.toFixed(1)} cm)`;
+/**
+ * One bound booklet, w × d, its bottom on y = 0 and its spine at -x: full
+ * thickness at the fold, sagging toward the middle and springing up a little at
+ * the open edge, the way a stapled booklet sits. Stacked, they leave wedges of
+ * air between them.
+ */
+function bookletGeometry(w: number, t: number, d: number): THREE.BufferGeometry {
+	const geo = new THREE.BoxGeometry(w, t, d, 12, 1, 1);
+	geo.translate(0, t / 2, 0);
+	const pos = geo.attributes.position;
+	for (let i = 0; i < pos.count; i++) {
+		if (pos.getY(i) < t / 2) continue;
+		const u = (pos.getX(i) + w / 2) / w; // 0 at the spine, 1 at the open edge
+		pos.setY(i, t * (0.74 + 0.26 * (1 - u) ** 2 + 0.12 * u ** 3));
+	}
+	geo.computeVertexNormals();
+	return geo;
 }

@@ -8,7 +8,8 @@
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from '$lib/cart';
 	import { galleryRows, roughFee } from '$lib/gallery';
-	import { itemPath, previewCount, thumbnail, tilePreview } from '$lib/items';
+	import { pickedLines } from '$lib/haul';
+	import { itemPath, previewCount, productPreview, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
@@ -95,6 +96,8 @@
 	let peek = $state<number | null>(null);
 	// Items whose amounts are showing: "Add" opens them; removing the item closes them.
 	let picking = $state<Record<number, boolean>>({});
+	// Items whose shop preview is a clip (the Mini-Magazine's GIF) also show the amount picked in 3D, to scale.
+	const amountIn3D = (item: Item) => !!item.clip && !!productPreview(item, [], false);
 	const expanded = (item: Item) => item.variants.length > 0 || !!picking[item.id] || !!cart[item.id];
 
 	function setAmount(item: Item, n: number) {
@@ -201,6 +204,9 @@
 								{/if}
 							</div>
 						{/if}
+						{#if open && expanded(item) && amountIn3D(item)}
+							<div class="amount-3d"><Haul3D lines={pickedLines(item, cart[item.id] ?? 0)} includes={catalog.includes} compact /></div>
+						{/if}
 						{#if peek === item.id}
 							{@const preview = tilePreview(item)}
 							<div class="peek" aria-hidden="true">
@@ -209,6 +215,9 @@
 										{#if thumbnail(item)}<img src={thumbnail(item)} alt="" />{/if}
 										{#if preview}<Tile3D {preview} active count={previewCount(item, cart[item.id] ?? 0)} rest={'stickers' in preview ? -0.25 : -0.45} />{/if}
 									</div>
+								{/if}
+								{#if amountIn3D(item)}
+									<div class="peek-3d"><Haul3D lines={pickedLines(item, cart[item.id] ?? 0)} includes={catalog.includes} compact /></div>
 								{/if}
 								<strong>{item.name}</strong>
 								<span class="muted">{tileFact(item)}</span>
@@ -367,9 +376,15 @@
 		.peek-img { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 4 / 3; margin-bottom: 0.4rem; background: var(--tile); }
 		.peek-img img { width: 85%; height: 85%; object-fit: contain; mix-blend-mode: multiply; }
 		.peek-img.sticker img { mix-blend-mode: normal; }
+		.peek-3d :global(.controls) { display: none; }
+		/* The hover panel shows the amount in 3D, so the row doesn't. */
+		.amount-3d { display: none; }
 		/* Once the 3D view or clip is up it replaces the photo. */
 		.peek-img:has(:global(.spin.ready)) > img { opacity: 0; }
 	}
+	/* Picking how many of an item that plays a clip: the amount, stacked up in 3D, under the row. */
+	.amount-3d { flex-basis: 100%; padding-left: 4.65rem; }
+	@media (max-width: 600px) { .amount-3d { padding-left: 0; } }
 	.send { margin-top: 1.5rem; }
 	form { display: grid; gap: 1rem; }
 	form h2 { margin-bottom: 0; }

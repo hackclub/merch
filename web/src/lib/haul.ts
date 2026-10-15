@@ -1,6 +1,7 @@
 // "Everything you're about to get": each line of the request as a pile at true
 // size (inches), as tall as its count makes it, laid out on a table next to a
 // phone for scale. haul3d.ts draws it; this is the geometry, kept pure for tests.
+import { presetQuantities } from './cart';
 import { isBooklet, shipsWith, thumbnail } from './items';
 import { sheetThickness } from './paper';
 import { CARD_IN, PER_BUNDLE } from './postcards';
@@ -37,6 +38,43 @@ const STICKER = { w: 3, d: 3 };
 const UNKNOWN = { w: 6, d: 6, t: 1 };
 // Booklets without a measured thickness: about 0.1 mm a page.
 const PAGE_IN = 0.004;
+/**
+ * Bound booklets don't lie flat: a stapled one bulges at the fold and its cover
+ * springs open, and a perfect-bound one a little less, so a stack of them stands
+ * taller than its paper. Each booklet takes up its thickness times this.
+ */
+export const LOFT = { staple: 1.25, perfect: 1.06 } as const;
+const loft = (binding: string) => LOFT[binding as keyof typeof LOFT] ?? 1;
+
+/** "4 in tall (10 cm)", "0.7 in tall (1.8 cm)". */
+export function tall(inches: number): string {
+	const n = inches >= 1 ? inches.toFixed(1).replace(/\.0$/, '') : inches.toFixed(2).replace(/0$/, '');
+	const cm = inches * 2.54;
+	return `${n} in tall (${cm >= 10 ? Math.round(cm) : cm.toFixed(1)} cm)`;
+}
+
+/** Where each booklet in a hand-piled stack sits: its bottom (y), a slight shift (dx, dz, inches) and turn (yaw, radians). */
+export type StackedBooklet = { y: number; dx: number; dz: number; yaw: number };
+
+/**
+ * A stack of count booklets, each step taller than the last: piled by hand, so
+ * each one sits a little off square. The same count always gives the same pile.
+ */
+export function bookletStack(count: number, step: number): StackedBooklet[] {
+	// A fixed pseudo-random wobble in -1…1 for booklet i (no Math.random, so the pile doesn't jump on re-render).
+	const wobble = (i: number, salt: number) => {
+		const x = Math.sin(i * 12.9898 + salt * 78.233) * 43758.5453;
+		return (x - Math.floor(x)) * 2 - 1;
+	};
+	return Array.from({ length: count }, (_, i) => ({
+		y: i * step, dx: wobble(i, 1) * 0.08, dz: wobble(i, 2) * 0.08, yaw: wobble(i, 3) * 0.04
+	}));
+}
+
+/** One item's line for a quantity preview: the amount picked, or the smallest quick pick before anything is. */
+export const pickedLines = (item: Item, inCart: number): HaulLine[] => [
+	{ item, quantity: inCart > 0 ? inCart : (presetQuantities(item)[0] ?? 1) }
+];
 
 /** Expands each line with whatever its item always ships with (e.g. the magazine's intro card). */
 export function withIncludes(lines: HaulLine[], includes: Item[] = []): HaulLine[] {
@@ -95,7 +133,7 @@ function pileOf({ item, quantity, size }: HaulLine): Pile {
 	if (item.width_in != null && item.height_in != null) {
 		const booklet = isBooklet(item);
 		const unit = booklet
-			? (item.thickness_in ?? item.pages.length * PAGE_IN)
+			? (item.thickness_in ?? item.pages.length * PAGE_IN) * loft(item.binding)
 			: item.packs === 'postcard'
 				? (item.thickness_in ?? CARD_IN)
 				: sheetThickness(item);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { haulSize, layoutHaul, piles, TABLE, tableCover } from './haul';
+import { bookletStack, haulSize, layoutHaul, LOFT, piles, pickedLines, TABLE, tableCover, tall } from './haul';
 import type { Item } from './types';
 
 const base: Item = {
@@ -20,7 +20,8 @@ describe('piles', () => {
 	it('uses page counts for booklets, the cover for art, and labels sizes', () => {
 		const [m, s, k] = piles([{ item: mag, quantity: 10 }, { item: shirt, quantity: 2, size: 'M' }, { item: sticker, quantity: 50 }]);
 		expect(m.art).toBe('p1.jpg');
-		expect(m.height).toBeCloseTo(10 * 4 * 0.004);
+		// Stapled booklets don't lie flat, so the stack stands taller than its paper.
+		expect(m.height).toBeCloseTo(10 * 4 * 0.004 * LOFT.staple);
 		// A folded tee: about 9.5 × 12 × 1.2 in each.
 		expect(s).toMatchObject({ label: '2 × T-Shirt (M)', w: 9.5, d: 12 });
 		expect(s.height).toBeCloseTo(2.4);
@@ -143,5 +144,44 @@ describe('tableCover', () => {
 		const out = layoutHaul(piles([{ item: base, quantity: 2 }]), { table: true });
 		expect(tableCover(out)).toBeCloseTo((11 * 17) / (TABLE.w * TABLE.d));
 		expect(tableCover(layoutHaul(piles([{ item: base, quantity: 2 }])))).toBe(0);
+	});
+});
+
+describe('bound booklets', () => {
+	it('loft: stapled ones puff up more than perfect-bound ones, both more than flat paper', () => {
+		expect(LOFT.staple).toBeGreaterThan(LOFT.perfect);
+		expect(LOFT.perfect).toBeGreaterThan(1);
+		const perfect: Item = { ...mag, binding: 'perfect', thickness_in: 0.3 };
+		expect(piles([{ item: perfect, quantity: 2 }])[0].height).toBeCloseTo(0.6 * LOFT.perfect);
+	});
+
+	it('bookletStack piles each one on the last, a little askew, the same way every time', () => {
+		const s = bookletStack(20, 0.05);
+		expect(s).toHaveLength(20);
+		expect(s[0].y).toBe(0);
+		expect(s[19].y).toBeCloseTo(19 * 0.05);
+		expect(bookletStack(20, 0.05)).toEqual(s);
+		// Askew, but only slightly: never more than a tenth of an inch or a few degrees.
+		expect(new Set(s.map((b) => b.dx)).size).toBeGreaterThan(5);
+		for (const b of s) {
+			expect(Math.abs(b.dx)).toBeLessThanOrEqual(0.1);
+			expect(Math.abs(b.dz)).toBeLessThanOrEqual(0.1);
+			expect(Math.abs(b.yaw)).toBeLessThanOrEqual(0.05);
+		}
+	});
+});
+
+describe('pickedLines', () => {
+	it('shows the amount picked, or the smallest quick pick before anything is picked', () => {
+		const mini: Item = { ...mag, quick_picks: [5, 10, 25, 50, 100], max_per_request: 100 };
+		expect(pickedLines(mini, 25)).toEqual([{ item: mini, quantity: 25 }]);
+		expect(pickedLines(mini, 0)).toEqual([{ item: mini, quantity: 5 }]);
+	});
+});
+
+describe('tall', () => {
+	it('says how tall in inches and centimetres', () => {
+		expect(tall(4)).toBe('4 in tall (10 cm)');
+		expect(tall(0.7)).toBe('0.7 in tall (1.8 cm)');
 	});
 });
