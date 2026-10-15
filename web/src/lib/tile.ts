@@ -10,5 +10,5 @@ export const hoverTurn = (rest: number, fromX: number, x: number, width: number)
 /** The next leaf to flip to while hovering a booklet; it stays closed on the back cover. */
 export const flipStep = (goal: number, leaves: number) => Math.min(leaves, goal + 1);
 
-/** GIFs play on their own; anything else is a video we can pause. */
-export const isGif = (url: string) => /\.gif$/i.test(url.split(/[?#]/)[0]);
+/** GIFs play on their own and photos stay still; anything else is a video we can pause. */
+export const isImage = (url: string) => /\.(gif|jpe?g|png|webp|avif)$/i.test(url.split(/[?#]/)[0]);

@@ -3,7 +3,7 @@
 	// touch it: hover turns a print or stickers with the pointer and drag turns
 	// them further; a booklet opens on hover and flips through its pages, and
 	// dragging across turns them by hand. A clip plays while hovered (or while
-	// on screen, on touch screens). A click still follows the tile's link.
+	// on screen, on touch screens); a clip can also be a GIF or a still photo. A click still follows the tile's link.
 	// Viewers exist only while the tile is near the screen, so a long grid never
 	// runs out of WebGL contexts; the photo underneath shows until it's ready.
 	import { onMount, untrack } from 'svelte';
@@ -12,7 +12,7 @@
 	import { loadPreviewViewer, type Preview3D, type TilePreview } from './items';
 	import type { Viewer } from './paper3d';
 	import type { StickerViewer } from './sticker3d';
-	import { flipStep, hoverTurn, isGif } from './tile';
+	import { flipStep, hoverTurn, isImage } from './tile';
 
 	// count: stickers in the bag; rest: the angle it sits at; active: animate as if hovered
 	// (the clip plays, a booklet flips, a print swings), for previews that never get the pointer.
@@ -198,7 +198,7 @@
 	onpointerenter={enter} onpointerleave={leave} onpointerdown={down} onpointermove={move} onpointerup={up}
 	onpointercancel={up} onclickcapture={click} ondragstart={(e) => e.preventDefault()}>
 	{#if 'clip' in preview}
-		{#if isGif(preview.clip)}
+		{#if isImage(preview.clip)}
 			{#if near}<img src={preview.clip} alt="" onload={() => (ready = true)} />{/if}
 		{:else}
 			<video bind:this={video} src={preview.clip} muted loop playsinline preload="metadata"
@@ -214,5 +214,6 @@
 	.spin.clip { cursor: pointer; }
 	canvas, video, img { width: 100%; height: 100%; opacity: 0; transition: opacity 0.4s; display: block; }
 	video, img { object-fit: cover; }
+	img { object-position: 50% 25%; } /* photos of people: keep their face in frame */
 	.ready canvas, .ready video, .ready img { opacity: 1; }
 </style>

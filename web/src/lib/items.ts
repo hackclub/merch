@@ -38,7 +38,7 @@ export type Preview3D =
 
 /** What a shop tile shows instead of its photo; null = just the photo. */
 export type TilePreview =
-	| { clip: string } // a looping video or GIF of the real thing
+	| { clip: string } // a looping video, GIF or photo of the real thing
 	| Preview3D;
 
 /**
