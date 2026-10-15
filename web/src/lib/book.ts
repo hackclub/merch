@@ -47,6 +47,13 @@ export function leafAngle(turn: number, s: number): number {
 	return Math.min(Math.max(a, 0), Math.PI);
 }
 
+/** Spine height of a turning leaf, arched so it clears the taller stack on its way across. */
+export function leafZ(st: BookState, tl: number): number {
+	const zR = st.right * tl;
+	const zL = st.left * tl;
+	return zR + (zL - zR) * st.turn + 0.5 * Math.sin(Math.PI * st.turn) * Math.abs(zL - zR) + 0.008;
+}
+
 /** Page images worth having loaded at a position: both covers and the pages around it. */
 export function pagesNear(position: number, pages: number): number[] {
 	const { leaf } = bookState(position, leafCount(pages));

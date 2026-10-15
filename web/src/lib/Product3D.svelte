@@ -61,7 +61,11 @@
 
 		const io = new IntersectionObserver(([e]) => (visible = e.isIntersecting));
 		io.observe(stage);
-		const ro = new ResizeObserver(() => viewer?.resize(stage.clientWidth, stage.clientHeight));
+		const ro = new ResizeObserver(() => {
+			if (!viewer) return;
+			viewer.resize(stage.clientWidth, stage.clientHeight);
+			viewer.render();
+		});
 		ro.observe(stage);
 
 		const load = book
@@ -88,7 +92,8 @@
 					if (bv && !turning) {
 						// Turn toward the goal: quickly at first, never slower than a leaf a second.
 						const d = goal - bv.position;
-						bv.position += Math.sign(d) * Math.min(Math.abs(d), Math.max(Math.abs(d) * dt * 5, dt * 1.6));
+						if (Math.abs(d) < 0.0005) bv.position = goal;
+						else bv.position += Math.sign(d) * Math.min(Math.abs(d), Math.max(Math.abs(d) * dt * 5, dt * 1.6));
 					}
 					if (bv && (goal > 0 || bv.position > 0.001)) {
 						// Open books face you squarely.
@@ -97,11 +102,16 @@
 					if (bv) near = Math.round(bv.position);
 					if (target !== null) {
 						viewer.angle += (target - viewer.angle) * Math.min(1, dt * 7);
-						if (Math.abs(target - viewer.angle) < 0.002) target = null;
+						if (Math.abs(target - viewer.angle) < 0.002) {
+							viewer.angle = target;
+							target = null;
+						}
 					} else if (spinning && !dragging && now > resumeAt) {
 						viewer.angle += SPIN * dt;
 					}
-					viewer.zoom += (ZOOMS[zoomLevel] - viewer.zoom) * Math.min(1, dt * 6);
+					const wantZoom = ZOOMS[zoomLevel];
+					viewer.zoom += (wantZoom - viewer.zoom) * Math.min(1, dt * 6);
+					if (Math.abs(wantZoom - viewer.zoom) < 0.0005) viewer.zoom = wantZoom;
 					showingBack = Math.cos(viewer.angle) < 0;
 					viewer.render();
 				};
@@ -246,7 +256,7 @@
 </div>
 
 <style>
-	.wrap { display: grid; gap: 0.5rem; }
+	.wrap { display: grid; gap: 0.5rem; width: 100%; }
 	.stage {
 		position: relative; aspect-ratio: 1 / 1.1; max-height: min(70vh, 34rem); min-height: 18rem; width: 100%;
 		background: radial-gradient(closest-side at 50% 60%, rgba(255, 255, 255, 0.75), transparent); cursor: grab; touch-action: pan-y; user-select: none; overflow: hidden;
@@ -263,7 +273,7 @@
 		background: rgba(255, 255, 255, 0.9); color: var(--dark); border: 1px solid var(--smoke);
 	}
 	.ctl:disabled { opacity: 0.35; }
-	.bar { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+	.bar { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0 0.75rem 0.65rem; }
 	.small { padding: 0.3rem 0.8rem; font-size: 0.85rem; }
 	.pager {
 		position: absolute; left: 50%; bottom: 0.6rem; transform: translateX(-50%); display: flex; align-items: center; gap: 0.5rem;
@@ -271,5 +281,5 @@
 	}
 	.pager .ctl { border: none; font-size: 1.3rem; background: none; }
 	.page-label { font-size: 0.85rem; font-weight: 600; min-width: 8.5rem; text-align: center; font-variant-numeric: tabular-nums; }
-	.scrub { width: 100%; accent-color: var(--red); margin: 0; }
+	.scrub { width: calc(100% - 1.5rem); accent-color: var(--red); margin: 0 auto; }
 </style>

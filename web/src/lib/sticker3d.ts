@@ -58,6 +58,7 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 
 	const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.ShadowMaterial({ opacity: 0.14 }));
 	floor.rotation.x = -Math.PI / 2;
+	floor.position.y = -0.01;
 	floor.receiveShadow = true;
 	scene.add(floor);
 
@@ -85,7 +86,10 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 	let size = { w: 3, h: 2 };
 	let face: THREE.PlaneGeometry | null = null;
 	// Vinyl with a satin laminate: a soft sheen without washing out the print.
-	const art = new THREE.MeshPhysicalMaterial({ roughness: 0.5, clearcoat: 0.25, clearcoatRoughness: 0.35, envMapIntensity: 0.45, alphaTest: 0.5 });
+	const art = new THREE.MeshPhysicalMaterial({
+		roughness: 0.5, clearcoat: 0.25, clearcoatRoughness: 0.35, envMapIntensity: 0.45, alphaTest: 0.5,
+		polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2
+	});
 	const backing = new THREE.MeshStandardMaterial({ color: 0xf3f1ec, roughness: 0.9, alphaTest: 0.5 });
 	const plastic = new THREE.MeshPhysicalMaterial({
 		color: 0xffffff, transparent: true, opacity: 0.16, roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05, depthWrite: false
@@ -105,17 +109,19 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 
 	// A stack of n stickers, bottom at y = 0, centered on x/z. Each sticker is its
 	// artwork with the white backing just under it; stacked, the backings make
-	// the white edge you see on a real bundle (backings stick out a hair).
-	function stack(n: number, place: (i: number, m: THREE.Matrix4) => void) {
+	// the white edge you see on a real bundle (backings stick out a hair). In a
+	// tall vertical bundle (`topOnly`), only the top sticker's face is visible.
+	function stack(n: number, place: (i: number, m: THREE.Matrix4) => void, topOnly = false) {
 		const g = new THREE.Group();
-		const tops = new THREE.InstancedMesh(face!, art, n);
+		const tops = new THREE.InstancedMesh(face!, art, topOnly ? 1 : n);
 		const backs = new THREE.InstancedMesh(face!, backing, n * 3);
 		backs.castShadow = true;
 		const m = new THREE.Matrix4();
 		const under = new THREE.Matrix4();
 		for (let i = 0; i < n; i++) {
 			place(i, m);
-			tops.setMatrixAt(i, m);
+			if (!topOnly) tops.setMatrixAt(i, m);
+			else if (i === n - 1) tops.setMatrixAt(0, m);
 			for (const k of [0, 1, 2]) {
 				under.makeScale(1.012, 1, 1.012).setPosition(0, -T * 0.25 * (k + 1), 0).premultiply(m);
 				backs.setMatrixAt(i * 3 + k, under);
@@ -126,16 +132,22 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 	}
 
 	function bag(seed: number) {
-		const g = stack(PER_BAG, (i, m) => {
-			// Die-cut stacks are nearly, not perfectly, square.
-			const j = Math.sin(seed * 31 + i * 12.9898) * 43758.5453;
-			const jx = (j - Math.floor(j) - 0.5) * 0.03;
-			m.makeTranslation(jx, (i + 1) * T + 0.01, ZIP_IN / 2 - jx);
-		});
+		const g = stack(
+			PER_BAG,
+			(i, m) => {
+				// Die-cut stacks are nearly, not perfectly, square.
+				const j = Math.sin(seed * 31 + i * 12.9898) * 43758.5453;
+				const jx = (j - Math.floor(j) - 0.5) * 0.03;
+				m.makeTranslation(jx, (i + 1) * T + 0.01, ZIP_IN / 2 - jx);
+			},
+			true
+		);
 		const shell = new THREE.Mesh(bagGeo!, plastic);
 		shell.position.y = BAG_H / 2;
+		shell.renderOrder = 2;
 		const strip = new THREE.Mesh(zipGeo!, zip);
 		strip.position.set(0, BAG_H / 2, -(size.h + 2 * BAG_MARGIN + ZIP_IN) / 2 + ZIP_IN * 0.45);
+		strip.renderOrder = 1;
 		g.add(shell, strip);
 		return g;
 	}
@@ -251,9 +263,11 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 		() => onReady()
 	);
 
-	const camera = new THREE.PerspectiveCamera(26, 1, 0.05, 2000);
+	const camera = new THREE.PerspectiveCamera(26, 1, 0.5, 500);
 	const target = new THREE.Vector3();
 	let last = performance.now();
+	let curW = 0;
+	let curH = 0;
 	const viewer: StickerViewer = {
 		angle: 0,
 		zoom: 1,
@@ -263,6 +277,9 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 			layout(performance.now());
 		},
 		resize(width, height) {
+			if (width <= 0 || height <= 0 || (width === curW && height === curH)) return;
+			curW = width;
+			curH = height;
 			renderer.setSize(width, height, false);
 			camera.aspect = width / height;
 			camera.updateProjectionMatrix();
@@ -281,6 +298,7 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 			}
 			// Reframe smoothly as the request grows or shrinks.
 			shownExtent += (extent - shownExtent) * Math.min(1, dt * 4);
+			if (Math.abs(extent - shownExtent) < 0.0005) shownExtent = extent;
 			const r = shownExtent;
 			phone.position.x = r + GAP_IN + PHONE.w / 2;
 			phone.position.z = 0.4;
@@ -291,6 +309,9 @@ export function createStickerViewer(canvas: HTMLCanvasElement, opts: StickerOpti
 			const fitW = (sceneW * 0.6) / (Math.tan(vfov) * camera.aspect);
 			const fitD = (sceneD * Math.sin(ELEVATION) * 0.5 + levels * BAG_H) / Math.tan(vfov);
 			const dist = Math.max(fitW, fitD) * viewer.zoom;
+			camera.near = Math.max(0.5, dist * 0.1);
+			camera.far = dist * 4;
+			camera.updateProjectionMatrix();
 			const zoomed = 1 - viewer.zoom;
 			target.set(THREE.MathUtils.lerp(cx, 0, Math.min(1, zoomed * 1.6)), 0.2, 0);
 			camera.position.set(target.x, target.y + dist * Math.sin(ELEVATION), dist * Math.cos(ELEVATION));

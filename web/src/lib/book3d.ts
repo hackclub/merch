@@ -4,7 +4,7 @@
 // stands beside it, then a phone for scale. Units are inches. Page bookkeeping
 // is in book.ts.
 import * as THREE from 'three';
-import { bookState, leafAngle, leafCount, pagesNear } from './book';
+import { bookState, leafAngle, leafCount, leafZ, pagesNear } from './book';
 import { finishInfo } from './paper';
 import { createPhone, createSheet, createStage, LEAN, loadArt, paperEdge, type Viewer, type ViewerOptions } from './paper3d';
 import { GAP_IN, PHONE } from './scale';
@@ -100,7 +100,10 @@ export function createBookViewer(canvas: HTMLCanvasElement, opts: BookOptions, o
 	};
 
 	// ---- the book ----
-	const spine = new THREE.MeshPhysicalMaterial({ color: 0xdddddd, roughness: cover.roughness, clearcoat: cover.clearcoat });
+	const spine = new THREE.MeshPhysicalMaterial({
+		color: 0xdddddd, roughness: cover.roughness, clearcoat: cover.clearcoat,
+		polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+	});
 	const stack = (side: 1 | -1) => {
 		const fore = paperEdge();
 		fore.map = pageEdges(true);
@@ -141,12 +144,17 @@ export function createBookViewer(canvas: HTMLCanvasElement, opts: BookOptions, o
 	for (let i = 0; i < uv.count; i++) uv.setX(i, 1 - uv.getX(i)); // read correctly from behind
 	const flat = Float32Array.from(leafFrontGeo.attributes.position.array);
 	const leafFrontMat = page();
+	leafFrontMat.polygonOffset = true;
+	leafFrontMat.polygonOffsetFactor = -1;
+	leafFrontMat.polygonOffsetUnits = -2;
 	const leafBackMat = page();
 	leafBackMat.side = THREE.BackSide;
+	leafBackMat.polygonOffset = true;
+	leafBackMat.polygonOffsetFactor = -1;
+	leafBackMat.polygonOffsetUnits = -2;
 	const leaf = new THREE.Group();
 	const leafFront = new THREE.Mesh(leafFrontGeo, leafFrontMat);
 	const leafBack = new THREE.Mesh(leafBackGeo, leafBackMat);
-	leafFront.castShadow = true;
 	leaf.add(leafFront, leafBack);
 
 	const curl = (turn: number) => {
@@ -178,7 +186,10 @@ export function createBookViewer(canvas: HTMLCanvasElement, opts: BookOptions, o
 	// Saddle stitching: two staples through the fold, seen on the spine when
 	// closed and in the gutter of the middle spread.
 	const staples = new THREE.Group();
-	const steel = new THREE.MeshPhysicalMaterial({ color: 0xc9ccd2, metalness: 1, roughness: 0.25 });
+	const steel = new THREE.MeshPhysicalMaterial({
+		color: 0xc9ccd2, metalness: 1, roughness: 0.25,
+		polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2
+	});
 	for (const sy of [0.25, 0.75]) {
 		const s = new THREE.Mesh(new THREE.BoxGeometry(0.012, Math.min(0.5, h * 0.12), 0.012), steel);
 		s.position.y = h * sy;
@@ -225,24 +236,41 @@ export function createBookViewer(canvas: HTMLCanvasElement, opts: BookOptions, o
 				evict(near);
 			}
 			const j = st.leaf;
-			right.fit(st.right);
-			left.fit(st.left);
-			show(right.front, 2 * j + 2 < n ? 2 * j + 2 : null, gutterAtLeft);
-			show(right.back, n - 1);
-			show(left.front, j > 0 ? 2 * j - 1 : null, gutterAtRight);
-			show(left.back, 0);
-			show(leafFrontMat, 2 * j, gutterAtLeft);
-			show(leafBackMat, 2 * j + 1 < n ? 2 * j + 1 : null, gutterAtRight);
-			curl(st.turn);
-			leaf.position.z = THREE.MathUtils.lerp(st.right * tl, st.left * tl, st.turn) + 0.002;
+			const turning = st.turn > 1e-4 && st.turn < 1 - 1e-4;
+			leaf.visible = turning;
+			if (!turning && st.turn <= 0.5) {
+				right.fit(st.right + 1);
+				left.fit(st.left);
+				show(right.front, 2 * j < n ? 2 * j : null, gutterAtLeft);
+				show(right.back, n - 1);
+				show(left.front, j > 0 ? 2 * j - 1 : null, gutterAtRight);
+				show(left.back, 0);
+			} else if (!turning) {
+				right.fit(0);
+				left.fit(st.left + 1);
+				show(left.front, 2 * j + 1 < n ? 2 * j + 1 : null, gutterAtRight);
+				show(left.back, 0);
+			} else {
+				right.fit(st.right);
+				left.fit(st.left);
+				show(right.front, 2 * j + 2 < n ? 2 * j + 2 : null, gutterAtLeft);
+				show(right.back, n - 1);
+				show(left.front, j > 0 ? 2 * j - 1 : null, gutterAtRight);
+				show(left.back, 0);
+				show(leafFrontMat, 2 * j, gutterAtLeft);
+				show(leafBackMat, 2 * j + 1 < n ? 2 * j + 1 : null, gutterAtRight);
+				curl(st.turn);
+				leaf.position.z = leafZ(st, tl);
+			}
 
 			// Staples: on the spine while closed, in the gutter at the middle spread.
 			const mid = Math.abs(viewer.position - leaves / 2) < 0.5;
 			const closedFront = viewer.position < 0.5;
 			const closedBack = viewer.position > leaves - 0.5;
+			const topStack = Math.max(st.left, st.right + (turning ? 0 : 1));
 			for (const s of staples.children) {
-				s.position.x = closedFront ? -0.007 : closedBack ? 0.007 : 0;
-				s.position.z = mid ? Math.max(st.left, st.right) * tl + 0.008 : T / 2;
+				s.position.x = closedFront ? -0.008 : closedBack ? 0.008 : 0;
+				s.position.z = mid ? topStack * tl + 0.008 : T / 2;
 			}
 			staples.visible = opts.binding === 'staple' && (closedFront || closedBack || mid);
 
@@ -330,5 +358,6 @@ function pageEdges(across: boolean): THREE.CanvasTexture {
 	const tex = new THREE.CanvasTexture(c);
 	tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
 	tex.colorSpace = THREE.SRGBColorSpace;
+	tex.anisotropy = 8;
 	return tex;
 }

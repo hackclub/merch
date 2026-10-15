@@ -117,16 +117,22 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 
 	const floor = new THREE.Mesh(new THREE.PlaneGeometry(sceneW * 6, sceneW * 6), new THREE.ShadowMaterial({ opacity: 0.12 }));
 	floor.rotation.x = -Math.PI / 2;
+	floor.position.y = -0.02;
 	floor.receiveShadow = true;
 	scene.add(floor);
 
-	const camera = new THREE.PerspectiveCamera(26, 1, 0.05, 2000);
+	const camera = new THREE.PerspectiveCamera(26, 1, 0.5, 500);
 	const target = new THREE.Vector3();
+	let curW = 0;
+	let curH = 0;
 	return {
 		scene,
 		renderer,
 		camera,
 		resize(width, height) {
+			if (width <= 0 || height <= 0 || (width === curW && height === curH)) return;
+			curW = width;
+			curH = height;
 			renderer.setSize(width, height, false);
 			camera.aspect = width / height;
 			camera.updateProjectionMatrix();
@@ -136,6 +142,9 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 			const fitH = (h * 0.56) / Math.tan(vfov);
 			const fitW = (w * 0.56) / (Math.tan(vfov) * camera.aspect);
 			const dist = Math.max(fitH, fitW) * zoom;
+			camera.near = Math.max(0.5, dist * 0.1);
+			camera.far = dist * 4;
+			camera.updateProjectionMatrix();
 			target.set(x, h * 0.5, 0);
 			camera.position.set(target.x + dist * 0.05, target.y + dist * 0.16, dist);
 			camera.lookAt(target);
@@ -233,7 +242,8 @@ export function createSheet(opts: ViewerOptions, renderer: THREE.WebGLRenderer, 
 }
 
 /** Paper's core shows on the edges: a warm off-white. */
-export const paperEdge = () => new THREE.MeshStandardMaterial({ color: 0xf2eee6, roughness: 0.95 });
+export const paperEdge = () =>
+	new THREE.MeshStandardMaterial({ color: 0xf2eee6, roughness: 0.95, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
 
 /** A dark phone standing at the same lean, turned a little toward the viewer, for scale. */
 export function createPhone(): THREE.Group {

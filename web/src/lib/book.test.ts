@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bookState, leafAngle, pagesNear, settle, spreadLabel, spreadPages } from './book';
+import { bookState, leafAngle, leafZ, pagesNear, settle, spreadLabel, spreadPages } from './book';
 
 describe('spreadPages', () => {
 	// The mini-magazine: 12 pages on 6 leaves, so spreads 0 (closed on the cover) to 6 (closed on the back).
@@ -67,3 +67,18 @@ describe('settle', () => {
 		expect(settle(3.6, 0)).toBe(4);
 	});
 });
+
+describe('leafZ', () => {
+	it('clears the right stack in the first half of a turn and the left stack in the second', () => {
+		const tl = 0.3 / 72;
+		for (let t = 0.05; t <= 0.5; t += 0.05) {
+			const st = bookState(1 + t, 72);
+			expect(leafZ(st, tl)).toBeGreaterThan(st.right * tl);
+		}
+		for (let t = 0.5; t <= 0.95; t += 0.05) {
+			const st = bookState(70 + t, 72);
+			expect(leafZ(st, tl)).toBeGreaterThan(st.left * tl);
+		}
+	});
+});
+
