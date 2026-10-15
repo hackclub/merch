@@ -47,6 +47,17 @@ describe('sectionize', () => {
 	it('only makes a featured item big when its section has company', () => {
 		expect(sectionize([laptops])[0].tiles[0].big).toBe(false);
 	});
+
+	it('lists stickers as the featured row, then a grid of the rest', () => {
+		const stickers = got.find((s) => s.section.key === 'stickers')!;
+		expect(stickers.rows.map((t) => t.item.id)).toEqual([8]);
+		expect(stickers.grid.map((t) => t.item.id)).toEqual([7]);
+		// Other sections are all rows.
+		const mags = got.find((s) => s.section.key === 'magazines')!;
+		expect([mags.rows.length, mags.grid.length]).toEqual([2, 0]);
+		// Without the featured sticker, the rest still go in the grid.
+		expect(sectionize([flag])[0].grid.map((t) => t.item.id)).toEqual([7]);
+	});
 });
 
 describe('tileFact', () => {

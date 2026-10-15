@@ -178,11 +178,23 @@
 			</fieldset>
 		{/if}
 
+		{#snippet add(item: Item)}
+			<div class="add">
+				{#if item.variants.length}
+					<SizeSteppers {item} {sizes} onchange={(sku, n) => setSize(item, sku, n)} />
+				{:else if expanded(item)}
+					<QuantityPicker {item} value={cart[item.id] ?? 0} onchange={(n) => setAmount(item, n)} />
+				{:else}
+					<button type="button" class="secondary" onclick={() => (picking[item.id] = true)}>Add</button>
+				{/if}
+			</div>
+		{/snippet}
+
 		<h2>What would you like us to send you?</h2>
-		{#each sections as { section, tiles } (section.key)}
+		{#each sections as { section, rows, grid } (section.key)}
 			<section class="group" aria-labelledby="group-{section.key}">
 				<h3 id="group-{section.key}">{section.title}</h3>
-				{#each tiles as { item } (item.id)}
+				{#each rows as { item } (item.id)}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="line" class:picked={cart[item.id]} class:sized={open && expanded(item)}
 						onmouseenter={() => (peek = item.id)} onmouseleave={() => (peek = null)}>
@@ -193,17 +205,7 @@
 							<a href={itemPath(item)}>{item.name}</a>
 							<span class="muted">{tileFact(item)}{#if sizesSummary(item, sizes)}{tileFact(item) ? ' · ' : ''}<strong class="in">{sizesSummary(item, sizes)}</strong>{/if}</span>
 						</div>
-						{#if open}
-							<div class="add">
-								{#if item.variants.length}
-									<SizeSteppers {item} {sizes} onchange={(sku, n) => setSize(item, sku, n)} />
-								{:else if expanded(item)}
-									<QuantityPicker {item} value={cart[item.id] ?? 0} onchange={(n) => setAmount(item, n)} />
-								{:else}
-									<button type="button" class="secondary" onclick={() => (picking[item.id] = true)}>Add</button>
-								{/if}
-							</div>
-						{/if}
+						{#if open}{@render add(item)}{/if}
 						{#if open && expanded(item) && amountIn3D(item)}
 							<div class="amount-3d"><Haul3D lines={pickedLines(item, cart[item.id] ?? 0)} includes={catalog.includes} compact /></div>
 						{/if}
@@ -227,6 +229,19 @@
 						{/if}
 					</div>
 				{/each}
+				{#if grid.length}
+					<div class="cells">
+						{#each grid as { item } (item.id)}
+							<div class="cell" class:picked={cart[item.id]}>
+								<a href={itemPath(item)} class="thumb" class:sticker={item.packs === 'sticker'} tabindex="-1" aria-hidden="true">
+									{#if thumbnail(item)}<img src={thumbnail(item)} alt="" loading="lazy" />{/if}
+								</a>
+								<a href={itemPath(item)} class="name">{item.name}</a>
+								{#if open}{@render add(item)}{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
 			</section>
 		{:else}
 			<p class="muted">Nothing listed yet.</p>
@@ -385,6 +400,14 @@
 	/* Picking how many of an item that plays a clip: the amount, stacked up in 3D, under the row. */
 	.amount-3d { flex-basis: 100%; padding-left: 4.65rem; }
 	@media (max-width: 600px) { .amount-3d { padding-left: 0; } }
+	/* The rest of a grid section (the other stickers) under its lead row: picture, name, add. */
+	.cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 1.25rem 0.75rem; padding-top: 1rem; }
+	.cell { display: grid; gap: 0.5rem; align-content: start; }
+	.cell .thumb { width: 100%; height: auto; aspect-ratio: 1; }
+	.cell.picked .thumb { box-shadow: inset 0 0 0 2px var(--red); }
+	.cell .name { font-weight: 700; text-decoration: none; }
+	.cell .name:hover { text-decoration: underline; }
+	.cell .add { justify-content: flex-start; padding-left: 0; flex-basis: auto; }
 	.send { margin-top: 1.5rem; }
 	form { display: grid; gap: 1rem; }
 	form h2 { margin-bottom: 0; }

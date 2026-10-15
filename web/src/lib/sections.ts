@@ -12,6 +12,8 @@ export type Section = {
 	link?: { href: string; label: string };
 	prefixes: string[];
 	featured?: string;
+	/** Everything but the featured item is shown as a grid under it. */
+	grid?: boolean;
 };
 
 export const SECTIONS: Section[] = [
@@ -45,21 +47,25 @@ export const SECTIONS: Section[] = [
 		title: 'Stickers',
 		blurb: 'Packs of 50 for your club, or a few for your laptop.',
 		prefixes: ['Sti/'],
-		featured: 'Sti/Bra/O&H/Lap'
+		featured: 'Sti/Bra/O&H/Lap',
+		grid: true
 	}
 ];
 
 export type Tile = { item: Item; big: boolean };
 
-/** The shop's sections in order, each with its tiles; empty sections are left out. */
-export function sectionize(items: Item[]): { section: Section; tiles: Tile[] }[] {
+/** The shop's sections in order, each with its tiles; empty sections are left out.
+ * `rows` and `grid` split the tiles for the request form: grid sections list only the featured item as a row. */
+export function sectionize(items: Item[]): { section: Section; tiles: Tile[]; rows: Tile[]; grid: Tile[] }[] {
 	const home = (i: Item) =>
 		SECTIONS.find((s) => s.prefixes.some((p) => i.sku.startsWith(p))) ?? SECTIONS.find((s) => s.key === 'more')!;
 	return SECTIONS.map((section) => {
 		const mine = items
 			.filter((i) => home(i) === section)
 			.sort((a, b) => Number(b.sku === section.featured) - Number(a.sku === section.featured) || a.sort_order - b.sort_order);
-		return { section, tiles: mine.map((item) => ({ item, big: mine.length > 1 && item.sku === section.featured })) };
+		const tiles = mine.map((item) => ({ item, big: mine.length > 1 && item.sku === section.featured }));
+		const inGrid = (t: Tile) => !!section.grid && t.item.sku !== section.featured;
+		return { section, tiles, rows: tiles.filter((t) => !inGrid(t)), grid: tiles.filter(inGrid) };
 	}).filter((s) => s.tiles.length > 0);
 }
 
