@@ -170,7 +170,8 @@ describe('cart', () => {
 
 describe('presetQuantities', () => {
 	it('offers the first few pack sizes for items that come in packs', () => {
-		expect(presetQuantities(postcard)).toEqual([5, 10, 15, 20, 25, 50]);
+		expect(presetQuantities(postcard)).toEqual([5, 10, 25, 50, 100]);
+		expect(presetQuantities({ ...postcard, max_per_request: 30 })).toEqual([5, 10, 25]);
 		expect(presetQuantities(sticker)).toEqual([3, 10, 50, 100, 150]);
 		expect(presetQuantities({ ...miniMag, max_per_request: 100 })).toEqual([5, 10, 15, 20, 25, 30]);
 	});

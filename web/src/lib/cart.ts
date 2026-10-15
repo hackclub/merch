@@ -23,8 +23,10 @@ export function packQuantities(packs: string, max: number): number[] {
 export const quantityOptions = (item: Item): number[] | undefined =>
 	item.packs ? [0, ...packQuantities(item.packs, item.max_per_request)] : undefined;
 
-/** The quick-pick amounts shown after "Add": the first few pack sizes, or round counts up to the max. */
+/** The quick-pick amounts shown after "Add": set amounts for postcards, the first few pack sizes for other packs, or round counts up to the max. */
 export function presetQuantities(item: Item): number[] {
+	// Postcards: the amounts people actually ask for (all of them valid pack sizes).
+	if (item.packs === 'postcard') return [5, 10, 25, 50, 100].filter((q) => q <= item.max_per_request);
 	if (item.packs) return packQuantities(item.packs, item.max_per_request).slice(0, 6);
 	return [1, 2, 3, 5, 10, 25, 50, 100].filter((q) => q <= item.max_per_request);
 }
