@@ -27,6 +27,9 @@ func (s *server) addressSuggest(w http.ResponseWriter, r *http.Request, v viewer
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if utf8.RuneCountInString(q) < minAddressQuery {
+		// The form sends an empty query on focus: locate the person's town now
+		// (cached), so their first real search doesn't wait for it.
+		s.nearViewer(r.Context(), v, "")
 		writeJSON(w, http.StatusOK, map[string]any{"suggestions": []places.Suggestion{}})
 		return
 	}

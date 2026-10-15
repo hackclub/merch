@@ -3,7 +3,7 @@
 	// Picking one fills the rest of the address. Without a Places key on the
 	// server (404) it's a plain input.
 	import { api, ApiError } from './api';
-	import { createSearcher, moveHighlight, newSessionToken, regionOf, type AddressSuggestion } from './addressSearch';
+	import { createSearcher, moveHighlight, narrow, newSessionToken, regionOf, type AddressSuggestion } from './addressSearch';
 	import type { Address } from './types';
 
 	let {
@@ -22,14 +22,34 @@
 	let session = newSessionToken();
 	const listId = `address-suggestions-${Math.random().toString(36).slice(2)}`;
 
-	const search = createSearcher((q) =>
+	const suggest = (q: string) =>
 		api
 			.get<{ suggestions: AddressSuggestion[] }>(`/api/address/suggest?q=${encodeURIComponent(q)}&session=${session}&region=${regionOf(navigator.language)}`)
-			.then((r) => r.suggestions)
-	);
+			.then((r) => r.suggestions);
+	const search = createSearcher(suggest);
+
+	function unavailable(e: unknown) {
+		if (e instanceof ApiError && e.status === 404) {
+			off = true;
+			onunavailable?.();
+		}
+	}
+
+	// An empty query on focus is free: the server locates the person's town
+	// before their first search needs it.
+	let warmed = false;
+	function onfocus() {
+		if (off || warmed) return;
+		warmed = true;
+		suggest('').catch(unavailable);
+	}
 
 	async function oninput() {
 		if (off) return;
+		// Show what still fits right away; the fresh answer replaces it.
+		suggestions = narrow(suggestions, value);
+		open = suggestions.length > 0;
+		highlight = -1;
 		try {
 			const r = await search(value);
 			if (r === null) return;
@@ -37,10 +57,7 @@
 			highlight = -1;
 			open = r.length > 0;
 		} catch (e) {
-			if (e instanceof ApiError && e.status === 404) {
-				off = true;
-				onunavailable?.();
-			}
+			unavailable(e);
 			suggestions = [];
 			open = false;
 		}
@@ -75,7 +92,7 @@
 <div class="wrap">
 	<label>{label}
 		{#if hint && !off}<span class="hint">{hint}</span>{/if}
-		<input required bind:value {oninput} placeholder={off ? '' : placeholder} {onkeydown} onblur={() => (open = false)} autocomplete="address-line1"
+		<input required bind:value {oninput} placeholder={off ? '' : placeholder} {onkeydown} {onfocus} onblur={() => (open = false)} autocomplete="address-line1"
 			role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={listId}
 			aria-activedescendant={open && highlight >= 0 ? `${listId}-${highlight}` : undefined} />
 	</label>

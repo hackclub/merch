@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyPlace, createSearcher, moveHighlight, wantsSearch, regionOf } from './addressSearch';
+import { applyPlace, createSearcher, moveHighlight, narrow, wantsSearch, regionOf } from './addressSearch';
 import { blankAddress } from './address';
 
 describe('applyPlace', () => {
@@ -69,11 +69,49 @@ describe('createSearcher', () => {
 		expect((await fast)?.[0].place_id).toBe('fast');
 	});
 
+	it('answers a repeated query from memory, without waiting', async () => {
+		const fetcher = vi.fn(async (q: string) => [{ place_id: q, main: q, secondary: '' }]);
+		const search = createSearcher(fetcher, 100);
+		const first = search('15 Fal');
+		await vi.advanceTimersByTimeAsync(100);
+		await first;
+		search('15 Fall');
+		// Backspacing: the earlier answer comes back at once and no new call goes out.
+		expect((await search(' 15 Fal '))?.[0].place_id).toBe('15 Fal');
+		await vi.advanceTimersByTimeAsync(100);
+		expect(fetcher).toHaveBeenCalledTimes(1);
+	});
+
+	it('waits only briefly by default', async () => {
+		const fetcher = vi.fn(async () => []);
+		const search = createSearcher(fetcher);
+		search('15 Fal');
+		await vi.advanceTimersByTimeAsync(120);
+		expect(fetcher).toHaveBeenCalledTimes(1);
+	});
+
 	it('answers short queries with nothing, without calling out', async () => {
 		const fetcher = vi.fn(async () => []);
 		const search = createSearcher(fetcher, 10);
 		expect(await search('15')).toEqual([]);
 		expect(fetcher).not.toHaveBeenCalled();
+	});
+});
+
+describe('narrow', () => {
+	const list = [
+		{ place_id: 'a', main: '15 Falls Rd', secondary: 'Shelburne, VT, USA' },
+		{ place_id: 'b', main: '15 Fallon Ave', secondary: 'Boston, MA, USA' }
+	];
+
+	it('keeps the suggestions that still match what was typed', () => {
+		expect(narrow(list, '15 falls').map((s) => s.place_id)).toEqual(['a']);
+		expect(narrow(list, '15 Fal').map((s) => s.place_id)).toEqual(['a', 'b']);
+	});
+
+	it('matches into the town, ignoring commas and spacing', () => {
+		expect(narrow(list, '15 Falls Rd  shelb').map((s) => s.place_id)).toEqual(['a']);
+		expect(narrow(list, '15 Falls Rd, Boston')).toEqual([]);
 	});
 });
 

@@ -127,3 +127,22 @@ func TestAddressSearchOff(t *testing.T) {
 		t.Fatalf("off: %d, want 404", code)
 	}
 }
+
+func TestAddressSuggestWarmsUp(t *testing.T) {
+	h := newHarness(t)
+	u, err := h.store.UpsertUser(context.Background(), auth.Identity{ID: "ident!warm", Email: "warm@x.com", Name: "Warm",
+		Address: &swag.Address{FirstName: "O", LastName: "D", Line1: "15 Falls Rd", City: "Shelburne", State: "VT", PostalCode: "05482", Country: "US"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _ := h.store.CreateSession(context.Background(), u.ID, time.Hour)
+	home := &http.Client{Transport: cookieTransport{tok: tok}}
+	// Focusing the field sends an empty query: no billed suggestion, but the
+	// person's town is located now instead of in front of their first keystroke.
+	if code := h.do(home, "GET", "/api/address/suggest?q=", nil, nil); code != http.StatusOK {
+		t.Fatalf("warm: %d", code)
+	}
+	if len(h.places.calls) != 0 || len(h.places.located) != 1 {
+		t.Fatalf("calls = %v, located = %v", h.places.calls, h.places.located)
+	}
+}
