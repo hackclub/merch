@@ -237,15 +237,17 @@
 						After you submit we'll send you to HCB to pay it; we ship once it's received.
 					</p>
 				{/if}
-				<label class="choice understand" class:on={understood}>
-					<input type="checkbox" required bind:checked={understood} />
-					<span>
-						<span class="p">Hack Club is a charity. The absolutely most effective way we can get more teenagers into Hack Club is to help people like you spread Hack Club!</span>
-						<span class="p">However - it is wasteful if we send stuff in excess. An example of this would be if you are requesting 5+ shirts and not using them. If you are requesting a bunch and wearing them - please get more!</span>
-						<span class="p">Also - Please do not use this form to request t-shirts for other people. This form is for t-shirts you will wear yourself personally. If you need t-shirts for prizes or for an event, please get in touch with Zach.</span>
-						<span class="p">Just please don't abuse this system. Check this box to confirm you understand :-)</span>
-					</span>
-				</label>
+				<div class="understand">
+					<p>Hack Club is a charity. The most effective way we can get more teenagers into Hack Club is to help people like you spread it!</p>
+					<p>But it's wasteful when we send more than gets used. Ask for what you'll actually hand out, put up or wear. If you run out, come back and get more!</p>
+					{#if shown.some((i) => i.variants.length && cart[i.id])}
+						<p>T-shirts are for you to wear yourself, not to give away. If you need shirts for prizes or an event, get in touch with Zach.</p>
+					{/if}
+					<label class="choice" class:on={understood}>
+						<input type="checkbox" required bind:checked={understood} />
+						<span>I understand, and I'll only request what I'll use.</span>
+					</label>
+				</div>
 				{#each problems as p}<p class="error">{p}</p>{/each}
 				<button disabled={submitting || problems.length > 0 || !understood}>
 					{submitting ? 'Sending…' : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
@@ -329,6 +331,8 @@
 	.choice:hover { border-color: var(--dark); }
 	.choice.on { border-color: var(--red); box-shadow: inset 0 0 0 1px var(--red); }
 	.choice input { width: auto; margin: 0.2rem 0 0; accent-color: var(--red); }
-	.understand .p { display: block; margin-bottom: 0.6rem; }
-	.understand .p:last-child { margin-bottom: 0; font-weight: 700; }
+	/* Read first, then tick: the checkbox sits under the text. */
+	.understand { display: grid; gap: 0.6rem; padding: 1rem 1.25rem; background: var(--tile); }
+	.understand p { margin: 0; }
+	.understand .choice { background: white; }
 </style>
