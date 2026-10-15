@@ -27,7 +27,7 @@
 			<span>{session.me.user.name || session.me.user.email}</span>
 			<button class="link" onclick={logout}>Sign out</button>
 		{:else if session.loaded}
-			<a class="button" href="/auth/login" data-sveltekit-reload>Sign in<span class="wide"> with Hack Club</span></a>
+			<a class="button" href="/auth/login" data-sveltekit-reload>Sign in<span class="wide">{' '}with Hack Club</span></a>
 		{/if}
 	</div>
 </header>

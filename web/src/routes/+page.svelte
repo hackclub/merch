@@ -9,6 +9,7 @@
 	import { cartCosts, cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
 	import { formatUnitCost, itemPath, previewCount, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
+	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
 	import SizePicker from '$lib/SizePicker.svelte';
 	import Stepper from '$lib/Stepper.svelte';
@@ -48,7 +49,11 @@
 	const purposeInfo = $derived(PURPOSES.find((p) => p.value === purpose));
 	// Personal requests don't offer club-only items (the full-size magazine, the T-shirt).
 	const shown = $derived(catalog ? itemsFor(catalog.items, purpose) : []);
+	const sections = $derived(sectionize(shown));
 	const asking = $derived(!!session.me?.user && !!catalog?.settings.requests_open);
+	// Anyone can fill the bag; signing in only comes at the end, when they send it.
+	const open = $derived(!!catalog?.settings.requests_open);
+	const count = $derived(totalQuantity(cart));
 	const problems = $derived(catalog ? cartErrors(cart, catalog.settings.max_items_per_request, catalog.items, sizes) : []);
 	const intl = $derived(isInternational(address.country));
 	const costs = $derived(catalog ? cartCosts(cart, catalog.items, sizes, stocks) : null);
@@ -103,7 +108,7 @@
 		<p class="error">Requests are closed right now. Check back soon!</p>
 	{/if}
 	{#if asking}
-		<fieldset class="ask">
+		<fieldset class="ask" id="purpose">
 			<legend><h2>What kind of request is this?</h2></legend>
 			<p class="muted">
 				Free shipping in the US.{#if catalog.settings.international_shipping_fee_cents > 0}{' '}{formatCents(catalog.settings.international_shipping_fee_cents)}
@@ -117,41 +122,58 @@
 			{/each}
 		</fieldset>
 	{/if}
-	<section class="grid">
-		{#each shown as item (item.id)}
-			{@const preview = tilePreview(item)}
-			<div class="item" class:picked={cart[item.id]}>
-				<a href={itemPath(item)} class="item-link">
-					<div class="tile" class:sticker={item.packs === 'sticker'}>
-						{#if thumbnail(item)}
-							<img src={thumbnail(item)} alt={item.name} loading="lazy" />
-						{:else}
-							<span aria-hidden="true">📦</span>
-						{/if}
-						{#if preview}<Tile3D {preview} count={previewCount(item, cart[item.id] ?? 0)} rest={'stickers' in preview ? -0.25 : -0.45} />{/if}
-						{#if item.packs === 'sticker'}<span class="pack label">{bagLabel(previewCount(item, cart[item.id] ?? 0))}</span>{/if}
-					</div>
-					<h3>{item.name}</h3>
-				</a>
-				{#if item.description}<p class="muted clamp">{item.description}</p>{/if}
-				{#if asking && purpose}
-					{#if item.variants.length}
-						<SizePicker variants={item.variants} value={sizes[item.id]} label="Size of {item.name}"
-							onchange={(sku) => { setSizes({ ...sizes, [item.id]: sku }); if (!cart[item.id]) setCart(setQuantity(cart, item, 1)); }} />
-					{/if}
-					<Stepper value={cart[item.id] ?? 0} max={item.max_per_request} options={quantityOptions(item)} label="Quantity of {item.name}"
-						onchange={(n) => setCart(setQuantity(cart, item, n))} />
-				{/if}
+	{#each sections as { section, tiles }, n (section.key)}
+		<section class="shelf" aria-labelledby="shelf-{section.key}">
+			<div class="shelf-head">
+				<span class="label muted">{String(n + 1).padStart(2, '0')}</span>
+				<h2 id="shelf-{section.key}">{section.title}</h2>
+				{#if section.blurb}<p>{section.blurb}</p>{/if}
+				{#if section.link}<a class="label" href={section.link.href} target="_blank" rel="noreferrer">{section.link.label} ↗</a>{/if}
 			</div>
-		{:else}
-			<p class="muted">Nothing listed yet.</p>
-		{/each}
-	</section>
+			{#each tiles as { item, big } (item.id)}
+				{@const preview = tilePreview(item)}
+				<div class="item" class:big class:picked={cart[item.id]}>
+					<a href={itemPath(item)} class="item-link">
+						<div class="tile" class:sticker={item.packs === 'sticker'} class:swap={!preview && item.images.length > 1}>
+							{#if thumbnail(item)}
+								<img src={thumbnail(item)} alt={item.name} loading="lazy" />
+								{#if !preview && item.images.length > 1}<img class="alt" src={item.images[1]} alt="" loading="lazy" />{/if}
+							{:else}
+								<span aria-hidden="true">📦</span>
+							{/if}
+							{#if preview}<Tile3D {preview} count={previewCount(item, cart[item.id] ?? 0)} rest={'stickers' in preview ? -0.25 : -0.45} />{/if}
+							{#if item.packs === 'sticker'}<span class="pack label">{bagLabel(previewCount(item, cart[item.id] ?? 0))}</span>{/if}
+						</div>
+						<h3>{item.name}</h3>
+					</a>
+					<p class="fact label">{tileFact(item)}</p>
+					{#if big && item.description}<p class="muted clamp">{item.description}</p>{/if}
+					{#if open}
+						<div class="add">
+							{#if item.variants.length}
+								<SizePicker variants={item.variants} value={sizes[item.id]} label="Size of {item.name}"
+									onchange={(sku) => { setSizes({ ...sizes, [item.id]: sku }); if (!cart[item.id]) setCart(setQuantity(cart, item, 1)); }} />
+							{/if}
+							{#if cart[item.id]}
+								<Stepper value={cart[item.id]} max={item.max_per_request} options={quantityOptions(item)} label="Quantity of {item.name}"
+									onchange={(n) => setCart(setQuantity(cart, item, n))} />
+							{:else if !item.variants.length}
+								<button type="button" class="secondary" onclick={() => setCart(setQuantity(cart, item, 1))}>Add</button>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{/each}
+		</section>
+	{:else}
+		<p class="muted">Nothing listed yet.</p>
+	{/each}
 
 	{#if !session.me?.user}
-		<p><a class="button" href="/auth/login" data-sveltekit-reload>Sign in with Hack Club to request swag</a></p>
+		<p id="request" class="send"><a class="button" href="/auth/login" data-sveltekit-reload
+			>{count ? `Sign in with Hack Club to send ${count} item${count === 1 ? '' : 's'}` : 'Sign in with Hack Club to request swag'}</a></p>
 	{:else if asking && !purpose}
-		<p class="muted">Pick what kind of request this is above, then choose your swag.</p>
+		<p class="muted">Pick what kind of request this is at the top, then we'll ask where to send it.</p>
 	{:else if asking && totalQuantity(cart) > 0}
 		<form class="card" id="request" style="margin-top: 1.5rem" onsubmit={submit}>
 			<h2>Where should we send it?</h2>
@@ -217,11 +239,49 @@
 			</button>
 		</form>
 	{/if}
+	{#if count > 0}
+		<a class="bagbar" href={!session.me?.user ? '/auth/login' : purpose ? '#request' : '#purpose'} data-sveltekit-reload={session.me?.user ? undefined : true}>
+			<span class="label">{count} item{count === 1 ? '' : 's'} · free</span>
+			<span>{session.me?.user ? (purpose ? 'Send it →' : 'What’s it for? →') : 'Sign in to send →'}</span>
+		</a>
+	{/if}
 {:else if !error}
 	<p class="muted">Loading swag…</p>
 {/if}
 
 <style>
+	/* One row per section: a header cell, the featured item two tiles wide, then the rest. */
+	.shelf { display: grid; gap: 1.75rem 0.5rem; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 3.5rem; }
+	@media (max-width: 1000px) { .shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+	@media (max-width: 600px) { .shelf { grid-template-columns: 1fr 1fr; gap: 1.5rem 0.4rem; margin-bottom: 2.5rem; } }
+	.shelf-head { display: flex; flex-direction: column; justify-content: flex-end; gap: 0.5rem; padding: 0 1rem 0.25rem 0; border-top: 2px solid var(--dark); }
+	.shelf-head h2 { margin: 0; font-size: clamp(1.4rem, 2.4vw, 2.1rem); letter-spacing: -0.01em; }
+	.shelf-head p { margin: 0; line-height: 1.45; max-width: 22rem; }
+	.shelf-head a { color: var(--red); text-decoration: none; }
+	.shelf-head a:hover { text-decoration: underline; }
+	.shelf-head > .label:first-child { margin-top: 0.6rem; margin-bottom: auto; }
+	@media (max-width: 600px) {
+		.shelf-head { grid-column: 1 / -1; padding: 0; }
+		.shelf-head > .label:first-child { margin-bottom: 0.5rem; }
+	}
+	.item.big { grid-column: span 2; }
+	/* As tall as the 4:5 tiles beside it. */
+	.item.big .tile { aspect-ratio: 8 / 5; min-height: 0; overflow: hidden; }
+	@media (max-width: 600px) { .item.big .tile { aspect-ratio: 5 / 4; } }
+	.item.big h3 { font-size: 1.15rem; }
+	.fact { margin: -0.2rem 0 0; color: #55555d; }
+	.add { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin-top: auto; padding-top: 0.25rem; }
+	.add > button { height: 2.6rem; padding: 0 1.4rem; }
+	/* Items without a 3D view show their second photo on hover, like a lookbook. */
+	.tile .alt { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; mix-blend-mode: normal; opacity: 0; transition: opacity 0.25s; }
+	.tile.swap:hover .alt { opacity: 1; }
+	.send { margin-top: 1rem; }
+	.bagbar {
+		position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 2; display: flex; gap: 1.5rem; align-items: center;
+		padding: 0.85rem 1.25rem; background: var(--dark); color: white; text-decoration: none; font-weight: 700; text-transform: uppercase;
+		font-size: 0.85rem; letter-spacing: 0.04em; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25); white-space: nowrap;
+	}
+	.bagbar:hover { background: var(--red); }
 	.item { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 	.item-link { color: inherit; text-decoration: none; }
 	.tile { position: relative; display: grid; place-items: center; aspect-ratio: 4 / 5; background: var(--tile); font-size: 3rem; }
