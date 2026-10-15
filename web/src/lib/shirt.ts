@@ -87,3 +87,84 @@ export function shirtCrop(box: Box | null, mw: number, mh: number, imgAspect: nu
 	const w = 0.49 * (box.w / mw);
 	return { u0: (box.x + box.w / 2) / mw - w / 2, v0: box.y / mh - 0.015, w, h: h(w) };
 }
+
+/**
+ * Chest width (armpit to armpit) and body length (shoulder to hem) in inches of
+ * a typical unisex tee in each size; sizes we don't know are shown as an M.
+ */
+const SHIRT_SIZES: Record<string, { chest: number; length: number }> = {
+	XS: { chest: 16.5, length: 27 },
+	S: { chest: 18, length: 28 },
+	M: { chest: 20, length: 29 },
+	L: { chest: 22, length: 30 },
+	XL: { chest: 24, length: 31 },
+	XXL: { chest: 26, length: 32 },
+	'2XL': { chest: 26, length: 32 }
+};
+
+export const shirtSize = (label: string) => SHIRT_SIZES[label.trim().toUpperCase()] ?? SHIRT_SIZES.M;
+
+/**
+ * Whether a photo is a product shot of the shirt alone: transparent around the
+ * edges, or nearly every pixel on its border the plain backdrop of its corners.
+ * An event photo (people wearing it) isn't, so it can't be the shirt's back.
+ */
+export function isProductShot(rgba: Uint8ClampedArray, w: number, h: number): boolean {
+	const corners = [0, w - 1, (h - 1) * w, h * w - 1];
+	const avg = (c: number) => corners.reduce((a, i) => a + rgba[i * 4 + c], 0) / corners.length;
+	const bg = [avg(0), avg(1), avg(2)];
+	const plain = (i: number) => {
+		if (rgba[i * 4 + 3] < 128) return true;
+		const r = rgba[i * 4], g = rgba[i * 4 + 1], b = rgba[i * 4 + 2];
+		return Math.max(r, g, b) - Math.min(r, g, b) < 24 && Math.abs(r - bg[0]) + Math.abs(g - bg[1]) + Math.abs(b - bg[2]) < 60;
+	};
+	let n = 0, ok = 0;
+	const check = (i: number) => (n++, (ok += plain(i) ? 1 : 0));
+	for (let x = 0; x < w; x++) check(x), check((h - 1) * w + x);
+	for (let y = 1; y < h - 1; y++) check(y * w), check(y * w + w - 1);
+	return ok >= n * 0.9;
+}
+
+/**
+ * How far each pixel of a mask is from its nearest pixel outside it (or the
+ * image's edge), in pixels: 0 outside. Two chamfer passes, close to Euclidean.
+ */
+export function edgeDistance(mask: Uint8Array, w: number, h: number): Float32Array {
+	const d = new Float32Array(w * h);
+	for (let i = 0; i < d.length; i++) d[i] = mask[i] ? Infinity : 0;
+	const at = (x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : d[y * w + x]);
+	const D = Math.SQRT2;
+	for (let y = 0; y < h; y++)
+		for (let x = 0; x < w; x++) {
+			const i = y * w + x;
+			if (d[i]) d[i] = Math.min(d[i], at(x - 1, y) + 1, at(x, y - 1) + 1, at(x - 1, y - 1) + D, at(x + 1, y - 1) + D);
+		}
+	for (let y = h - 1; y >= 0; y--)
+		for (let x = w - 1; x >= 0; x--) {
+			const i = y * w + x;
+			if (d[i]) d[i] = Math.min(d[i], at(x + 1, y) + 1, at(x, y + 1) + 1, at(x + 1, y + 1) + D, at(x - 1, y + 1) + D);
+		}
+	return d;
+}
+
+/** How far cloth stands out from its outline, inches: rounding over within `round` of the edge, up to `depth`. */
+export function clothDepth(fromEdge: number, round: number, depth: number): number {
+	const e = Math.min(Math.max(fromEdge, 0) / round, 1);
+	return depth * Math.sqrt(1 - (1 - e) ** 2);
+}
+
+/**
+ * The shirt's own color, for the parts of it no photo shows: the median of the
+ * cloth just inside its outline (prints sit in the middle), as [r, g, b].
+ */
+export function fabricColor(rgba: Uint8ClampedArray, mask: Uint8Array, dist: Float32Array, w: number): [number, number, number] {
+	const far = Math.max(3, w * 0.04);
+	const ch: number[][] = [[], [], []];
+	for (let i = 0; i < mask.length; i++) {
+		if (!mask[i] || dist[i] < 1.5 || dist[i] > far) continue;
+		for (let c = 0; c < 3; c++) ch[c].push(rgba[i * 4 + c]);
+	}
+	if (!ch[0].length) return [43, 44, 49];
+	const median = (v: number[]) => v.sort((a, b) => a - b)[Math.floor(v.length / 2)];
+	return [median(ch[0]), median(ch[1]), median(ch[2])];
+}

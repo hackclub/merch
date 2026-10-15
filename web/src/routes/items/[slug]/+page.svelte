@@ -36,7 +36,7 @@
 	const item = $derived(catalog?.items.find((i) => i.id === id));
 	const inCart = $derived(item ? (bag.cart[item.id] ?? 0) : 0);
 	const total = $derived(totalQuantity(bag.cart));
-	// Printed items with a size get a true-to-scale 3D view, shown first; stickers
+	// Printed items with a size and T-shirts get a true-to-scale 3D view, shown first; stickers
 	// show the stack (or bags of 50) you're requesting. Booklets open in it and
 	// flip through their pages.
 	const isSticker = $derived(item?.packs === 'sticker');

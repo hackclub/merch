@@ -1,6 +1,6 @@
 <script lang="ts">
-	// Interactive 3D view of a printed item (see paper3d.ts) or a sticker request
-	// (sticker3d.ts): slowly spins like a store's 3D product view; drag or arrow
+	// Interactive 3D view of a printed item (see paper3d.ts), a sticker request
+	// (sticker3d.ts) or a T-shirt (shirt3d.ts): slowly spins like a store's 3D product view; drag or arrow
 	// keys turn it, + / − zoom in to see the paper. Booklets (book3d.ts) also
 	// open: drag, arrow keys or the slider turn their pages. A trifold brochure
 	// (fold3d.ts) opens and folds itself back up on a loop until you touch it;
@@ -17,6 +17,7 @@
 	import type { Viewer } from './paper3d';
 	import type { StickerViewer } from './sticker3d';
 	import { postcardLabel } from './postcards';
+	import { shirtSize } from './shirt';
 
 	// count: how many stickers or postcards are requested; the view grows to match.
 	let { preview, name, count = 0 }: { preview: Preview3D; name: string; count?: number } = $props();
@@ -40,9 +41,20 @@
 	const fold = $derived('fold' in preview ? preview.fold : undefined);
 	const opens = $derived(!!book || !!fold); // turns through positions (BookViewer.position)
 	const front = $derived(
-		'book' in preview ? (preview.book.pages[0] ?? '') : 'fold' in preview ? preview.fold.outside : 'sheet' in preview ? preview.sheet.front : 'postcards' in preview ? preview.postcards.front : preview.stickers.front
+		'book' in preview
+			? (preview.book.pages[0] ?? '')
+			: 'fold' in preview
+				? preview.fold.outside
+				: 'sheet' in preview
+					? preview.sheet.front
+					: 'postcards' in preview
+						? preview.postcards.front
+						: 'shirt' in preview
+							? preview.shirt.front
+							: preview.stickers.front
 	);
-	const back = $derived('sheet' in preview ? preview.sheet.back : undefined);
+	// Shirts always have a back to show, if only a plain one.
+	const back = $derived('sheet' in preview ? !!preview.sheet.back : 'shirt' in preview);
 	const leaves = $derived(book ? Math.ceil(book.pages.length / 2) : fold ? FOLD_STEPS : 0);
 	const stepLabel = (k: number) => (book ? spreadLabel(k, book.pages.length) : foldLabel(k));
 	const isOpen = $derived(goal > 0);
@@ -62,7 +74,9 @@
 				? `${postcardLabel(count)} · ${sizeLabel(preview.postcards.widthIn, preview.postcards.heightIn)}`
 				: 'stickers' in preview
 					? packLabel(count)
-					: ''
+					: 'shirt' in preview
+						? `Size ${preview.shirt.size}, about ${sizeLabel(shirtSize(preview.shirt.size).chest, shirtSize(preview.shirt.size).length)}`
+						: ''
 	);
 	$effect(() => {
 		const n = count;

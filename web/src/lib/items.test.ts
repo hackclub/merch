@@ -163,6 +163,33 @@ describe('productPreview', () => {
 	});
 });
 
+describe('shirts', () => {
+	const tee: Item = {
+		...poster, sku: 'Swa/Shirt/CF', width_in: null, height_in: null,
+		images: ['https://cdn.example/tee-front.jpg', 'https://cdn.example/tee-back.jpg', 'https://cdn.example/event.jpg'],
+		variants: ['S', 'M', 'L', 'XL'].map((label) => ({ label, sku: `Swa/Shirt/CF/${label}` }))
+	};
+
+	it('stand in 3D, front and back, at size M beside a phone', () => {
+		expect(productPreview(tee)).toEqual({
+			shirt: { kind: 'shirt', front: 'https://cdn.example/tee-front.jpg', back: 'https://cdn.example/tee-back.jpg', size: 'M', phone: true }
+		});
+		expect(tilePreview(tee)).toEqual({ shirt: { kind: 'shirt', front: 'https://cdn.example/tee-front.jpg', back: 'https://cdn.example/tee-back.jpg', size: 'M', phone: false } });
+		expect(tilePreview({ ...tee, clip: 'https://cdn.example/worn.jpg' })).toEqual({ clip: 'https://cdn.example/worn.jpg' });
+	});
+
+	it('show the middle size when there is no M, and need a photo', () => {
+		const kids = { ...tee, variants: ['XS', 'S', 'L'].map((label) => ({ label, sku: `K/${label}` })) };
+		expect(productPreview(kids)).toMatchObject({ shirt: { size: 'S' } });
+		expect(productPreview({ ...tee, images: [] })).toBeNull();
+		expect(productPreview({ ...tee, images: ['https://cdn.example/tee-front.jpg'] })).toMatchObject({ shirt: { back: undefined } });
+	});
+
+	it('don’t stack up in 3D in the shop beside their clip', () => {
+		expect(showsAmountIn3D({ ...tee, clip: 'https://cdn.example/worn.jpg' })).toBe(false);
+	});
+});
+
 describe('previewCount', () => {
 	const sticker = { ...poster, packs: 'sticker' };
 	it('shows a sealed bag of 50 stickers until you pick a quantity, then what you picked', () => {

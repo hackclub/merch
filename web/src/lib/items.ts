@@ -4,6 +4,7 @@ import { sheetThickness } from './paper';
 import type { Viewer, ViewerOptions } from './paper3d';
 import { hasSize } from './scale';
 import type { PostcardOptions } from './postcard3d';
+import type { ShirtOptions } from './shirt3d';
 import type { StickerOptions } from './sticker3d';
 import { PER_BAG } from './stickers';
 import type { Item, ItemStock } from './types';
@@ -33,13 +34,14 @@ export const isBooklet = (item: Item) => item.binding !== '' && item.binding !==
 /** A trifold brochure with its outside (images[0]) and inside (images[1]) art folds and unfolds in 3D. */
 export const isTrifold = (item: Item) => item.binding === 'trifold' && item.images.length >= 2;
 
-/** A 3D product preview: booklet flip-through, trifold, printed sheet, sticker packs, or postcard bundles. */
+/** A 3D product preview: booklet flip-through, trifold, printed sheet, sticker packs, postcard bundles, or a T-shirt. */
 export type Preview3D =
 	| { book: BookOptions } // a booklet that flips through its pages
 	| { fold: FoldOptions } // a trifold brochure that opens and folds up
 	| { sheet: ViewerOptions } // a sized print, front and back
 	| { stickers: StickerOptions }
-	| { postcards: PostcardOptions }; // a stack, or bundles of 50
+	| { postcards: PostcardOptions } // a stack, or bundles of 50
+	| { shirt: ShirtOptions }; // cut out of its product photos, front and back
 
 /** What a shop tile shows instead of its photo; null = just the photo. */
 export type TilePreview =
@@ -55,6 +57,12 @@ export function productPreview(item: Item, includes: Item[] = [], phone = true):
 		return item.images.length
 			? { stickers: { kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in, phone } }
 			: null;
+	}
+	if (item.variants.length && !hasSize(item)) {
+		// Sized items are shirts: shown in an M (or the middle size), front and back.
+		const labels = item.variants.map((v) => v.label);
+		const size = labels.includes('M') ? 'M' : labels[Math.floor((labels.length - 1) / 2)];
+		return item.images.length ? { shirt: { kind: 'shirt', front: item.images[0], back: item.images[1], size, phone } } : null;
 	}
 	if (!hasSize(item)) return null;
 	if (item.packs === 'postcard' && item.images.length) {
@@ -105,10 +113,13 @@ export function tilePreview(item: Item): TilePreview | null {
 
 /**
  * Whether picking how many of an item also shows that amount stacked up in 3D
- * (beside its clip or flip-through): booklets, and anything measured with a clip.
+ * (beside its clip or flip-through): booklets, and anything measured with a clip
+ * except shirts.
  */
-export const showsAmountIn3D = (item: Item): boolean =>
-	(isBooklet(item) || !!item.clip) && !!productPreview(item, [], false);
+export function showsAmountIn3D(item: Item): boolean {
+	const preview = productPreview(item, [], false);
+	return (isBooklet(item) || !!item.clip) && !!preview && !('shirt' in preview);
+}
 
 /** Lazy-loads the matching WebGL viewer for a Preview3D descriptor. */
 export function loadPreviewViewer(canvas: HTMLCanvasElement, preview: Preview3D, count: number, onReady: () => void): Promise<Viewer> {
@@ -128,6 +139,7 @@ export function loadPreviewViewer(canvas: HTMLCanvasElement, preview: Preview3D,
 			return v;
 		});
 	}
+	if ('shirt' in preview) return import('./shirt3d').then((m) => m.createShirtViewer(canvas, preview.shirt, onReady));
 	return import('./paper3d').then((m) => m.createViewer(canvas, preview.sheet, onReady));
 }
 
