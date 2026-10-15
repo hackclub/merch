@@ -3,10 +3,10 @@
 	// (haul.ts, haul3d.ts), on 6-foot folding tables beside a laptop for clubs and
 	// events, against a dark backdrop so the white table stands out. Made to
 	// explore: drag to turn and tilt, pinch (or ctrl-scroll) or +/− to zoom, hover
-	// or tap a pile to see what it is and how tall. On tables, the caption says how
-	// much of them it covers, because people tend to ask for too little.
+	// or tap a pile to see what it is and how tall. The caption nudges people to ask
+	// for more, because they tend to ask for too little.
 	import { onMount, untrack } from 'svelte';
-	import { layoutHaul, lineLabel, piles, tableCover, tall, withIncludes, type HaulLine } from './haul';
+	import { layoutHaul, lineLabel, piles, tall, withIncludes, type HaulLine } from './haul';
 	import type { HaulViewer } from './haul3d';
 	import type { Item } from './types';
 
@@ -18,7 +18,6 @@
 	const stack = $derived(piles(lines, includes));
 	const table = $derived(layoutHaul(stack, { table: onTable }));
 	const shape = $derived(JSON.stringify(table));
-	const cover = $derived(Math.round(tableCover(table) * 100));
 
 	const START_ELEVATION = (34 * Math.PI) / 180;
 	const MIN_ELEVATION = (8 * Math.PI) / 180;
@@ -177,16 +176,7 @@
 	{#if compact}
 		<figcaption class="muted">{allLines.map(lineLabel).join(' · ')}, {tall(Math.max(...stack.map((p) => p.height)))} stacked up, next to a 6-inch phone.</figcaption>
 	{:else}
-	<figcaption>
-		{#if onTable}
-			<span>
-				Spread out, it covers about {cover}% of {table.tables.length === 1 ? 'a 6-foot folding table' : `${table.tables.length} 6-foot folding tables`}.
-				{#if cover < 35}Most people find they need more than they think, so don't be shy about adding more.{/if}
-			</span>
-		{/if}
-		<span class="muted">To scale, next to {onTable ? 'a 13-inch laptop and ' : ''}a regular 6-inch phone. Drag to turn and tilt it, pinch or use + and − to zoom, and tap a pile to see what it is.</span>
-		<span class="muted">{allLines.map(lineLabel).join(' · ')}</span>
-	</figcaption>
+	<figcaption>Most people find they need more than they think, so don't be shy about adding more.</figcaption>
 	{/if}
 </figure>
 

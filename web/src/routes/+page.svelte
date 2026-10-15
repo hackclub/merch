@@ -352,7 +352,7 @@
 	{:else if !error}
 		<p class="muted">Loading swag…</p>
 	{/if}
-	{#if catalog && haul.length && side.current}
+	{#if catalog && count > 0 && haul.length && side.current}
 		<aside class="haul-side" aria-label="Your request so far">
 			<strong>Your request · {count} item{count === 1 ? '' : 's'}</strong>
 			<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
@@ -440,9 +440,9 @@
 		/* Once the 3D view or clip is up it replaces the photo. */
 		.peek-img:has(:global(.spin.ready)) > img { opacity: 0; }
 	}
-	/* The haul so far, pinned in the grey space left of the sheet (the hover details take the right). */
+	/* The haul so far, pinned to the bottom left in the grey space beside the sheet (the hover details take the right). */
 	.haul-side {
-		position: fixed; z-index: 1; top: 6rem; right: calc(50% + 23.5rem); width: min(24rem, calc((100vw - 40rem) / 2 - 3.5rem));
+		position: fixed; z-index: 1; bottom: 1.5rem; left: 1.5rem; width: min(24rem, calc((100vw - 40rem) / 2 - 3rem));
 		max-height: calc(100vh - 7rem); overflow-y: auto; display: grid; gap: 0.6rem; padding: 1rem; background: white; font-size: 0.9rem; line-height: 1.45;
 	}
 	/* Picking how many of a booklet or an item that plays a clip: the amount, stacked up in 3D, under the row. */
