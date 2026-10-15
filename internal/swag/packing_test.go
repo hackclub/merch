@@ -36,17 +36,19 @@ func TestPack(t *testing.T) {
 	}{
 		{"stickers go in an envelope", []Line{{ItemID: 3, Quantity: 10}}, false, "Envelope", nil},
 		{"stickers and a few postcards still fit an envelope", []Line{{ItemID: 3, Quantity: 3}, {ItemID: 2, Quantity: 5}}, true, "Envelope", nil},
-		{"a magazine needs a mailer", []Line{{ItemID: 4, Quantity: 1}}, false, "Mailer", nil},
-		{"a shirt and stickers share a mailer", []Line{{ItemID: 6, Quantity: 1, SKU: "Swa/Shirt/HC/M"}, {ItemID: 3, Quantity: 10}}, true, "Mailer", nil},
-		{"a poster ships flat", []Line{{ItemID: 1, Quantity: 1}}, false, "Poster mailer", nil},
-		{"stickers ride along with a poster", []Line{{ItemID: 1, Quantity: 2}, {ItemID: 3, Quantity: 10}}, true, "Poster mailer", nil},
+		{"a magazine is too thick for a StayFlat", []Line{{ItemID: 4, Quantity: 1}}, false, "Bubble mailer", nil},
+		{"a shirt and stickers share a mailer", []Line{{ItemID: 6, Quantity: 1, SKU: "Swa/Shirt/HC/M"}, {ItemID: 3, Quantity: 10}}, true, "Bubble mailer", nil},
+		{"a poster ships flat", []Line{{ItemID: 1, Quantity: 1}}, false, "13x18 StayFlat", nil},
+		{"stickers ride along with a poster", []Line{{ItemID: 1, Quantity: 2}, {ItemID: 3, Quantity: 10}}, true, "13x18 StayFlat", nil},
 		{"a poster and a stack of postcards don't pack together", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 2, Quantity: 50}}, false, "", ErrWontPack},
 		{"a poster and a magazine don't pack together", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 4, Quantity: 1}}, false, "", ErrWontPack},
-		{"a club's magazines go in a box", []Line{{ItemID: 4, Quantity: 25}}, false, "Box", nil},
-		{"four magazines are under 3 lb abroad", []Line{{ItemID: 4, Quantity: 4}}, true, "Mailer", nil},
+		{"a club's magazines go in a box", []Line{{ItemID: 4, Quantity: 25}}, false, "13x10x4 box", nil},
+		{"four magazines are under 3 lb abroad", []Line{{ItemID: 4, Quantity: 4}}, true, "Bubble mailer", nil},
 		{"five magazines are over 3 lb abroad", []Line{{ItemID: 4, Quantity: 5}}, true, "", ErrTooHeavy},
-		{"five magazines are fine in the US", []Line{{ItemID: 4, Quantity: 5}}, false, "Mailer", nil},
-		{"45 mini-magazines make 3 lb", []Line{{ItemID: 5, Quantity: 45}}, true, "Mailer", nil},
+		{"five magazines are fine in the US", []Line{{ItemID: 4, Quantity: 5}}, false, "Bubble mailer", nil},
+		{"45 mini-magazines make 3 lb", []Line{{ItemID: 5, Quantity: 45}}, true, "Bubble mailer", nil},
+		{"a few prints go in a StayFlat", []Line{{ItemID: 2, Quantity: 10}, {ItemID: 3, Quantity: 3}, {ItemID: 5, Quantity: 1}}, false, "9x12 StayFlat", nil},
+		{"a poster never goes in a box", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 6, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}, false, "", ErrWontPack},
 		{"50 mini-magazines don't", []Line{{ItemID: 5, Quantity: 50}}, true, "", ErrTooHeavy},
 	}
 	for _, c := range cases {
@@ -69,12 +71,12 @@ func TestPack(t *testing.T) {
 }
 
 func TestPackWeight(t *testing.T) {
-	// 4 magazines (43.2 oz) in a mailer (2 oz).
+	// 4 magazines (43.2 oz) in a bubble mailer (1 oz).
 	p, err := Pack([]Line{{ItemID: 4, Quantity: 4}}, shopCatalog(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if math.Abs(p.WeightOz-45.2) > 0.01 || math.Abs(p.ContentsOz-43.2) > 0.01 || p.Package.Class != ClassParcel {
+	if math.Abs(p.WeightOz-44.2) > 0.01 || math.Abs(p.ContentsOz-43.2) > 0.01 || p.Package.Class != ClassParcel {
 		t.Fatalf("got %+v", p)
 	}
 	// A postcard has no weight set: it's worked out from its paper (4x6x0.016 in).

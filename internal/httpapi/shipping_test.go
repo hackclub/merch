@@ -55,7 +55,7 @@ func TestShippingEstimate(t *testing.T) {
 		t.Fatalf("estimate = %d", code)
 	}
 	e := out.Estimate
-	if e.Service != "Asendia" || e.TransitBasis != "DE" || e.ArriveBy == "" || out.Packing.Package.Name != "Mailer" {
+	if e.Service != "Asendia" || e.TransitBasis != "DE" || e.ArriveBy == "" || out.Packing.Package.Name != "Bubble mailer" {
 		t.Fatalf("got %+v / %+v", e, out.Packing)
 	}
 	if e.PostageCents != [2]int{} {
@@ -72,7 +72,7 @@ func TestShippingEstimateRefusesWhatWontShip(t *testing.T) {
 	var errBody map[string]string
 	code := h.do(h.client(userEmail), "POST", "/api/shipping/estimate", map[string]any{"country": "US",
 		"lines": []swag.Line{{ItemID: poster.ID, Quantity: 1}, {ItemID: postcard.ID, Quantity: 50}}}, &errBody)
-	if code != 422 || !strings.Contains(errBody["error"], "poster mailer") {
+	if code != 422 || !strings.Contains(errBody["error"], "StayFlat") {
 		t.Fatalf("poster + 50 postcards = %d %v", code, errBody)
 	}
 	code = h.do(h.client(userEmail), "POST", "/api/shipping/estimate", map[string]any{"country": "DE",

@@ -279,13 +279,17 @@ International parcels go by **Asendia, up to 3 lb**. Stickers in an envelope go 
 letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or UPS SurePost.
 
 - **Packing** (`internal/swag/packing.go`): `Pack` puts a request in the first of `swag.Packages`
-  that it fits: Envelope, Mailer (10x13), Poster mailer (12x18, one flat stack), Box, then Large
-  box (too small for posters on purpose). It uses item sizes (`width_in`, `height_in`,
-  `thickness_in`; stickers and postcards have defaults; anything else counts as a bulky 10x8x1)
-  and `items.weight_oz`. With no weight set, the weight comes from the paper size (0.625 oz/in³).
-  `Validate` refuses requests that don't fit in one package (a poster with 50 postcards) and
-  international requests over 3 lb packed. The package sizes are standard sizes, not AGH's exact
-  stock. Tune them in `swag.Packages`.
+  it fits. These are what AGH packs in: a #6x9 envelope (stickers, letter mail); the Uline Black
+  Self-Seal Stayflats we stock there (S-11837 9x12, S-11838 11x13, S-11839 13x18; rigid, ¼"
+  of contents, one stack); bubble mailers; 6x4x2 box mailers; and the cartons on AGH's invoices
+  (8x6x6, 10x8x6, 13x10x4, 14x10x6, 18x12x6, 18x14x10). StayFlat sizes and weights come from
+  Uline's specs (case weight / 100). Carton weights scale Uline's 10x8x6 (0.44 lb) by board
+  area. The bubble mailer's size isn't on the invoices; it's modeled as a #4 (9x13½, 1 oz).
+  Posters (thin, longer than 13½") ship only in the 13x18 StayFlat. `Pack` uses item sizes
+  (`width_in`, `height_in`, `thickness_in`; stickers and postcards have defaults; anything else
+  counts as a bulky 10x8x1) and `items.weight_oz`. With no weight set, it works one out from
+  the paper size (0.625 oz/in³). `Validate` refuses requests that don't fit in one package (a
+  poster with 50 postcards) and international requests over 3 lb packed.
 - **Warehouse weights don't include packaging.** Zenventory logs each shipment's weight from
   per-SKU weights (all 78 single M shirts are exactly 6.0 oz), and labels are bought at that
   weight. So `items.weight_oz` is the item alone, `Pack` adds the mailer's `TareOz` for the

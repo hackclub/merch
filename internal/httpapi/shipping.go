@@ -112,7 +112,7 @@ func (s *server) shippingSummary(w http.ResponseWriter, r *http.Request) {
 		s.serverErr(w, err)
 		return
 	}
-	parcel := swag.Packing{Package: swag.Packages[1]}
+	parcel := swag.Packing{Package: swag.Package{Name: "Bubble mailer", Class: swag.ClassParcel}}
 	admin := s.isAdmin(r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"us":            forViewer(swag.EstimateShipping(h, "US", parcel, s.Now()), admin),

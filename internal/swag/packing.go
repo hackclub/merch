@@ -33,22 +33,45 @@ type Package struct {
 	DepthIn  float64 `json:"depth_in"` // how thick the contents can be
 	MaxOz    float64 `json:"max_oz"`   // heaviest it can be, packed
 	TareOz   float64 `json:"tare_oz"`  // the packaging itself
-	// Piles reports whether contents can sit side by side. A flat poster mailer
-	// is one stack on top of the poster.
+	// Piles reports whether contents can sit side by side. A StayFlat is one
+	// stack, poster on the bottom.
 	Piles bool `json:"-"`
+	// KeepsFlat marks rigid flat mailers (StayFlats), the only packaging big
+	// prints like posters ship in.
+	KeepsFlat bool `json:"-"`
 }
 
-// Packages are the mailers a request can go out in, cheapest first. A request
-// ships in the first one everything fits in. These are standard sizes, not the
-// warehouse's (AGH's) exact stock; tune them here.
+// cartonOz is a corrugated box's weight: Uline's 10x8x6 (S-4103) weighs
+// 0.44 lb for 376 sq in of board, about 0.0187 oz per sq in.
+func cartonOz(l, w, h float64) float64 { return 0.0187 * 2 * (l*w + l*h + w*h) }
+
+func carton(l, w, h float64) Package {
+	return Package{Name: fmt.Sprintf("%gx%gx%g box", l, w, h), Class: ClassParcel, WidthIn: l, HeightIn: w, DepthIn: h,
+		MaxOz: 800, TareOz: math.Round(cartonOz(l, w, h)*10) / 10, Piles: true}
+}
+
+// Packages are what AGH, our warehouse, packs requests in, in the order a
+// request tries them; it ships in the first one everything fits in. They come
+// from AGH's invoices (bubble mailers, the 6x4x2 box mailers and the cartons
+// they bill) and the Uline Black Self-Seal Stayflats we stock there (sizes are
+// Uline's usable sizes; weights are a case's weight over 100).
 var Packages = []Package{
 	// #6x9 envelope: First Class letter mail, max 1/4" thick and 3.5 oz.
 	{Name: "Envelope", Class: ClassLetter, WidthIn: 5.75, HeightIn: 8.75, DepthIn: 0.25, MaxOz: 3.5, TareOz: 0.3, Piles: true},
-	{Name: "Mailer", Class: ClassParcel, WidthIn: 9.5, HeightIn: 12.5, DepthIn: 2, MaxOz: 320, TareOz: 2, Piles: true},
-	{Name: "Poster mailer", Class: ClassParcel, WidthIn: 12, HeightIn: 18, DepthIn: 0.25, MaxOz: 64, TareOz: 4},
-	{Name: "Box", Class: ClassParcel, WidthIn: 12, HeightIn: 10, DepthIn: 4, MaxOz: 640, TareOz: 8, Piles: true},
-	// Too small for a poster on purpose: posters only ship flat in a poster mailer.
-	{Name: "Large box", Class: ClassParcel, WidthIn: 16, HeightIn: 12, DepthIn: 8, MaxOz: 800, TareOz: 16, Piles: true},
+	// Uline S-11837 (#5, 9 3/4 x 12 1/4), S-11838 (#3, 11 x 13 1/2) and
+	// S-11839 (#6, 13 x 18): rigid, for contents up to 1/4" thick.
+	{Name: "9x12 StayFlat", Class: ClassParcel, WidthIn: 9.25, HeightIn: 12, DepthIn: 0.25, MaxOz: 48, TareOz: 3.5, KeepsFlat: true},
+	{Name: "11x13 StayFlat", Class: ClassParcel, WidthIn: 10.5, HeightIn: 13.25, DepthIn: 0.25, MaxOz: 48, TareOz: 4.3, KeepsFlat: true},
+	{Name: "13x18 StayFlat", Class: ClassParcel, WidthIn: 12.5, HeightIn: 17.75, DepthIn: 0.25, MaxOz: 64, TareOz: 6.7, KeepsFlat: true},
+	// AGH's invoices don't give the bubble mailers' size; this is a standard #4.
+	{Name: "Bubble mailer", Class: ClassParcel, WidthIn: 9, HeightIn: 13.5, DepthIn: 1.5, MaxOz: 64, TareOz: 1, Piles: true},
+	{Name: "6x4x2 box mailer", Class: ClassParcel, WidthIn: 6, HeightIn: 4, DepthIn: 2, MaxOz: 160, TareOz: 2, Piles: true},
+	carton(8, 6, 6),
+	carton(10, 8, 6),
+	carton(13, 10, 4),
+	carton(14, 10, 6),
+	carton(18, 12, 6),
+	carton(18, 14, 10),
 }
 
 var (
@@ -107,8 +130,15 @@ func shapeOf(it Item, qty int) shape {
 	return s
 }
 
+// bigSheet reports whether s is a big print (a poster), which ships only in a
+// StayFlat so it doesn't bend.
+func (s shape) bigSheet() bool { return s.t <= 0.02 && max(s.w, s.h) > 13.5 }
+
 // piles is how many stacks of s fit side by side in p (0 if s doesn't fit).
 func (p Package) piles(s shape) int {
+	if s.bigSheet() && !p.KeepsFlat {
+		return 0
+	}
 	n := 0
 	for _, o := range [][2]float64{{s.w, s.h}, {s.h, s.w}} {
 		if o[0] <= p.WidthIn && o[1] <= p.HeightIn {
@@ -174,26 +204,11 @@ func Pack(lines []Line, catalog map[int64]Item, international bool) (Packing, er
 	if tooHeavy {
 		return Packing{}, fmt.Errorf("%w; this is about %.1f lb", ErrTooHeavy, contentOz/16)
 	}
-	// Name the item that forces a flat poster mailer, if one does: it's what
-	// the rest won't go in with.
+	// Name the big print the rest won't go in with, if there is one.
 	for _, s := range shapes {
-		if onlyFits(s) == "Poster mailer" {
-			return Packing{}, fmt.Errorf("%w: the %s ships flat in a poster mailer, which only has room for a few thin things like stickers beside it; request the rest separately", ErrWontPack, s.name)
+		if s.bigSheet() {
+			return Packing{}, fmt.Errorf("%w: the %s ships flat in a 13x18 StayFlat, which holds a stack no more than 1/4 inch thick; a few stickers fit with it, but request the rest separately", ErrWontPack, s.name)
 		}
 	}
 	return Packing{}, fmt.Errorf("%w: that's more than fits in one box; ask for fewer", ErrWontPack)
-}
-
-// onlyFits names the one package s fits in, if there's just one.
-func onlyFits(s shape) string {
-	name := ""
-	for _, p := range Packages {
-		if p.piles(s) > 0 {
-			if name != "" {
-				return ""
-			}
-			name = p.Name
-		}
-	}
-	return name
 }
