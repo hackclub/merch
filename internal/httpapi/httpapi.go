@@ -128,7 +128,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeErr(w, http.StatusNotFound, "not found") })
 	mux.HandleFunc("/", s.static)
 
-	return s.csrf(s.visitor(mux))
+	return s.csrf(s.visitor(s.logAPI(mux)))
 }
 
 // ---- middleware ----

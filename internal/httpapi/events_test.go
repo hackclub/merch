@@ -239,3 +239,24 @@ func TestSignInIsLogged(t *testing.T) {
 		t.Errorf("login_start = %+v", l)
 	}
 }
+
+func TestAPICallsAreLogged(t *testing.T) {
+	h := newHarness(t)
+	c := h.visitorClient(userEmail, "s1", "/items/3-x")
+	h.do(c, "GET", "/api/catalog", nil, nil)
+	h.do(c, "GET", "/api/nope?q=1+Main+St", nil, nil)
+	h.do(c, "POST", "/api/events", map[string]any{"events": []map[string]any{{"name": "click"}}}, nil)
+	h.do(c, "GET", "/healthz", nil, nil)
+	evs := h.events("api")
+	if len(evs) != 2 {
+		t.Fatalf("api events = %+v", evs)
+	}
+	cat, nope := props(t, evs[0]), props(t, evs[1])
+	if cat["route"] != "GET /api/catalog" || cat["status"].(float64) != 200 || cat["ms"] == nil || evs[0].Path != "/items/3-x" || evs[0].Visit != "s1" {
+		t.Errorf("catalog api event = %+v %v", evs[0], cat)
+	}
+	// The URL path, never the query (address searches carry what people typed).
+	if nope["route"] != "/api/" || nope["url"] != "/api/nope" || nope["status"].(float64) != 404 {
+		t.Errorf("unknown route api event = %v", nope)
+	}
+}

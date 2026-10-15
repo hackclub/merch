@@ -86,6 +86,9 @@ Where tests go:
   mail.hackclub.com, or Airtable.
 - Frontend logic → `web/src/lib/*.test.ts` (Vitest). Keep logic in `$lib`, not in `.svelte` files,
   so it stays testable.
+- Usage events (see "Usage analytics") → part of the same red-green cycle as the feature. Assert
+  server events in `internal/httpapi` tests with `h.events("name")` and `props(t, e)`. Assert
+  browser event logic (what gets sent, what stays private) in `web/src/lib/track.test.ts`.
 
 ## Commands
 
@@ -98,6 +101,7 @@ make dev       # Go server :8080 + Vite :5173 (proxies /api, /auth) — http://l
                # Only from the main worktree. See "Sharing porygon with other agents".
 make server    # Go server only; serves web/build if built (make web)
 make docker    # production image
+scripts/usage-report [days]   # how real people used production (read-only); see "Usage analytics"
 ```
 
 One Postgres container serves every worktree. Each test gets its own database, so parallel
@@ -134,6 +138,9 @@ git fetch origin && git rebase origin/main   # before you read or change code
 `make check` fails with `svelte-kit: command not found` when `web/node_modules` is missing.
 Don't pipe `make check test` into `tail`/`grep` in an `&&` chain. The pipe hides the exit
 code, and you'll commit on a red build.
+
+`make test` includes the usage-analytics release gates (see "Usage analytics"). A user-facing
+change isn't done until it's instrumented, tested, landed, and its events show up in production.
 
 Land in small slices, as soon as each one is green. Don't save up one big change. A long
 session with several asks (for example "give me a link" → product pages → 3D preview) should
@@ -334,8 +341,33 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
 ## Usage analytics
 
 Everything people do on the site goes to the `usage_events` table, so agents can see how the shop is
-used and improve it. Look at it before you change a flow, and check it again after you land.
-Query production read-only with `scripts/prod-psql` (dev's table has only agent and test traffic).
+used and improve it. **Use it as evidence, and keep it complete:**
+
+1. **Before you change a flow, look at how it's used.** Run `scripts/usage-report [days]`
+   (production, read-only, default 7 days; admins and headless browsers are left out; `--dev`
+   reads the dev DB). Write ad-hoc queries with `scripts/prod-psql`. Dev's table has only agent and
+   test traffic. Mention what the data showed in your reply or commit message ("12 of 40 people
+   who added a poster were refused at the estimate").
+2. **Instrument every new feature, test first.** Every action records a server event that says
+   what happened (`s.track(r, user, "name", props)`). Choices and interactions that never reach the
+   server record a browser event (`track('name', props)` from `$lib/track`), or a `data-item` /
+   `data-track` attribute so clicks and hovers name it. Write the assertion for the event
+   (`h.events`, `track.test.ts`) in the same red step as the feature.
+3. **Document it.** Add each new event and its props to the lists below.
+4. **After you land, check that it arrives.** Once the deploy rolls out, use the feature (or wait
+   for real use), then query `usage_events` in production for the new event names. An event that
+   never shows up is a bug.
+
+**Release gates** (`internal/httpapi/tracking_gate_test.go`, part of `make test`, so a red gate
+blocks landing):
+- `TestEveryActionIsTracked`: every POST/PUT/PATCH/DELETE route's handler must call `s.track`,
+  directly or through a server method. Admin routes (`/api/admin/`) and the
+  explicit `untracked` list (each entry with its reason) are exempt. Don't add to `untracked` to
+  get a build through; track the action.
+- `TestEventsAreDocumented`: every event name passed to `s.track` or `track(` must have a valid
+  name and appear in backticks in this section.
+- `TestAPICallsAreLogged` and the privacy tests (no address in `request_created`, no typed text
+  in `field`, no text from `data-private`) must stay green. Never weaken one to land a change.
 
 - Columns: `at`, `source` (`client` from the browser, `server` from handlers), `name`, `visitor`
   (random id per browser, cookie `zmr_visitor`), `visit` (per tab; renewed after 30 idle minutes),
@@ -354,6 +386,9 @@ Query production read-only with `scripts/prod-psql` (dev's table has only agent 
   every page, since all cart changes go through `$lib/bag.svelte`), `purpose`, `item_hover` (mouse
   over an item for ≥ 0.5 s), `api_error`, `js_error`, `pwa_installed`. `/admin` sends only page views and
   page time.
+- `api`: every `/api/*` and `/auth/*` call (except `/api/events`), logged by middleware: `route`
+  (the mux pattern), `url` (the path, never the query), `status`, `ms`. Use it for errors and
+  slow routes, and for admin actions (the URL has the id).
 - Server events (`s.track` in `internal/httpapi`): `login_start`, `sign_in`, `sign_in_refused`,
   `sign_out`, `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
   postage, sample counts, or `error` when it won't pack), `request_created`, `request_refused` (the

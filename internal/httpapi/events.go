@@ -61,6 +61,34 @@ func (s *server) visitor(next http.Handler) http.Handler {
 	})
 }
 
+// logAPI records every API and auth call as an `api` event: the route, the
+// URL path (never the query: address searches carry what people typed), the
+// status and how long it took. Actions record what happened with track too.
+func (s *server) logAPI(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/events" || !(strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/auth/")) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(sw, r)
+		s.track(r, nil, "api", map[string]any{
+			"route": r.Pattern, "url": clip(r.URL.Path, 200), "status": sw.status, "ms": time.Since(start).Milliseconds(),
+		})
+	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
 func visitorOf(r *http.Request) string {
 	id, _ := r.Context().Value(visitorKey{}).(string)
 	return id
