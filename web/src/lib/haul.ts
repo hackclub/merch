@@ -151,51 +151,78 @@ function pileOf({ item, quantity, size }: HaulLine): Pile {
 export type Placed = Pile & { x: number; z: number }; // centre of the footprint on the table
 export type Table = { x: number; z: number; w: number; d: number }; // centre and size of a tabletop
 
-/** A standard 6-foot folding table, the kind at every club fair. */
-export const TABLE = { w: 72, d: 30 };
+/** A standard 6-foot folding table, the kind at every club fair (h: floor to tabletop). */
+export const TABLE = { w: 72, d: 30, h: 29 };
+/** A 13-inch laptop, open: the base is 12 × 8.4 in, and the lid leans back 2 in past it. */
+export const LAPTOP = { w: 12, d: 10.4, base: 8.4 };
 /** Space between piles, between the piles and the table's edge, and between tables, in inches. */
 const GAP = 0.75;
 const EDGE = 3;
 const BETWEEN = 12;
 
-export type HaulLayout = { piles: Placed[]; phone: { x: number; z: number }; tables: Table[]; width: number; depth: number };
+export type HaulLayout = {
+	piles: Placed[];
+	phone: { x: number; z: number };
+	laptop: { x: number; z: number } | null; // centre of LAPTOP's footprint; only on tables
+	tables: Table[];
+	width: number;
+	depth: number;
+};
 
 /**
  * Rows of piles, biggest footprints first, with the phone lying flat right beside
  * the biggest so the two are easy to compare; x runs left to right and z back to
- * front, centred on 0. With table, everything sits on 6-foot folding tables, as
- * many as it takes side by side, so people can see how much of a table it fills.
+ * front, centred on 0. With table, everything sits close together on 6-foot
+ * folding tables, as many as it takes side by side, next to an open laptop, so
+ * people can see how much of a table it fills.
  */
 export function layoutHaul(all: Pile[], opts: { table?: boolean } = {}): HaulLayout {
 	const phone: Pile = { key: 'phone', label: 'phone', art: '', w: PHONE.w, d: PHONE.h, height: 0 };
 	const items = [...all].sort((a, b) => b.d - a.d);
-	const order = [...items.slice(0, 1), phone, ...items.slice(1)];
+	const laptop: Pile = { key: 'laptop', label: 'laptop', art: '', w: LAPTOP.w, d: LAPTOP.d, height: 0 };
+	const order = [...(opts.table ? [laptop] : []), ...items.slice(0, 1), phone, ...items.slice(1)];
 	const area = order.reduce((a, p) => a + (p.w + GAP) * (p.d + GAP), 0);
-	const rowMax = opts.table ? TABLE.w - 2 * EDGE : Math.max(18, Math.sqrt(area) * 1.3);
+	// A compact cluster, not rows spread edge to edge.
+	const cluster = Math.max(18, Math.sqrt(area) * 1.3);
 	const depthMax = opts.table ? TABLE.d - 2 * EDGE : Infinity;
 
-	const placed: Placed[] = [];
-	const onTable: number[] = [];
-	let table = 0;
-	let x = 0;
-	let z = 0;
-	let rowDepth = 0;
-	for (const p of order) {
-		if (x > 0 && x + p.w > rowMax) {
-			z += rowDepth + GAP;
-			x = 0;
-			rowDepth = 0;
+	const pack = (rowMax: number) => {
+		const placed: Placed[] = [];
+		const onTable: number[] = [];
+		let table = 0;
+		let x = 0;
+		let z = 0;
+		let rowDepth = 0;
+		for (const p of order) {
+			if (x > 0 && x + p.w > rowMax) {
+				z += rowDepth + GAP;
+				x = 0;
+				rowDepth = 0;
+			}
+			if (z > 0 && z + p.d > depthMax) {
+				table++;
+				x = z = rowDepth = 0;
+			}
+			const offset = opts.table ? table * (TABLE.w + BETWEEN) + EDGE : 0;
+			placed.push({ ...p, x: offset + x + p.w / 2, z: (opts.table ? EDGE : 0) + z + p.d / 2 });
+			onTable.push(table);
+			x += p.w + GAP;
+			rowDepth = Math.max(rowDepth, p.d);
 		}
-		if (z > 0 && z + p.d > depthMax) {
-			table++;
-			x = z = rowDepth = 0;
+		return { placed, onTable, table, z, rowDepth };
+	};
+	// On a table, the narrowest tight cluster that fits its depth; rows across as many tables as it takes if none does.
+	const full = TABLE.w - 2 * EDGE;
+	let packed: ReturnType<typeof pack> | undefined;
+	if (opts.table) {
+		for (let w = Math.min(cluster, full); !packed && w < full + 1; w++) {
+			const s = skyline(order, Math.min(w, full));
+			if (s.depth <= depthMax)
+				packed = { placed: s.placed.map((p) => ({ ...p, x: p.x + EDGE, z: p.z + EDGE })), onTable: order.map(() => 0), table: 0, z: 0, rowDepth: 0 };
 		}
-		const offset = opts.table ? table * (TABLE.w + BETWEEN) + EDGE : 0;
-		placed.push({ ...p, x: offset + x + p.w / 2, z: (opts.table ? EDGE : 0) + z + p.d / 2 });
-		onTable.push(table);
-		x += p.w + GAP;
-		rowDepth = Math.max(rowDepth, p.d);
 	}
+	packed ??= pack(opts.table ? full : cluster);
+	const { placed, onTable, table, z, rowDepth } = packed;
 
 	// placed[i] went on table onTable[i]; centre each table's piles on it, like a booth display.
 	if (opts.table) {
@@ -215,7 +242,7 @@ export function layoutHaul(all: Pile[], opts: { table?: boolean } = {}): HaulLay
 	if (opts.table) {
 		width = (table + 1) * TABLE.w + table * BETWEEN;
 		depth = TABLE.d;
-		tables = Array.from({ length: table + 1 }, (_, n) => ({ x: n * (TABLE.w + BETWEEN) + TABLE.w / 2 - width / 2, z: 0, ...TABLE }));
+		tables = Array.from({ length: table + 1 }, (_, n) => ({ x: n * (TABLE.w + BETWEEN) + TABLE.w / 2 - width / 2, z: 0, w: TABLE.w, d: TABLE.d }));
 	} else {
 		width = Math.max(...placed.map((p) => p.x + p.w / 2));
 		depth = z + rowDepth;
@@ -225,7 +252,43 @@ export function layoutHaul(all: Pile[], opts: { table?: boolean } = {}): HaulLay
 		p.z -= depth / 2;
 	}
 	const ph = placed.find((p) => p.key === 'phone')!;
-	return { piles: placed.filter((p) => p !== ph), phone: { x: ph.x, z: ph.z }, tables, width, depth };
+	const lap = placed.find((p) => p.key === 'laptop');
+	return {
+		piles: placed.filter((p) => p !== ph && p !== lap), phone: { x: ph.x, z: ph.z },
+		laptop: lap ? { x: lap.x, z: lap.z } : null, tables, width, depth
+	};
+}
+
+/**
+ * Packs piles in order into a strip width wide, each as far back as it will go
+ * (a skyline: the deepest point reached so far at every x), so short piles tuck
+ * in beside tall ones instead of leaving gaps. Returns footprint centres.
+ */
+function skyline(order: Pile[], width: number): { placed: Placed[]; depth: number } {
+	let segs = [{ x: 0, w: width, z: 0 }];
+	const placed: Placed[] = [];
+	for (const p of order) {
+		let best = { x: 0, z: Infinity };
+		for (const s of segs) {
+			if (s.x > 0 && s.x + p.w > width + 1e-9) break;
+			const z = Math.max(...segs.filter((o) => o.x < s.x + p.w - 1e-9 && o.x + o.w > s.x + 1e-9).map((o) => o.z));
+			if (z < best.z - 1e-9) best = { x: s.x, z };
+		}
+		placed.push({ ...p, x: best.x + p.w / 2, z: best.z + p.d / 2 });
+		// Raise the skyline under the pile (and the gap to its right).
+		const from = best.x, to = Math.min(width, best.x + p.w + GAP), top = best.z + p.d + GAP;
+		const next: typeof segs = [];
+		for (const o of segs) {
+			if (o.x + o.w <= from + 1e-9 || o.x >= to - 1e-9) next.push(o);
+			else {
+				if (o.x < from) next.push({ x: o.x, w: from - o.x, z: o.z });
+				if (o.x + o.w > to) next.push({ x: to, w: o.x + o.w - to, z: o.z });
+			}
+		}
+		next.push({ x: from, w: to - from, z: top });
+		segs = next.sort((a, b) => a.x - b.x);
+	}
+	return { placed, depth: Math.max(0, ...placed.map((p) => p.z + p.d / 2)) };
 }
 
 // Things everyone has held, by volume in cubic inches, smallest first.

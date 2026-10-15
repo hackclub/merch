@@ -1,10 +1,11 @@
 // Draws layoutHaul's table (haul.ts): every pile at true size — sealed clear zip
 // bags of 50 die-cut stickers, fanned loose stickers, banded postcard bundles,
 // booklet stacks with spines and page edges, folded T-shirts, and posters —
-// next to a phone for scale, seen from above at an angle. Units are inches.
+// next to a phone (and, on folding tables, an open laptop) for scale, seen from
+// above at an angle. Units are inches.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { bookletStack, SHIRT, tall, type HaulLayout, type Placed } from './haul';
+import { bookletStack, LAPTOP, SHIRT, TABLE, tall, type HaulLayout, type Placed } from './haul';
 import { finishInfo } from './paper';
 import { createPhone, createStage, edgeColor, loadArt, pageEdges, paperBand, paperEdge, paperFace, PHONE_DEPTH } from './paper3d';
 import { BAG_H, createStickerBag, createStickerFan, disposeStickerGroup, loadStickerCutout, type StickerCutout } from './sticker3d';
@@ -27,7 +28,8 @@ export type HaulViewer = {
 };
 
 export const ELEVATION = THREE.MathUtils.degToRad(34); // low enough that stack heights read
-const TABLE_TOP = 1; // inches thick
+const TABLE_TOP = 1.75; // a blow-molded plastic top, inches thick
+const LEG = 0.5; // steel leg tube radius
 // More booklets than this draw as one block (bigger piles are too far away to tell).
 const MAX_BOOKLETS = 400;
 const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
@@ -42,6 +44,13 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 	const phone = createPhone(true);
 	phone.traverse((o) => (o.userData.label = 'A regular phone, about 6 in long, for scale'));
 	group.add(phone);
+
+	// Open, facing the front; shown only on tables.
+	const laptop = createLaptop();
+	laptop.traverse((o) => (o.userData.label = 'A 13-inch laptop, for scale'));
+	laptop.visible = false;
+	group.add(laptop);
+	const legsDown = () => (table.tables.length ? TABLE.h : 0);
 
 	let contents = new THREE.Group();
 	group.add(contents);
@@ -97,7 +106,7 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 
 	let table = initial;
 	let tallest = 0.5;
-	let shown = { width: initial.width, depth: initial.depth, tallest: 0.5, room: initial.tables.length ? 0.56 : 0.52 };
+	let shown = { width: initial.width, depth: initial.depth, tallest: 0.5, room: initial.tables.length ? 0.44 : 0.52 };
 	let firstLayout = true;
 
 	function buildPile(p: Placed, index: number, gen: number, doneOne: () => void) {
@@ -265,25 +274,51 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 			buildPile(p, i, gen, doneOne);
 		});
 
-		// Folding tables: a white plastic top with a grey rim; the piles sit on it.
+		// Folding tables, legs and all: a white plastic top with rounded edges on grey steel legs.
 		for (const t of table.tables) {
 			const top = new THREE.MeshStandardMaterial({ color: 0xf6f5f1, roughness: 0.85 });
-			const rim = new THREE.MeshStandardMaterial({ color: 0xb9b7b0, roughness: 0.7 });
-			const geo = new THREE.BoxGeometry(t.w, TABLE_TOP, t.d);
-			const slab = new THREE.Mesh(geo, [rim, rim, top, rim, rim, rim]);
+			const steel = new THREE.MeshStandardMaterial({ color: 0x8d9096, metalness: 0.6, roughness: 0.45 });
+			const geo = new RoundedBoxGeometry(t.w, TABLE_TOP, t.d, 3, 0.6);
+			const slab = new THREE.Mesh(geo, top);
 			slab.position.set(t.x, -TABLE_TOP / 2 - 0.01, t.z);
 			slab.receiveShadow = true;
+			slab.castShadow = true;
 			contents.add(slab);
+			const legH = TABLE.h - TABLE_TOP;
+			const post = new THREE.CylinderGeometry(LEG, LEG, legH, 12);
+			const bar = new THREE.CylinderGeometry(LEG, LEG, t.d - 6, 12);
+			bar.rotateX(Math.PI / 2);
+			for (const end of [-1, 1]) {
+				const x = t.x + end * (t.w / 2 - 7);
+				for (const side of [-1, 1]) {
+					const leg = new THREE.Mesh(post, steel);
+					leg.position.set(x, -TABLE_TOP - legH / 2, t.z + side * (t.d / 2 - 3));
+					leg.castShadow = true;
+					contents.add(leg);
+				}
+				// The U-frame's foot bar and the brace under the top.
+				for (const y of [-TABLE.h + LEG, -TABLE_TOP - LEG]) {
+					const b = new THREE.Mesh(bar, steel);
+					b.position.set(x, y, t.z);
+					b.castShadow = true;
+					contents.add(b);
+				}
+			}
 			disposers.push(() => {
 				geo.dispose();
+				post.dispose();
+				bar.dispose();
 				top.dispose();
-				rim.dispose();
+				steel.dispose();
 			});
 		}
+		stage.floor.position.y = -legsDown() - 0.02;
+		laptop.visible = !!table.laptop;
+		if (table.laptop) laptop.position.set(table.laptop.x, 0, table.laptop.z);
 
 		phone.position.set(table.phone.x, PHONE_DEPTH / 2, table.phone.z);
 		if (firstLayout) {
-			shown = { width: table.width, depth: table.depth, tallest, room: table.tables.length ? 0.56 : 0.52 };
+			shown = { width: table.width, depth: table.depth, tallest, room: table.tables.length ? 0.44 : 0.52 };
 			firstLayout = false;
 		}
 		doneOne();
@@ -312,7 +347,7 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 			const dt = Math.min(0.05, (now - last) / 1000);
 			last = now;
 			const ease = Math.min(1, dt * 8);
-			const wantRoom = table.tables.length ? 0.56 : 0.52;
+			const wantRoom = table.tables.length ? 0.44 : 0.52;
 			shown.width += (table.width - shown.width) * ease;
 			shown.depth += (table.depth - shown.depth) * ease;
 			shown.tallest += (tallest - shown.tallest) * ease;
@@ -322,7 +357,8 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 			stage.frameTable(shown.width, shown.depth, shown.tallest, viewer.zoom, {
 				elevation: viewer.elevation,
 				room: shown.room,
-				y: shown.tallest * 0.3
+				y: shown.tallest * 0.3,
+				below: legsDown()
 			});
 			stage.render();
 		},
@@ -336,6 +372,39 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 		}
 	};
 	return viewer;
+}
+
+/**
+ * An open 13-inch laptop in silver aluminium, centred on LAPTOP's footprint
+ * (haul.ts): the base at the front, the lid leaning back from the hinge.
+ */
+function createLaptop(): THREE.Group {
+	const g = new THREE.Group();
+	const metal = new THREE.MeshPhysicalMaterial({ color: 0xc4c6ca, metalness: 0.7, roughness: 0.35 });
+	const black = new THREE.MeshPhysicalMaterial({ color: 0x111216, roughness: 0.4 });
+	const glass = new THREE.MeshPhysicalMaterial({ color: 0x0b0d12, roughness: 0.05, clearcoat: 1 });
+	const baseH = 0.45;
+	const front = LAPTOP.d / 2 - LAPTOP.base / 2; // centre of the base, toward the front
+	const base = new THREE.Mesh(new RoundedBoxGeometry(LAPTOP.w, baseH, LAPTOP.base, 3, 0.18), metal);
+	base.position.set(0, baseH / 2, front);
+	base.castShadow = true;
+	const keys = new THREE.Mesh(new THREE.BoxGeometry(LAPTOP.w - 1.6, 0.02, 3.6), black);
+	keys.position.set(0, baseH, front - LAPTOP.base / 2 + 2.6);
+	const pad = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.02, 2.8), new THREE.MeshPhysicalMaterial({ color: 0xb3b5b9, metalness: 0.6, roughness: 0.25 }));
+	pad.position.set(0, baseH, front + LAPTOP.base / 2 - 2);
+	// The lid, hinged at the back of the base and tipped back about 15°.
+	const hinge = new THREE.Group();
+	hinge.position.set(0, baseH, front - LAPTOP.base / 2 + 0.2);
+	hinge.rotation.x = -THREE.MathUtils.degToRad(15);
+	const lidH = LAPTOP.base - 0.2;
+	const lid = new THREE.Mesh(new RoundedBoxGeometry(LAPTOP.w, lidH, 0.22, 3, 0.1), metal);
+	lid.position.set(0, lidH / 2, -0.11);
+	lid.castShadow = true;
+	const screen = new THREE.Mesh(new THREE.PlaneGeometry(LAPTOP.w - 0.6, lidH - 0.6), glass);
+	screen.position.set(0, lidH / 2, 0.005);
+	hinge.add(lid, screen);
+	g.add(base, keys, pad, hinge);
+	return g;
 }
 
 /** Samples a T-shirt's fabric color from the non-backdrop pixels of its product photo. */

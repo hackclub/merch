@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bookletStack, haulSize, layoutHaul, LOFT, piles, pickedLines, TABLE, tableCover, tall } from './haul';
+import { bookletStack, haulSize, LAPTOP, layoutHaul, LOFT, piles, pickedLines, TABLE, tableCover, tall } from './haul';
 import type { Item } from './types';
 
 const base: Item = {
@@ -109,7 +109,7 @@ describe('layoutHaul on tables', () => {
 
 	it('centres the piles on the table, like a booth display', () => {
 		const out = layoutHaul(piles([{ item: mag, quantity: 10 }]), { table: true });
-		const all = [...out.piles.map((p) => ({ x: p.x, z: p.z, w: p.w, d: p.d })), { ...out.phone, w: 2.8, d: 5.8 }];
+		const all = [...out.piles.map((p) => ({ x: p.x, z: p.z, w: p.w, d: p.d })), { ...out.phone, w: 2.8, d: 5.8 }, { ...out.laptop!, w: LAPTOP.w, d: LAPTOP.d }];
 		const left = Math.min(...all.map((p) => p.x - p.w / 2)), right = Math.max(...all.map((p) => p.x + p.w / 2));
 		const back = Math.min(...all.map((p) => p.z - p.d / 2)), front = Math.max(...all.map((p) => p.z + p.d / 2));
 		expect((left + right) / 2).toBeCloseTo(out.tables[0].x);
@@ -121,6 +121,23 @@ describe('layoutHaul on tables', () => {
 		const out = layoutHaul(posters, { table: true });
 		expect(out.tables.length).toBeGreaterThan(1);
 		for (const p of out.piles) expect(out.tables.some((t) => inside(p, t))).toBe(true);
+	});
+
+	it('keeps the piles close together instead of spreading them across the table', () => {
+		const out = layoutHaul(piles([{ item: base, quantity: 15 }, { item: mag, quantity: 50 }, { item: sticker, quantity: 300 }]), { table: true });
+		const all = [...out.piles, { ...out.phone, w: 2.8, d: 5.8 }, { ...out.laptop!, ...LAPTOP }];
+		const left = Math.min(...all.map((p) => p.x - p.w / 2)), right = Math.max(...all.map((p) => p.x + p.w / 2));
+		expect(right - left).toBeLessThan(TABLE.w * 0.6);
+	});
+
+	it('sets a laptop on the table for scale, clear of the piles', () => {
+		const out = layoutHaul(piles([{ item: base, quantity: 2 }, { item: mag, quantity: 50 }]), { table: true });
+		const laptop = { ...out.laptop!, w: LAPTOP.w, d: LAPTOP.d };
+		expect(inside(laptop, out.tables[0])).toBe(true);
+		const overlaps = (a: typeof laptop, b: typeof laptop) =>
+			Math.abs(a.x - b.x) < (a.w + b.w) / 2 && Math.abs(a.z - b.z) < (a.d + b.d) / 2;
+		for (const p of out.piles) expect(overlaps(laptop, p)).toBe(false);
+		expect(layoutHaul(piles([{ item: base, quantity: 1 }])).laptop).toBeNull();
 	});
 
 	it('has no table unless asked', () => {

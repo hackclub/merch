@@ -76,12 +76,16 @@ export type TableFrameOptions = {
 	room?: number;
 	x?: number;
 	y?: number;
+	/** How far the scene reaches below the tabletop (a table's legs), inches. */
+	below?: number;
 };
 
 export type Stage = {
 	scene: THREE.Scene;
 	renderer: THREE.WebGLRenderer;
 	camera: THREE.PerspectiveCamera;
+	/** The invisible shadow-catching floor, at y = 0 unless moved (e.g. under a table's legs). */
+	floor: THREE.Mesh;
 	resize(width: number, height: number): void;
 	/** Resizes the shadow frustum and floor when a tabletop scene grows or shrinks. */
 	fitLight(sceneW: number, sceneH: number): void;
@@ -151,6 +155,7 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 		scene,
 		renderer,
 		camera,
+		floor,
 		resize(width, height) {
 			if (width <= 0 || height <= 0 || (width === curW && height === curH)) return;
 			curW = width;
@@ -178,12 +183,13 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 			const span = Math.hypot(width, depth);
 			const half = THREE.MathUtils.degToRad(camera.fov) / 2;
 			const fitW = (span * room) / (Math.tan(half) * camera.aspect);
-			const fitH = (span * Math.sin(el) * room + tallest * Math.cos(el) * 0.5) / Math.tan(half);
+			const below = opts.below ?? 0;
+			const fitH = (span * Math.sin(el) * room + (tallest * 0.5 + below) * Math.cos(el)) / Math.tan(half);
 			const dist = Math.max(fitW, fitH) * zoom;
 			camera.near = Math.max(0.1, dist * 0.05);
 			camera.far = dist * 4;
 			camera.updateProjectionMatrix();
-			target.set(opts.x ?? 0, opts.y ?? tallest * 0.35, 0);
+			target.set(opts.x ?? 0, (opts.y ?? tallest * 0.35) - below * 0.5, 0);
 			camera.position.set(target.x, target.y + dist * Math.sin(el), dist * Math.cos(el));
 			camera.lookAt(target);
 		},

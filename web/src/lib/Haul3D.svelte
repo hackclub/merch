@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Everything in the request, to scale, piled close together next to a phone
-	// (haul.ts, haul3d.ts), on 6-foot folding tables for clubs and events. Made to
+	// (haul.ts, haul3d.ts), on 6-foot folding tables beside a laptop for clubs and
+	// events, against a dark backdrop so the white table stands out. Made to
 	// explore: drag to turn and tilt, pinch (or ctrl-scroll) or +/− to zoom, hover
 	// or tap a pile to see what it is and how tall. The caption puts the total in
 	// familiar terms, because people tend to ask for too little.
@@ -162,9 +163,9 @@
 
 <figure class="haul" class:compact>
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="stage" class:ready bind:this={stage} onpointerdown={down} onpointermove={move} onpointerup={up}
+	<div class="stage" class:ready class:table={onTable} bind:this={stage} onpointerdown={down} onpointermove={move} onpointerup={up}
 		onpointercancel={up} onpointerleave={(e) => e.pointerType === 'mouse' && !pointers.size && (tip = null)} onwheel={wheel}>
-		{#if near}<canvas bind:this={canvas} aria-label="Your whole request in 3D, to scale, next to a phone"></canvas>{/if}
+		{#if near}<canvas bind:this={canvas} aria-label={onTable ? 'Your whole request in 3D, to scale, on a 6-foot folding table next to a laptop and a phone' : 'Your whole request in 3D, to scale, next to a phone'}></canvas>{/if}
 		{#if !ready}<span class="loading muted">Loading 3D…</span>{/if}
 		{#if tip}<span class="tip" style="left: {tip.x}px; top: {tip.y}px">{tip.text}</span>{/if}
 		<div class="controls">
@@ -181,7 +182,7 @@
 			Altogether it's {haulSize(stack)}{#if onTable}, and covers about {cover}% of {table.tables.length === 1 ? 'a 6-foot folding table' : `${table.tables.length} 6-foot folding tables`}{/if}.
 			{#if onTable && cover < 35}Most people find they need more than they think, so don't be shy about adding more.{/if}
 		</span>
-		<span class="muted">To scale, next to a regular 6-inch phone. Drag to turn and tilt it, pinch or use + and − to zoom, and tap a pile to see what it is.</span>
+		<span class="muted">To scale, next to {onTable ? 'a 13-inch laptop and ' : ''}a regular 6-inch phone. Drag to turn and tilt it, pinch or use + and − to zoom, and tap a pile to see what it is.</span>
 		<span class="muted">{allLines.map(lineLabel).join(' · ')}</span>
 	</figcaption>
 	{/if}
@@ -192,6 +193,8 @@
 	.stage { position: relative; aspect-ratio: 16 / 10; background: var(--tile); touch-action: pan-y; cursor: grab; overflow: hidden; }
 	.stage:active { cursor: grabbing; }
 	.compact .stage { aspect-ratio: 4 / 3; }
+	.stage.table { background: var(--dark); }
+	.stage.table .loading { color: var(--smoke); }
 	canvas { width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 0.4s; }
 	.ready canvas { opacity: 1; }
 	.loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 0.9rem; }
