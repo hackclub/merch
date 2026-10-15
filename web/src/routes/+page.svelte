@@ -188,6 +188,25 @@
 			</div>
 		{/snippet}
 
+		{#snippet peekPanel(item: Item)}
+			{@const preview = tilePreview(item)}
+			<div class="peek" aria-hidden="true">
+				{#if thumbnail(item) || preview}
+					<div class="peek-img" class:sticker={item.packs === 'sticker'}>
+						{#if thumbnail(item)}<img src={thumbnail(item)} alt="" />{/if}
+						{#if preview}<Tile3D {preview} active count={previewCount(item, cart[item.id] ?? 0)} rest={'stickers' in preview ? -0.25 : -0.45} />{/if}
+					</div>
+				{/if}
+				{#if showsAmountIn3D(item)}
+					<div class="peek-3d"><Haul3D lines={pickedLines(item, cart[item.id] ?? 0)} includes={catalog?.includes} compact /></div>
+				{/if}
+				<strong>{item.name}</strong>
+				<span class="muted">{tileFact(item)}</span>
+				{#if item.description}<p>{item.description}</p>{/if}
+				<span class="muted">Click for photos{item.width_in ? ', the 3D view' : ''} and more →</span>
+			</div>
+		{/snippet}
+
 		<h2>What would you like us to send you?</h2>
 		{#each sections as { section, rows, grid } (section.key)}
 			<section class="group" aria-labelledby="group-{section.key}">
@@ -207,35 +226,20 @@
 						{#if open && expanded(item) && showsAmountIn3D(item)}
 							<div class="amount-3d"><Haul3D lines={pickedLines(item, cart[item.id] ?? 0)} includes={catalog.includes} compact /></div>
 						{/if}
-						{#if peek === item.id}
-							{@const preview = tilePreview(item)}
-							<div class="peek" aria-hidden="true">
-								{#if thumbnail(item) || preview}
-									<div class="peek-img" class:sticker={item.packs === 'sticker'}>
-										{#if thumbnail(item)}<img src={thumbnail(item)} alt="" />{/if}
-										{#if preview}<Tile3D {preview} active count={previewCount(item, cart[item.id] ?? 0)} rest={'stickers' in preview ? -0.25 : -0.45} />{/if}
-									</div>
-								{/if}
-								{#if showsAmountIn3D(item)}
-									<div class="peek-3d"><Haul3D lines={pickedLines(item, cart[item.id] ?? 0)} includes={catalog.includes} compact /></div>
-								{/if}
-								<strong>{item.name}</strong>
-								<span class="muted">{tileFact(item)}</span>
-								{#if item.description}<p>{item.description}</p>{/if}
-								<span class="muted">Click for photos{item.width_in ? ', the 3D view' : ''} and more →</span>
-							</div>
-						{/if}
+						{#if peek === item.id}{@render peekPanel(item)}{/if}
 					</div>
 				{/each}
 				{#if grid.length}
 					<div class="cells">
 						{#each grid as { item } (item.id)}
-							<div class="cell" class:picked={cart[item.id]}>
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<div class="cell" class:picked={cart[item.id]} onmouseenter={() => (peek = item.id)} onmouseleave={() => (peek = null)}>
 								<a href={itemPath(item)} class="thumb" class:sticker={item.packs === 'sticker'} tabindex="-1" aria-hidden="true">
 									{#if thumbnail(item)}<img src={thumbnail(item)} alt="" loading="lazy" />{/if}
 								</a>
 								<a href={itemPath(item)} class="name">{item.name}</a>
 								{#if open}{@render add(item)}{/if}
+								{#if peek === item.id}{@render peekPanel(item)}{/if}
 							</div>
 						{/each}
 					</div>
@@ -405,14 +409,18 @@
 	/* Picking how many of a booklet or an item that plays a clip: the amount, stacked up in 3D, under the row. */
 	.amount-3d { flex-basis: 100%; padding-left: 4.65rem; }
 	@media (max-width: 600px) { .amount-3d { padding-left: 0; } }
-	/* The rest of a grid section (the other stickers) under its lead row: picture, name, add. */
-	.cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 1.25rem 0.75rem; padding-top: 1rem; }
-	.cell { display: grid; gap: 0.5rem; align-content: start; }
+	/* The rest of a grid section (the other stickers) under its lead row: a compact grid of picture, name, add. */
+	.cells { display: grid; grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr)); gap: 1rem 0.6rem; padding-top: 0.75rem; }
+	.cell { display: grid; gap: 0.35rem; align-content: start; font-size: 0.9rem; line-height: 1.3; }
 	.cell .thumb { width: 100%; height: auto; aspect-ratio: 1; }
 	.cell.picked .thumb { box-shadow: inset 0 0 0 2px var(--red); }
 	.cell .name { font-weight: 700; text-decoration: none; }
 	.cell .name:hover { text-decoration: underline; }
-	.cell .add { justify-content: flex-start; padding-left: 0; flex-basis: auto; }
+	.cell .add { justify-content: flex-start; padding-left: 0; flex-basis: auto; gap: 0.3rem; }
+	.cell .add > button { height: 2rem; padding: 0 0.8rem; font-size: 0.9rem; }
+	.cell .add :global(.amounts) { gap: 0.25rem; }
+	.cell .add :global(.amounts button) { min-width: 2.2rem; height: 2rem; padding: 0 0.4rem; font-size: 0.85rem; }
+	.cell .add :global(.custom) { width: 100%; height: 2rem; }
 	.send { margin-top: 1.5rem; }
 	form { display: grid; gap: 1rem; }
 	form h2 { margin-bottom: 0; }
