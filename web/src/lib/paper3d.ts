@@ -76,6 +76,8 @@ export type TableFrameOptions = {
 	room?: number;
 	x?: number;
 	y?: number;
+	/** Shifts what the camera looks at toward (+) or away from (−) the viewer, inches. */
+	z?: number;
 	/** How far the scene reaches below the tabletop (a table's legs), inches. */
 	below?: number;
 };
@@ -91,8 +93,8 @@ export type Stage = {
 	fitLight(sceneW: number, sceneH: number): void;
 	/** Points the camera at x (mid-height) so an upright sceneW × sceneH area fills the view at zoom 1. */
 	frame(x: number, sceneW: number, sceneH: number, zoom: number): void;
-	/** Points the camera down at a tabletop of width × depth (and stack height tallest) from elevation. */
-	frameTable(width: number, depth: number, tallest: number, zoom: number, opts?: TableFrameOptions): void;
+	/** Points the camera down at a tabletop of width × depth (and stack height tallest) from elevation; returns its distance. */
+	frameTable(width: number, depth: number, tallest: number, zoom: number, opts?: TableFrameOptions): number;
 	render(): void;
 	dispose(): void;
 };
@@ -189,9 +191,10 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 			camera.near = Math.max(0.1, dist * 0.05);
 			camera.far = dist * 4;
 			camera.updateProjectionMatrix();
-			target.set(opts.x ?? 0, (opts.y ?? tallest * 0.35) - below * 0.5, 0);
-			camera.position.set(target.x, target.y + dist * Math.sin(el), dist * Math.cos(el));
+			target.set(opts.x ?? 0, (opts.y ?? tallest * 0.35) - below * 0.5, opts.z ?? 0);
+			camera.position.set(target.x, target.y + dist * Math.sin(el), target.z + dist * Math.cos(el));
 			camera.lookAt(target);
+			return dist;
 		},
 		render() {
 			renderer.render(scene, camera);

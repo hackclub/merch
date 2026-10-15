@@ -2,12 +2,14 @@
 	// Everything in the request, to scale, piled close together next to a phone
 	// (haul.ts, haul3d.ts), on 6-foot folding tables beside a laptop for clubs and
 	// events, against a dark backdrop so the white table stands out. Made to
-	// explore: drag to turn and tilt, pinch (or ctrl-scroll) or +/− to zoom, hover
+	// explore: drag to turn and tilt; scroll, pinch, double-tap or +/− to zoom in on a
+	// spot; right- or shift-drag (two fingers on a phone) to move around; hover
 	// or tap a pile to see what it is and how tall. The caption nudges people to ask
 	// for more, because they tend to ask for too little.
 	import { onMount, untrack } from 'svelte';
 	import { layoutHaul, lineLabel, piles, tall, withIncludes, type HaulLine } from './haul';
 	import type { HaulViewer } from './haul3d';
+	import { clampPan, groundDelta, rotatePan, zoomToward, type Pan } from './haulview';
 	import type { Item } from './types';
 
 	// table: lay it all out on 6-foot folding tables (for clubs and events), to show how much of one it fills.
@@ -73,8 +75,10 @@
 					const sway = still || touched ? 0 : Math.sin(now / 2400) * (onTable ? 0.1 : 0.35);
 					v.angle = turned + sway;
 					v.elevation = elevation;
-					// Ease toward the zoom people asked for.
+					// Ease toward the zoom and spot people asked for.
 					v.zoom += (zoom - v.zoom) * 0.2;
+					v.pan.x += (pan.x - v.pan.x) * 0.2;
+					v.pan.z += (pan.z - v.pan.z) * 0.2;
 					v.render();
 				};
 				raf = requestAnimationFrame(tick);
@@ -93,14 +97,43 @@
 	// Pointers down, for dragging (one) and pinching (two).
 	const pointers = new Map<number, { x: number; y: number }>();
 	let dragged = false;
-	let pinchFrom = 0;
-	let zoomFrom = 1;
+	// Right, middle or shift-drag moves around the table instead of turning it.
+	let panning = false;
+	let pinch = { spread: 0, x: 0, y: 0 };
+	let lastTap = { at: 0, x: 0, y: 0 };
+	// The spot on the table in the middle of the view.
+	let pan: Pan = { x: 0, z: 0 };
 
-	const clampZoom = (z: number) => Math.min(1.4, Math.max(0.25, z));
-	const spread = () => {
+	const clampZoom = (z: number) => Math.min(1.6, Math.max(0.08, z));
+	const twoFingers = () => {
 		const [a, b] = [...pointers.values()];
-		return Math.hypot(a.x - b.x, a.y - b.y);
+		return { spread: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 	};
+	// Inches on the table per pixel once the zoom settles.
+	const scale = () => (viewer ? (viewer.scale() * zoom) / Math.max(0.01, viewer.zoom) : 0);
+	const reach = () => viewer?.reach() ?? 0;
+
+	// Zooms to z, keeping the spot under (x, y) on the page still.
+	function zoomAt(x: number, y: number, z: number) {
+		const r = stage.getBoundingClientRect();
+		const off = groundDelta(x - r.left - r.width / 2, y - r.top - r.height / 2, scale(), elevation);
+		const next = clampZoom(z);
+		pan = clampPan(zoomToward(pan, { x: pan.x + off.x, z: pan.z + off.z }, zoom, next), reach());
+		zoom = next;
+		touched = true;
+	}
+	// Moves the table along with a drag of dx, dy pixels.
+	function panBy(dx: number, dy: number) {
+		const d = groundDelta(dx, dy, scale(), elevation);
+		pan = clampPan({ x: pan.x - d.x, z: pan.z - d.z }, reach());
+		touched = true;
+	}
+	// Turns the table about the middle of the view, not the middle of the table.
+	function turnBy(by: number) {
+		turned += by;
+		pan = rotatePan(pan, by);
+		if (viewer) viewer.pan = rotatePan(viewer.pan, by);
+	}
 
 	function show(e: PointerEvent) {
 		if (!viewer) return;
@@ -114,10 +147,8 @@
 		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
 		dragged = false;
-		if (pointers.size === 2) {
-			pinchFrom = spread();
-			zoomFrom = zoom;
-		}
+		panning = e.button === 1 || e.button === 2 || e.shiftKey;
+		if (pointers.size === 2) pinch = twoFingers();
 	}
 	function move(e: PointerEvent) {
 		const last = pointers.get(e.pointerId);
@@ -128,33 +159,51 @@
 		const dx = e.clientX - last.x;
 		const dy = e.clientY - last.y;
 		if (pointers.size === 2) {
+			// Two fingers: pinch to zoom on the spot between them, and slide to move around.
 			pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-			zoom = clampZoom((zoomFrom * pinchFrom) / Math.max(1, spread()));
+			const now = twoFingers();
+			zoomAt(now.x, now.y, (zoom * pinch.spread) / Math.max(1, now.spread));
+			panBy(now.x - pinch.x, now.y - pinch.y);
+			pinch = now;
+			dragged = true;
+			tip = null;
 			return;
 		}
 		if (!dragged && Math.abs(dx) + Math.abs(dy) < 3) return;
 		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 		dragged = touched = true;
 		tip = null;
-		turned += dx * 0.01;
+		if (panning) return panBy(dx, dy);
+		turnBy(dx * 0.01);
 		elevation = Math.min(MAX_ELEVATION, Math.max(MIN_ELEVATION, elevation + dy * 0.006));
 	}
 	function up(e: PointerEvent) {
 		if (!pointers.delete(e.pointerId)) return;
-		// A tap (no drag) says what's there.
-		if (!dragged && e.type === 'pointerup') show(e);
+		if (dragged || e.type !== 'pointerup') return;
+		// A double tap zooms in on that spot; a single tap says what's there.
+		const now = performance.now();
+		if (now - lastTap.at < 350 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+			zoomAt(e.clientX, e.clientY, zoom / 2);
+			lastTap.at = 0;
+			tip = null;
+			return;
+		}
+		lastTap = { at: now, x: e.clientX, y: e.clientY };
+		show(e);
 	}
-	// Pinch on a trackpad arrives as ctrl-scroll; plain scrolling still scrolls the page.
+	// Scrolling over the view zooms toward the pointer (a trackpad pinch arrives as ctrl-scroll, in smaller steps).
 	function wheel(e: WheelEvent) {
-		if (!e.ctrlKey) return;
+		// The small previews between rows leave plain scrolling to the page.
+		if (compact && !e.ctrlKey) return;
 		e.preventDefault();
-		touched = true;
-		zoom = clampZoom(zoom * Math.exp(e.deltaY * 0.01));
+		const delta = e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+		zoomAt(e.clientX, e.clientY, zoom * Math.exp(delta * (e.ctrlKey ? 0.01 : 0.0015)));
 	}
 	function reset() {
 		turned = 0;
 		elevation = START_ELEVATION;
 		zoom = 1;
+		pan = { x: 0, z: 0 };
 		touched = false;
 		tip = null;
 	}
@@ -163,7 +212,7 @@
 <figure class="haul" class:compact>
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="stage" class:ready class:table={onTable} bind:this={stage} onpointerdown={down} onpointermove={move} onpointerup={up}
-		onpointercancel={up} onpointerleave={(e) => e.pointerType === 'mouse' && !pointers.size && (tip = null)} onwheel={wheel}>
+		onpointercancel={up} onpointerleave={(e) => e.pointerType === 'mouse' && !pointers.size && (tip = null)} onwheel={wheel} oncontextmenu={(e) => e.preventDefault()}>
 		{#if near}<canvas bind:this={canvas} aria-label={onTable ? 'Your whole request in 3D, to scale, on a 6-foot folding table next to a laptop and a phone' : 'Your whole request in 3D, to scale, next to a phone'}></canvas>{/if}
 		{#if !ready}<span class="loading muted">Loading 3D…</span>{/if}
 		{#if tip}<span class="tip" style="left: {tip.x}px; top: {tip.y}px">{tip.text}</span>{/if}
@@ -182,9 +231,9 @@
 
 <style>
 	.haul { margin: 0; display: grid; gap: 0.5rem; }
-	.stage { position: relative; aspect-ratio: 16 / 10; background: var(--tile); touch-action: pan-y; cursor: grab; overflow: hidden; }
+	.stage { position: relative; aspect-ratio: 16 / 10; background: var(--tile); touch-action: none; cursor: grab; overflow: hidden; }
 	.stage:active { cursor: grabbing; }
-	.compact .stage { aspect-ratio: 4 / 3; }
+	.compact .stage { aspect-ratio: 4 / 3; touch-action: pan-y; }
 	.stage.table { background: var(--dark); }
 	.stage.table .loading { color: var(--smoke); }
 	canvas { width: 100%; height: 100%; display: block; opacity: 0; transition: opacity 0.4s; }

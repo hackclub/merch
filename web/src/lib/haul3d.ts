@@ -18,6 +18,12 @@ export type HaulViewer = {
 	elevation: number;
 	/** 1 = everything in view; smaller is closer. */
 	zoom: number;
+	/** What the camera looks at, inches from the middle of the scene (x right, z toward the camera). */
+	pan: { x: number; z: number };
+	/** How far the scene reaches from the middle, inches, so panning can't lose it. */
+	reach(): number;
+	/** Inches on the table per CSS pixel of the canvas, at the view centre. */
+	scale(): number;
 	/** Updates what's on the table in place, reusing loaded art and sticker cutouts. */
 	setTable(table: HaulLayout): void;
 	/** What's under a point on the canvas (-1…1 each way): "100 × Mini-Magazine · 4 in tall", or null. */
@@ -329,17 +335,23 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 
 	const ray = new THREE.Raycaster();
 	let last = performance.now();
+	let dist = 1;
 
 	const viewer: HaulViewer = {
 		angle: 0,
 		elevation: ELEVATION,
 		zoom: 1,
+		pan: { x: 0, z: 0 },
+		reach: () => Math.max(table.width, table.depth) / 2,
+		scale: () => (2 * dist * Math.tan(THREE.MathUtils.degToRad(stage.camera.fov) / 2)) / Math.max(1, canvas.clientHeight),
 		setTable(next) {
 			applyTable(next);
 		},
 		pick(x, y) {
 			ray.setFromCamera(new THREE.Vector2(x, y), camera);
-			const hit = ray.intersectObjects(group.children, true).find((h) => h.object.userData.label);
+			// The raycaster also hits hidden things (the laptop off a table), so skip those.
+			const seen = (o: THREE.Object3D | null): boolean => !o || (o.visible && seen(o.parent));
+			const hit = ray.intersectObjects(group.children, true).find((h) => h.object.userData.label && seen(h.object));
 			return hit ? hit.object.userData.label : null;
 		},
 		resize: stage.resize,
@@ -355,8 +367,10 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 			shown.room += (wantRoom - shown.room) * ease;
 
 			group.rotation.y = viewer.angle;
-			stage.frameTable(shown.width, shown.depth, shown.tallest, viewer.zoom, {
+			dist = stage.frameTable(shown.width, shown.depth, shown.tallest, viewer.zoom, {
 				elevation: viewer.elevation,
+				x: viewer.pan.x,
+				z: viewer.pan.z,
 				room: shown.room,
 				y: shown.tallest * 0.3,
 				below: legsDown()
