@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { layoutHaul, piles, TABLE } from './haul';
+import { haulSize, layoutHaul, piles, TABLE, tableCover } from './haul';
 import type { Item } from './types';
 
 const base: Item = {
@@ -97,5 +97,24 @@ describe('layoutHaul on tables', () => {
 
 	it('has no table unless asked', () => {
 		expect(layoutHaul(piles([{ item: base, quantity: 1 }])).tables).toEqual([]);
+	});
+});
+
+describe('haulSize', () => {
+	const pile = (w: number, d: number, height: number) => ({ key: 'k', label: 'l', art: '', w, d, height });
+
+	it('compares everything stacked together to things people know', () => {
+		expect(haulSize([pile(4, 6, 0.1)])).toBe('about the size of a deck of cards');
+		expect(haulSize([pile(6, 6, 4), pile(11, 17, 0.2)])).toBe('about the size of a shoebox');
+		expect(haulSize([pile(12, 12, 12), pile(12, 12, 10)])).toBe('about the size of a box of printer paper');
+		expect(haulSize([pile(20, 20, 20)])).toBe('about 4 boxes of printer paper');
+	});
+});
+
+describe('tableCover', () => {
+	it('says how much of the table the piles cover', () => {
+		const out = layoutHaul(piles([{ item: base, quantity: 2 }]), { table: true });
+		expect(tableCover(out)).toBeCloseTo((11 * 17) / (TABLE.w * TABLE.d));
+		expect(tableCover(layoutHaul(piles([{ item: base, quantity: 2 }])))).toBe(0);
 	});
 });

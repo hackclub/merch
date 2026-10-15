@@ -73,7 +73,7 @@ export type Table = { x: number; z: number; w: number; d: number }; // centre an
 /** A standard 6-foot folding table, the kind at every club fair. */
 export const TABLE = { w: 72, d: 30 };
 /** Space between piles, between the piles and the table's edge, and between tables, in inches. */
-const GAP = 1.5;
+const GAP = 0.75;
 const EDGE = 3;
 const BETWEEN = 12;
 
@@ -90,7 +90,7 @@ export function layoutHaul(all: Pile[], opts: { table?: boolean } = {}): HaulLay
 	const items = [...all].sort((a, b) => b.d - a.d);
 	const order = [...items.slice(0, 1), phone, ...items.slice(1)];
 	const area = order.reduce((a, p) => a + (p.w + GAP) * (p.d + GAP), 0);
-	const rowMax = opts.table ? TABLE.w - 2 * EDGE : Math.max(24, Math.sqrt(area) * 1.6);
+	const rowMax = opts.table ? TABLE.w - 2 * EDGE : Math.max(18, Math.sqrt(area) * 1.3);
 	const depthMax = opts.table ? TABLE.d - 2 * EDGE : Infinity;
 
 	const placed: Placed[] = [];
@@ -145,4 +145,32 @@ export function layoutHaul(all: Pile[], opts: { table?: boolean } = {}): HaulLay
 	}
 	const ph = placed.find((p) => p.key === 'phone')!;
 	return { piles: placed.filter((p) => p !== ph), phone: { x: ph.x, z: ph.z }, tables, width, depth };
+}
+
+// Things everyone has held, by volume in cubic inches, smallest first.
+const LIKE = [
+	{ name: 'a deck of cards', in3: 3.5 * 2.5 * 0.75 },
+	{ name: 'a paperback book', in3: 7 * 4.5 * 1.2 },
+	{ name: 'a shoebox', in3: 13 * 8 * 5 },
+	{ name: 'a box of printer paper', in3: 17.5 * 11.5 * 10.5 }
+];
+
+/**
+ * Everything in the request stacked together, compared to something familiar:
+ * "about the size of a shoebox", or "about 3 boxes of printer paper". Helps
+ * people feel how much they'll get (they tend to ask for too little).
+ */
+export function haulSize(all: Pile[]): string {
+	const v = all.reduce((a, p) => a + p.w * p.d * p.height, 0);
+	const box = LIKE[LIKE.length - 1];
+	if (v > box.in3 * 2) return `about ${Math.round(v / box.in3)} boxes of printer paper`;
+	const nearest = LIKE.reduce((best, t) => (Math.abs(Math.log(v / t.in3)) < Math.abs(Math.log(v / best.in3)) ? t : best));
+	return `about the size of ${nearest.name}`;
+}
+
+/** How much of the tables the piles cover, 0 to 1 (0 with no tables). */
+export function tableCover(layout: HaulLayout): number {
+	if (!layout.tables.length) return 0;
+	const tables = layout.tables.reduce((a, t) => a + t.w * t.d, 0);
+	return layout.piles.reduce((a, p) => a + p.w * p.d, 0) / tables;
 }
