@@ -6,13 +6,14 @@
 	import AddressLine1 from '$lib/AddressLine1.svelte';
 	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
-	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
+	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from '$lib/cart';
 	import { gallery, roughFee } from '$lib/gallery';
 	import { itemPath, previewCount, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
+	import Haul3D from '$lib/Haul3D.svelte';
 	import QuantityPicker from '$lib/QuantityPicker.svelte';
 	import Tile3D from '$lib/Tile3D.svelte';
 	import type { Address, Catalog, Item, Purpose, SwagRequest } from '$lib/types';
@@ -61,6 +62,13 @@
 	const intl = $derived(isInternational(address.country));
 	// One photo under the intro, like the old Fillout forms: the first real-world one when there is one.
 	const photo = $derived(catalog ? gallery(catalog.items)[0] : undefined);
+	// What's coming, line by line (one per size), for the 3D preview above Submit.
+	const haul = $derived(
+		cartLines(cart, shown, sizes).map((l) => {
+			const item = shown.find((i) => i.id === l.item_id)!;
+			return { item, quantity: l.quantity, size: l.sku ? sizeLabel(item, l.sku) : undefined };
+		})
+	);
 	const fee = $derived(catalog?.settings.international_shipping_fee_cents ?? 0);
 
 	function choose(p: Purpose) {
@@ -200,6 +208,7 @@
 		{/each}
 
 		{#if !session.me?.user}
+			{#if haul.length}<div class="send"><Haul3D lines={haul} /></div>{/if}
 			<p id="request" class="send"><a class="button" href="/auth/login" data-sveltekit-reload
 				>{count ? `Sign in with Hack Club to send ${count} item${count === 1 ? '' : 's'}` : 'Sign in with Hack Club to request swag'}</a></p>
 		{:else if asking && !purpose}
@@ -263,6 +272,7 @@
 						<span>I understand, and I'll only request what I'll use.</span>
 					</label>
 				</div>
+				{#if haul.length}<Haul3D lines={haul} />{/if}
 				{#each problems as p}<p class="error">{p}</p>{/each}
 				<button disabled={submitting || problems.length > 0 || !understood}>
 					{submitting ? 'Sending…' : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
