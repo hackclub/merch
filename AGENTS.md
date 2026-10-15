@@ -286,6 +286,10 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   `Validate` refuses requests that don't fit in one package (a poster with 50 postcards) and
   international requests over 3 lb packed. The package sizes are standard sizes, not AGH's exact
   stock. Tune them in `swag.Packages`.
+- **Warehouse weights don't include packaging.** Zenventory logs each shipment's weight from
+  per-SKU weights (all 78 single M shirts are exactly 6.0 oz), and labels are bought at that
+  weight. So `items.weight_oz` is the item alone, `Pack` adds the mailer's `TareOz` for the
+  real weight (the 3 lb check), and postage estimates match history on the contents weight.
 - **Estimates** (`internal/swag/estimate.go`): arrival window = handling + transit, from the
   20th to the 80th percentile of past shipments to the same country and class. With fewer than
   10 samples, it uses all US or all international shipments instead. Postage compares packages

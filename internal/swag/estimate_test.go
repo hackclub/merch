@@ -21,8 +21,8 @@ func past(n int, country, class string, oz float64, handling, transit, postage [
 	return out
 }
 
-var parcel = Packing{Package: Package{Name: "Mailer", Class: ClassParcel}, WeightOz: 8}
-var letter = Packing{Package: Package{Name: "Envelope", Class: ClassLetter}, WeightOz: 1}
+var parcel = Packing{Package: Package{Name: "Mailer", Class: ClassParcel}, WeightOz: 10, ContentsOz: 8}
+var letter = Packing{Package: Package{Name: "Envelope", Class: ClassLetter}, WeightOz: 1.3, ContentsOz: 1}
 
 func TestEstimateUsesTheCountry(t *testing.T) {
 	var h []PastShipment
@@ -63,7 +63,7 @@ func TestEstimatePostageMatchesWeight(t *testing.T) {
 	h = append(h, past(30, "CA", ClassParcel, 8, [2]float64{1, 1}, [2]float64{7, 9}, [2]float64{700, 800})...)
 	h = append(h, past(30, "CA", ClassParcel, 40, [2]float64{1, 1}, [2]float64{7, 9}, [2]float64{2400, 2600})...)
 	heavy := parcel
-	heavy.WeightOz = 42
+	heavy.WeightOz, heavy.ContentsOz = 44, 42
 	if e := EstimateShipping(h, "CA", heavy, now); e.PostageCents[0] < 2400 {
 		t.Fatalf("heavy postage = %v", e.PostageCents)
 	}
@@ -104,5 +104,17 @@ func TestEstimateFromMailed(t *testing.T) {
 	e := EstimateShipping(h, "US", parcel, now).From(mailed)
 	if e.ArriveFrom != "2026-09-23" || e.ArriveBy != "2026-09-25" {
 		t.Fatalf("arrive %s..%s", e.ArriveFrom, e.ArriveBy)
+	}
+}
+
+// The warehouse logs each shipment's weight from per-SKU nominal weights, without
+// the packaging, so postage is matched on what's inside, not the packed weight.
+func TestEstimatePostageIgnoresPackaging(t *testing.T) {
+	var h []PastShipment
+	h = append(h, past(30, "CA", ClassParcel, 8, [2]float64{1, 1}, [2]float64{7, 9}, [2]float64{700, 800})...)
+	h = append(h, past(30, "CA", ClassParcel, 14, [2]float64{1, 1}, [2]float64{7, 9}, [2]float64{1200, 1300})...)
+	boxed := Packing{Package: Package{Name: "Box", Class: ClassParcel, TareOz: 8}, ContentsOz: 8, WeightOz: 16}
+	if e := EstimateShipping(h, "CA", boxed, now); e.PostageCents[1] > 800 {
+		t.Fatalf("postage = %v, want the 8 oz shipments' (700-800)", e.PostageCents)
 	}
 }

@@ -115,9 +115,12 @@ func EstimateShipping(history []PastShipment, country string, p Packing, now tim
 		e.TransitBasis, e.TransitSamples = basis, len(transit)
 	}
 
-	// Postage depends on weight, so compare with packages of about the same weight.
+	// Postage depends on weight, so compare with packages of about the same
+	// weight. The warehouse logs weights from per-SKU weights without the
+	// packaging (78 single M shirts all logged at exactly 6.0 oz), and labels
+	// were bought at those weights, so match on the contents.
 	near := func(s PastShipment) bool {
-		return s.WeightOz > 0 && math.Abs(s.WeightOz-p.WeightOz) <= max(2, 0.25*p.WeightOz)
+		return s.WeightOz > 0 && math.Abs(s.WeightOz-p.ContentsOz) <= max(2, 0.25*p.ContentsOz)
 	}
 	postage, basis := pick(func(s PastShipment) (float64, bool) {
 		return float64(s.PostageCents), s.PostageCents > 0

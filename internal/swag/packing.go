@@ -56,10 +56,14 @@ var (
 	ErrTooHeavy = errors.New("international requests can weigh at most 3 lb packed")
 )
 
-// Packing is how a request goes out: its package and packed weight.
+// Packing is how a request goes out: its package and weight.
 type Packing struct {
-	Package  Package `json:"package"`
-	WeightOz float64 `json:"weight_oz"`
+	Package Package `json:"package"`
+	// WeightOz is what it really weighs, packaging included (for the 3 lb
+	// limit). ContentsOz leaves the packaging out, like the warehouse's own
+	// logged weights, which come from per-SKU weights (see EstimateShipping).
+	WeightOz   float64 `json:"weight_oz"`
+	ContentsOz float64 `json:"contents_oz"`
 	// UnknownWeight is set when some item has no weight and no paper size to
 	// work one out from, so WeightOz is too low.
 	UnknownWeight bool `json:"unknown_weight"`
@@ -165,7 +169,7 @@ func Pack(lines []Line, catalog map[int64]Item, international bool) (Packing, er
 			tooHeavy = true
 			continue
 		}
-		return Packing{Package: p, WeightOz: oz, UnknownWeight: !known}, nil
+		return Packing{Package: p, WeightOz: oz, ContentsOz: contentOz, UnknownWeight: !known}, nil
 	}
 	if tooHeavy {
 		return Packing{}, fmt.Errorf("%w; this is about %.1f lb", ErrTooHeavy, contentOz/16)

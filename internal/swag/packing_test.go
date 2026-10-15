@@ -74,7 +74,7 @@ func TestPackWeight(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if math.Abs(p.WeightOz-45.2) > 0.01 || p.Package.Class != ClassParcel {
+	if math.Abs(p.WeightOz-45.2) > 0.01 || math.Abs(p.ContentsOz-43.2) > 0.01 || p.Package.Class != ClassParcel {
 		t.Fatalf("got %+v", p)
 	}
 	// A postcard has no weight set: it's worked out from its paper (4x6x0.016 in).
