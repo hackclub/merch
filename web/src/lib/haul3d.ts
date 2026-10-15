@@ -1,15 +1,15 @@
 // Draws layoutHaul's table (haul.ts): every pile at true size — sealed clear zip
 // bags of 50 die-cut stickers, fanned loose stickers, banded postcard bundles,
-// booklet stacks with spines and page edges, folded T-shirts, and posters —
+// booklet stacks with spines and page edges, shop-folded T-shirts (shirt3d.ts), and posters —
 // next to a phone (and, on folding tables, an open laptop) for scale, seen from
 // above at an angle. Units are inches.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { bookletStack, LAPTOP, SHIRT, TABLE, tall, type HaulLayout, type Placed } from './haul';
+import { bookletStack, LAPTOP, TABLE, tall, type HaulLayout, type Placed } from './haul';
 import { finishInfo } from './paper';
 import { createPhone, createStage, edgeColor, loadArt, pageEdges, paperBand, paperEdge, paperFace, PHONE_DEPTH } from './paper3d';
+import { foldedShirtGeometry, shirtLook, shirtMaterial } from './shirt3d';
 import { BAG_H, createStickerBag, createStickerFan, disposeStickerGroup, loadStickerCutout, type StickerCutout } from './sticker3d';
-import { stickerMask } from './stickers';
 
 export type HaulViewer = {
 	/** Turn of the whole table, radians. */
@@ -59,7 +59,7 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 	// Per-viewer caches so changing quantities or adding items reuses already-cut stickers and textures.
 	const texCache = new Map<string, THREE.Texture | null | ((tex: THREE.Texture | null) => void)[]>();
 	const cutoutCache = new Map<string, StickerCutout | null | ((c: StickerCutout | null) => void)[]>();
-	const shirtColorCache = new Map<string, THREE.Color>();
+	const shirtLooks = new Map<string, ReturnType<typeof shirtLook>>();
 
 	let generation = 0;
 	let readyFired = false;
@@ -138,37 +138,38 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 		}
 
 		if (p.kind === 'shirt') {
+			// Shop-folded, stacked by hand: each a little off square with the one below.
 			const count = Math.max(1, p.count ?? 1);
 			const unitH = p.height / count;
-			const geo = new RoundedBoxGeometry(p.w, Math.max(0.1, unitH - 0.04), p.d, 3, 0.25);
-			const cloth = new THREE.MeshStandardMaterial({ color: 0x2b2c31, roughness: 0.9 });
-			const top = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88 });
+			const geo = foldedShirtGeometry(p.w, p.d, Math.max(0.1, unitH - 0.04));
+			const cloth = shirtMaterial();
 			const label = `${p.label} · ${tall(p.height)}`;
 			for (let i = 0; i < count; i++) {
-				const isTop = i === count - 1;
-				const mesh = new THREE.Mesh(geo, isTop ? [cloth, cloth, top, cloth, cloth, cloth] : cloth);
-				mesh.position.set(p.x, (i + 0.5) * unitH, p.z);
+				const mesh = new THREE.Mesh(geo, cloth);
+				mesh.position.set(p.x + Math.sin(i * 1.7) * 0.12, i * unitH, p.z + Math.sin(i * 2.9) * 0.1);
+				mesh.rotation.y = Math.sin(i * 2.3) * 0.025;
 				mesh.castShadow = true;
+				mesh.receiveShadow = true;
 				mesh.userData.label = label;
 				contents.add(mesh);
 			}
 			disposers.push(() => {
 				geo.dispose();
-				cloth.dispose();
-				top.dispose();
+				cloth.dispose(); // its map is shirtLooks', kept for the next layout
 			});
 			if (!p.art) return doneOne();
 			getArt(p.art, p.w / p.d, (tex) => {
 				if (gen !== generation) return;
 				if (tex) {
-					top.map = tex;
-					top.needsUpdate = true;
-					let col = shirtColorCache.get(p.art);
-					if (!col) {
-						col = sampleShirtColor(tex);
-						shirtColorCache.set(p.art, col);
+					let look = shirtLooks.get(p.art);
+					if (!look) {
+						look = shirtLook(tex, p.w, p.d);
+						shirtLooks.set(p.art, look);
 					}
-					cloth.color.copy(col);
+					cloth.map = look.map;
+					cloth.color.set(0xffffff);
+					cloth.sheenColor.copy(look.color);
+					cloth.needsUpdate = true;
 				}
 				doneOne();
 			});
@@ -366,6 +367,8 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 			clearContents();
 			for (const v of texCache.values()) if (v && !Array.isArray(v)) v.dispose();
 			texCache.clear();
+			for (const look of shirtLooks.values()) look.map.dispose();
+			shirtLooks.clear();
 			for (const v of cutoutCache.values()) if (v && !Array.isArray(v)) v.dispose();
 			cutoutCache.clear();
 			stage.dispose();
@@ -405,32 +408,6 @@ function createLaptop(): THREE.Group {
 	hinge.add(lid, screen);
 	g.add(base, keys, pad, hinge);
 	return g;
-}
-
-/** Samples a T-shirt's fabric color from the non-backdrop pixels of its product photo. */
-function sampleShirtColor(tex: THREE.Texture): THREE.Color {
-	const c = document.createElement('canvas');
-	const N = 48;
-	c.width = c.height = N;
-	const ctx = c.getContext('2d', { willReadFrequently: true })!;
-	const img = tex.image as CanvasImageSource & { width: number; height: number };
-	try {
-		ctx.drawImage(img, 0, 0, N, N);
-		const px = ctx.getImageData(0, 0, N, N).data;
-		const mask = stickerMask(px, N, N);
-		let r = 0, g = 0, b = 0, count = 0;
-		for (let i = 0; i < mask.length; i++) {
-			if (!mask[i]) continue;
-			r += px[i * 4];
-			g += px[i * 4 + 1];
-			b += px[i * 4 + 2];
-			count++;
-		}
-		if (count > 0) return new THREE.Color().setRGB(r / count / 255, g / count / 255, b / count / 255, THREE.SRGBColorSpace);
-	} catch {
-		// Cross-origin fallback
-	}
-	return new THREE.Color(0x2b2c31);
 }
 
 /**
