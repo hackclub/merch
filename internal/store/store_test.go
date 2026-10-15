@@ -108,9 +108,9 @@ func TestItems(t *testing.T) {
 	}
 
 	five := 5
-	a.Name, a.MaxPerUser, a.SortOrder = "Renamed", &five, 3
+	a.Name, a.MaxPerUser, a.SortOrder, a.ClubOnly = "Renamed", &five, 3, true
 	upd, err := s.UpdateItem(ctx, a)
-	if err != nil || upd.Name != "Renamed" || upd.MaxPerUser == nil || *upd.MaxPerUser != 5 {
+	if err != nil || upd.Name != "Renamed" || upd.MaxPerUser == nil || *upd.MaxPerUser != 5 || !upd.ClubOnly {
 		t.Fatalf("UpdateItem = %+v, %v", upd, err)
 	}
 	if _, err := s.UpdateItem(ctx, swag.Item{ID: 999, SKU: "x", Name: "x", MaxPerRequest: 1}); !errors.Is(err, ErrNotFound) {
@@ -270,7 +270,7 @@ func TestCreateRequestPassesUsageToValidator(t *testing.T) {
 	u := mkUser(t, s, "ident!1", "a@x.com")
 	it := mkItem(t, s, "Sti/A", true)
 
-	r1, err := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: it.ID, Quantity: 2}}, Status: swag.StatusPending},
+	r1, err := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Purpose: swag.PurposeClub, Lines: []swag.Line{{ItemID: it.ID, Quantity: 2}}, Status: swag.StatusPending},
 		func(prior map[int64]int, last *time.Time) error {
 			if len(prior) != 0 || last != nil {
 				t.Errorf("first request saw prior=%v last=%v", prior, last)
@@ -280,7 +280,7 @@ func TestCreateRequestPassesUsageToValidator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r1.Status != swag.StatusPending || len(r1.Lines) != 1 || r1.Lines[0].SKU != "Sti/A" || r1.Lines[0].Quantity != 2 {
+	if r1.Status != swag.StatusPending || r1.Purpose != swag.PurposeClub || len(r1.Lines) != 1 || r1.Lines[0].SKU != "Sti/A" || r1.Lines[0].Quantity != 2 {
 		t.Fatalf("request = %+v", r1)
 	}
 

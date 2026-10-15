@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api, ApiError, formatCents, statusLabel } from '$lib/api';
+	import { purposeLabel } from '$lib/purpose';
 	import { session } from '$lib/session.svelte';
 	import type { SwagRequest } from '$lib/types';
 
@@ -40,6 +41,7 @@
 				<strong>#{r.id}</strong>
 				<span class="badge {r.status}">{statusLabel[r.status]}</span>
 				<span class="muted">{new Date(r.created_at).toLocaleDateString()}</span>
+				{#if r.purpose}<span class="badge">{purposeLabel(r.purpose)}</span>{/if}
 			</div>
 			<ul>
 				{#each r.lines as l}<li>{l.quantity} × {l.name}{l.variant ? ` (${l.variant})` : ''}</li>{/each}

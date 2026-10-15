@@ -461,14 +461,14 @@ func TestDomesticRequestFlow(t *testing.T) {
 	user, admin := h.client(userEmail), h.client(adminEmail)
 
 	var r store.Request
-	code := h.do(user, "POST", "/api/requests", map[string]any{"address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 2}}, "note": "thanks!"}, &r)
+	code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 2}}, "note": "thanks!"}, &r)
 	if code != 201 || r.Status != swag.StatusPending || r.ShippingFeeCents != 0 {
 		t.Fatalf("create = %d %+v", code, r)
 	}
 
 	// Cooldown blocks an immediate second request.
 	var errBody map[string]string
-	if code := h.do(user, "POST", "/api/requests", map[string]any{"address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &errBody); code != 422 || !strings.Contains(errBody["error"], "recently") {
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &errBody); code != 422 || !strings.Contains(errBody["error"], "recently") {
 		t.Fatalf("second request = %d %v", code, errBody)
 	}
 
@@ -498,11 +498,29 @@ func TestDomesticRequestFlow(t *testing.T) {
 	}
 }
 
+func TestClubOnlyItemsArentForPersonalRequests(t *testing.T) {
+	h := newHarness(t)
+	admin, user := h.client(adminEmail), h.client(userEmail)
+	var mag swag.Item
+	if code := h.do(admin, "POST", "/api/admin/items", swag.Item{SKU: "Pri/Bok/M25/1st", Name: "Magazine", MaxPerRequest: 5, Visible: true, ClubOnly: true}, &mag); code != 201 || !mag.ClubOnly {
+		t.Fatalf("create club-only item = %d %+v", code, mag)
+	}
+	lines := []swag.Line{{ItemID: mag.ID, Quantity: 1}}
+	var errBody map[string]string
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": lines}, &errBody); code != 422 || !strings.Contains(errBody["error"], "clubs and events") {
+		t.Fatalf("personal = %d %v", code, errBody)
+	}
+	var r store.Request
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "club", "address": usAddr, "lines": lines}, &r); code != 201 || r.Purpose != swag.PurposeClub {
+		t.Fatalf("club = %d %+v", code, r)
+	}
+}
+
 func TestDispatchFailureLeavesRequestPending(t *testing.T) {
 	h := newHarness(t)
 	it := h.mkItem("Sti/A", true)
 	var r store.Request
-	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
+	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
 	h.wh.fail = fmt.Errorf("theseus down")
 	if code := h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/requests/%d/dispatch", r.ID), map[string]any{}, nil); code != 502 {
 		t.Fatalf("dispatch = %d", code)
@@ -522,7 +540,7 @@ func TestInternationalRequestNeedsPayment(t *testing.T) {
 		store.Request
 		PaymentURL string `json:"payment_url"`
 	}
-	code := h.do(user, "POST", "/api/requests", map[string]any{"address": deAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
+	code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": deAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
 	if code != 201 || r.Status != swag.StatusAwaitingPayment || r.ShippingFeeCents != 1500 {
 		t.Fatalf("create = %d %+v", code, r)
 	}
@@ -544,7 +562,7 @@ func TestUserCanCancelOwnPendingRequestOnly(t *testing.T) {
 	h := newHarness(t)
 	it := h.mkItem("Sti/A", true)
 	var r store.Request
-	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
+	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
 
 	if code := h.do(h.client(authorEmail), "POST", fmt.Sprintf("/api/requests/%d/cancel", r.ID), map[string]any{}, nil); code != 404 {
 		t.Fatalf("other user cancel = %d", code)
@@ -566,6 +584,12 @@ func TestRequestValidation(t *testing.T) {
 		{"address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 99}}},
 		{"address": swag.Address{Country: "US"}, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}},
 	}
+	for _, b := range bad {
+		b["purpose"] = "personal"
+	}
+	// Every request says what it's for.
+	bad = append(bad, map[string]any{"address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}},
+		map[string]any{"purpose": "resale", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}})
 	for i, b := range bad {
 		if code := h.do(user, "POST", "/api/requests", b, nil); code != 422 {
 			t.Errorf("case %d = %d, want 422", i, code)
@@ -636,11 +660,11 @@ func TestSizedItemFlow(t *testing.T) {
 		t.Fatalf("catalog = %+v", cat)
 	}
 
-	if code := h.do(user, "POST", "/api/requests", map[string]any{"address": usAddr, "lines": []swag.Line{{ItemID: shirt.ID, Quantity: 1}}}, &errBody); code != 422 || !strings.Contains(errBody["error"], "size") {
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: shirt.ID, Quantity: 1}}}, &errBody); code != 422 || !strings.Contains(errBody["error"], "size") {
 		t.Fatalf("no size = %d %v", code, errBody)
 	}
 	var r store.Request
-	if code := h.do(user, "POST", "/api/requests", map[string]any{"address": usAddr, "lines": []swag.Line{{ItemID: shirt.ID, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}}, &r); code != 201 {
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: shirt.ID, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}}, &r); code != 201 {
 		t.Fatalf("create = %d", code)
 	}
 	if len(r.Lines) != 1 || r.Lines[0].SKU != "Swa/Shirt/HC/M" || r.Lines[0].Variant != "M" {
@@ -1014,7 +1038,7 @@ func TestMagazineShipsWithItsCard(t *testing.T) {
 	}
 
 	var r store.Request
-	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"address": usAddr, "lines": []swag.Line{{ItemID: mag.ID, Quantity: 2}}}, &r)
+	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: mag.ID, Quantity: 2}}}, &r)
 	if code := h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/dispatch", r.ID), map[string]any{}, nil); code != 200 {
 		t.Fatalf("dispatch = %d", code)
 	}

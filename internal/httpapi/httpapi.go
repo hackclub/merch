@@ -466,6 +466,7 @@ func (s *server) myRequests(w http.ResponseWriter, r *http.Request, v viewer) {
 
 func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 	var body struct {
+		Purpose swag.Purpose `json:"purpose"`
 		Address swag.Address `json:"address"`
 		Lines   []swag.Line  `json:"lines"`
 		Note    string       `json:"note"`
@@ -498,10 +499,10 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 	}
 	status, fee := swag.InitialStatus(st, body.Address.Country)
 	req, err := s.Store.CreateRequest(r.Context(), store.NewRequest{
-		UserID: v.user.ID, Address: body.Address, Lines: body.Lines, Status: status, ShippingFeeCents: fee, Note: body.Note,
+		UserID: v.user.ID, Address: body.Address, Purpose: body.Purpose, Lines: body.Lines, Status: status, ShippingFeeCents: fee, Note: body.Note,
 	}, func(prior map[int64]int, last *time.Time) error {
 		return swag.Validate(swag.ValidateInput{
-			Settings: st, Catalog: cat, Lines: body.Lines, PriorQuantities: prior, LastRequestAt: last, Now: s.Now(),
+			Settings: st, Catalog: cat, Purpose: body.Purpose, Lines: body.Lines, PriorQuantities: prior, LastRequestAt: last, Now: s.Now(),
 		})
 	})
 	if err != nil {
@@ -517,7 +518,7 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 
 func isRuleErr(err error) bool {
 	for _, e := range []error{swag.ErrRequestsClosed, swag.ErrNoItems, swag.ErrBadQuantity, swag.ErrUnknownItem,
-		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrTooManyItems, swag.ErrCooldown, swag.ErrBadAddress} {
+		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrTooManyItems, swag.ErrCooldown, swag.ErrBadAddress, swag.ErrBadPurpose} {
 		if errors.Is(err, e) {
 			return true
 		}

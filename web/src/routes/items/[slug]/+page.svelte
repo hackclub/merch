@@ -4,6 +4,7 @@
 	import { api, ApiError, formatCents } from '$lib/api';
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
 	import { pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
+	import { itemsFor, offered } from '$lib/purpose';
 	import { isBooklet, itemIdFromParam, itemPath, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
 	import type { BookOptions } from '$lib/book3d';
 	import { sheetThickness, finishInfo } from '$lib/paper';
@@ -23,7 +24,7 @@
 	onMount(async () => {
 		try {
 			catalog = await api.get<Catalog>('/api/catalog');
-			setCart(pruneCart(bag.cart, catalog.items));
+			setCart(pruneCart(bag.cart, itemsFor(catalog.items, bag.purpose)));
 			setSizes(pruneSizes(bag.sizes, catalog.items));
 		} catch (e) {
 			error = e instanceof ApiError ? e.message : 'Could not load this item.';
@@ -176,6 +177,8 @@
 				<p class="error">Requests are closed right now. Check back soon!</p>
 			{:else if !session.me?.user}
 				<p><a class="button" href="/auth/login" data-sveltekit-reload>Sign in with Hack Club to request this</a></p>
+			{:else if !offered(item, bag.purpose)}
+				<p class="muted">This is only for people running a Hack Club or an event. <a href="/">Change what your request is for</a>.</p>
 			{:else}
 				{#if item.variants.length}
 					<p class="size-label">Size{#if pickedSize}: <strong>{sizeLabel(item, pickedSize)}</strong>{/if}</p>

@@ -1,0 +1,33 @@
+import { describe, expect, it } from 'vitest';
+import { itemsFor, offered, parsePurpose, PURPOSES, purposeLabel } from './purpose';
+import type { Item } from './types';
+
+const base: Item = { id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false };
+const shirt: Item = { ...base, id: 2, sku: 'Swa/Shirt/HC', name: 'T-shirt', club_only: true };
+
+describe('purpose', () => {
+	it('asks the three kinds of request, personal first', () => {
+		expect(PURPOSES.map((p) => p.value)).toEqual(['personal', 'club', 'event']);
+	});
+
+	it('leaves club-only items out of personal requests', () => {
+		expect(offered(shirt, 'personal')).toBe(false);
+		expect(offered(shirt, 'club')).toBe(true);
+		expect(offered(shirt, 'event')).toBe(true);
+		expect(itemsFor([base, shirt], 'personal')).toEqual([base]);
+		expect(itemsFor([base, shirt], 'event')).toEqual([base, shirt]);
+		// Before they've answered, show everything.
+		expect(itemsFor([base, shirt], '')).toEqual([base, shirt]);
+	});
+
+	it('reads a saved purpose, dropping anything else', () => {
+		expect(parsePurpose('club')).toBe('club');
+		expect(parsePurpose('resale')).toBe('');
+		expect(parsePurpose(null)).toBe('');
+	});
+
+	it('labels past requests, including imported ones with no purpose', () => {
+		expect(purposeLabel('event')).toBe('Event');
+		expect(purposeLabel('')).toBe('');
+	});
+});

@@ -77,6 +77,10 @@ type Item struct {
 	// the intro card that goes with each magazine.
 	ShipsWith []string `json:"ships_with"`
 
+	// ClubOnly items (the full-size magazine, the T-shirt) aren't offered for
+	// personal requests, only to people running a club or an event.
+	ClubOnly bool `json:"club_only"`
+
 	// Variants are the sizes of an item, each its own warehouse SKU. When an
 	// item has variants, every request line for it must pick one; limits still
 	// apply to the item as a whole.
@@ -97,6 +101,23 @@ func (it Item) Variant(sku string) (Variant, bool) {
 		}
 	}
 	return Variant{}, false
+}
+
+// Purpose is what a request is for; the request form asks it first.
+type Purpose string
+
+const (
+	PurposePersonal Purpose = "personal" // for themselves and to share with friends
+	PurposeClub     Purpose = "club"     // they run a Hack Club
+	PurposeEvent    Purpose = "event"    // they run or exhibit at an event
+)
+
+// Purposes are the purposes a new request can have. Imported history has none ("").
+var Purposes = map[Purpose]bool{PurposePersonal: true, PurposeClub: true, PurposeEvent: true}
+
+// Offered reports whether an item can be requested for the given purpose.
+func (it Item) Offered(p Purpose) bool {
+	return p != PurposePersonal || !it.ClubOnly
 }
 
 type Line struct {
@@ -128,11 +149,13 @@ var (
 	ErrTooManyItems   = errors.New("too many items in one request")
 	ErrCooldown       = errors.New("you requested swag recently; try again later")
 	ErrBadAddress     = errors.New("invalid address")
+	ErrBadPurpose     = errors.New("say what the request is for")
 )
 
 type ValidateInput struct {
 	Settings Settings
 	Catalog  map[int64]Item
+	Purpose  Purpose
 	Lines    []Line
 	// PriorQuantities is how many of each item the user has already received
 	// or has in flight (non-rejected, non-cancelled requests).
@@ -145,6 +168,9 @@ type ValidateInput struct {
 func Validate(in ValidateInput) error {
 	if !in.Settings.RequestsOpen {
 		return ErrRequestsClosed
+	}
+	if !Purposes[in.Purpose] {
+		return ErrBadPurpose
 	}
 	if len(in.Lines) == 0 {
 		return ErrNoItems
@@ -164,6 +190,9 @@ func Validate(in ValidateInput) error {
 		item, ok := in.Catalog[l.ItemID]
 		if !ok || !item.Visible {
 			return ErrUnknownItem
+		}
+		if !item.Offered(in.Purpose) {
+			return fmt.Errorf("%w: %s is only for clubs and events", ErrUnknownItem, item.Name)
 		}
 		if seen[l.ItemID] {
 			return ErrDuplicateItem

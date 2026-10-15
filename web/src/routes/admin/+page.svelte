@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api, ApiError, fileToBase64, formatCents, statusLabel } from '$lib/api';
+	import { purposeLabel } from '$lib/purpose';
 	import { byFilename, itemPath, moveImage } from '$lib/items';
 	import { session } from '$lib/session.svelte';
 	import type { Item, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
@@ -161,7 +162,7 @@
 					<tr>
 						<td>{r.id}<div class="muted">{new Date(r.created_at).toLocaleDateString()}</div>
 							{#if r.source !== 'app'}<span class="badge" title={r.airtable_record_id}>imported · {r.source}</span>{/if}</td>
-						<td>{r.user_email}{#if r.note}<div class="muted">“{r.note}”</div>{/if}
+						<td>{r.user_email}{#if r.purpose}<div><span class="badge">{purposeLabel(r.purpose)}</span></div>{/if}{#if r.note}<div class="muted">“{r.note}”</div>{/if}
 							{#if r.internal_note}<details><summary class="muted">internal note</summary><pre style="white-space: pre-wrap">{r.internal_note}</pre></details>{/if}</td>
 						<td>{#each r.lines as l}<div>{l.quantity} × {l.name}{l.variant ? ` (${l.variant})` : ''} <span class="muted">{l.sku}</span></div>{/each}</td>
 						<td>{r.address.first_name} {r.address.last_name}<br />{r.address.city}, {r.address.state} {r.address.country}</td>
@@ -284,6 +285,7 @@
 						</td>
 						<td>
 							<label class="row"><input type="checkbox" style="width: auto" bind:checked={it.visible} /> Visible</label>
+							<label class="row" title="Hidden from personal requests"><input type="checkbox" style="width: auto" bind:checked={it.club_only} /> Clubs &amp; events only</label>
 							<label>Sort order <input type="number" bind:value={it.sort_order} /></label>
 							<label>Printed size, inches (for the 3D preview)
 								<span class="row size">

@@ -3,20 +3,22 @@
 	import { goto } from '$app/navigation';
 	import { api, ApiError, formatCents, isInternational } from '$lib/api';
 	import { blankAddress, prefillAddress } from '$lib/address';
-	import { bag, setCart, setSizes } from '$lib/bag.svelte';
+	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartCosts, cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, quantityOptions, setQuantity, sizeLabel, totalQuantity } from '$lib/cart';
 	import { formatUnitCost, itemPath, preview3D, previewCount, thumbnail } from '$lib/items';
+	import { itemsFor, PURPOSES } from '$lib/purpose';
 	import { session } from '$lib/session.svelte';
 	import SizePicker from '$lib/SizePicker.svelte';
 	import Stepper from '$lib/Stepper.svelte';
 	import Tile3D from '$lib/Tile3D.svelte';
 	import { bagLabel } from '$lib/stickers';
-	import type { Address, Catalog, ItemStock, SwagRequest } from '$lib/types';
+	import type { Address, Catalog, ItemStock, Purpose, SwagRequest } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
 	// Prefilled from the person's Hack Club Auth address when they have one.
 	let address = $state<Address>(prefillAddress(blankAddress(), session.me?.user?.address));
 	let note = $state('');
+	let understood = $state(false);
 	let error = $state('');
 	let submitting = $state(false);
 	// Live warehouse unit costs for what's in the bag, fetched once per item.
@@ -26,7 +28,7 @@
 	onMount(async () => {
 		try {
 			catalog = await api.get<Catalog>('/api/catalog');
-			setCart(pruneCart(bag.cart, catalog.items));
+			setCart(pruneCart(bag.cart, itemsFor(catalog.items, bag.purpose)));
 			setSizes(pruneSizes(bag.sizes, catalog.items));
 			// "Review request" links from product pages land here as /#request.
 			if (location.hash === '#request') {
@@ -40,6 +42,11 @@
 
 	const cart = $derived(bag.cart);
 	const sizes = $derived(bag.sizes);
+	const purpose = $derived(bag.purpose);
+	const purposeInfo = $derived(PURPOSES.find((p) => p.value === purpose));
+	// Personal requests don't offer club-only items (the full-size magazine, the T-shirt).
+	const shown = $derived(catalog ? itemsFor(catalog.items, purpose) : []);
+	const asking = $derived(!!session.me?.user && !!catalog?.settings.requests_open);
 	const problems = $derived(catalog ? cartErrors(cart, catalog.settings.max_items_per_request, catalog.items, sizes) : []);
 	const intl = $derived(isInternational(address.country));
 	const costs = $derived(catalog ? cartCosts(cart, catalog.items, sizes, stocks) : null);
@@ -56,6 +63,11 @@
 		}
 	});
 
+	function choose(p: Purpose) {
+		setPurpose(p);
+		if (catalog) setCart(pruneCart(cart, itemsFor(catalog.items, p)));
+	}
+
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		if (!catalog) return;
@@ -63,6 +75,7 @@
 		submitting = true;
 		try {
 			const r = await api.post<SwagRequest>('/api/requests', {
+				purpose,
 				address: { ...address, country: address.country.trim().toUpperCase() },
 				lines: cartLines(cart, catalog.items, sizes),
 				note
@@ -87,8 +100,23 @@
 	{#if !catalog.settings.requests_open}
 		<p class="error">Requests are closed right now. Check back soon!</p>
 	{/if}
+	{#if asking}
+		<fieldset class="ask">
+			<legend><h2>What kind of request is this?</h2></legend>
+			<p class="muted">
+				Free shipping in the US.{#if catalog.settings.international_shipping_fee_cents > 0}
+					{formatCents(catalog.settings.international_shipping_fee_cents)} to help cover shipping anywhere else.{/if}
+			</p>
+			{#each PURPOSES as p (p.value)}
+				<label class="choice" class:on={purpose === p.value}>
+					<input type="radio" name="purpose" value={p.value} checked={purpose === p.value} onchange={() => choose(p.value)} />
+					{p.label}
+				</label>
+			{/each}
+		</fieldset>
+	{/if}
 	<section class="grid">
-		{#each catalog.items as item, i (item.id)}
+		{#each shown as item, i (item.id)}
 			{@const three = preview3D(item)}
 			<div class="item" class:picked={cart[item.id]}>
 				<a href={itemPath(item)} class="item-link">
@@ -104,7 +132,7 @@
 					<h3>{item.name}</h3>
 				</a>
 				{#if item.description}<p class="muted clamp">{item.description}</p>{/if}
-				{#if session.me?.user && catalog.settings.requests_open}
+				{#if asking && purpose}
 					{#if item.variants.length}
 						<SizePicker variants={item.variants} value={sizes[item.id]} label="Size of {item.name}"
 							onchange={(sku) => { setSizes({ ...sizes, [item.id]: sku }); if (!cart[item.id]) setCart(setQuantity(cart, item, 1)); }} />
@@ -120,7 +148,9 @@
 
 	{#if !session.me?.user}
 		<p><a class="button" href="/auth/login" data-sveltekit-reload>Sign in with Hack Club to request swag</a></p>
-	{:else if catalog.settings.requests_open && totalQuantity(cart) > 0}
+	{:else if asking && !purpose}
+		<p class="muted">Pick what kind of request this is above, then choose your swag.</p>
+	{:else if asking && totalQuantity(cart) > 0}
 		<form class="card" id="request" style="margin-top: 1.5rem" onsubmit={submit}>
 			<h2>Where should we send it?</h2>
 			{#if costs}
@@ -158,15 +188,25 @@
 				<label>Phone {intl ? '(required for customs)' : '(optional)'}
 					<input required={intl} bind:value={address.phone_number} autocomplete="tel" /></label>
 			</div>
-			<label style="margin-top: 0.75rem">Anything we should know? <textarea bind:value={note} rows="2"></textarea></label>
+			<label style="margin-top: 0.75rem">{purposeInfo?.note ?? 'Anything we should know?'}
+				<textarea bind:value={note} rows="2" required={purpose !== 'personal'}></textarea></label>
 			{#if intl && catalog.settings.international_shipping_fee_cents > 0}
 				<p>
 					International shipping is <strong>{formatCents(catalog.settings.international_shipping_fee_cents)}</strong>.
 					After you submit we'll send you to HCB to pay it; we ship once it's received.
 				</p>
 			{/if}
+			<label class="choice understand" class:on={understood}>
+				<input type="checkbox" required bind:checked={understood} />
+				<span>
+					<span class="p">Hack Club is a charity. The absolutely most effective way we can get more teenagers into Hack Club is to help people like you spread Hack Club!</span>
+					<span class="p">However - it is wasteful if we send stuff in excess. An example of this would be if you are requesting 5+ shirts and not using them. If you are requesting a bunch and wearing them - please get more!</span>
+					<span class="p">Also - Please do not use this form to request t-shirts for other people. This form is for t-shirts you will wear yourself personally. If you need t-shirts for prizes or for an event, please get in touch with Zach.</span>
+					<span class="p">Just please don't abuse this system. Check this box to confirm you understand :-)</span>
+				</span>
+			</label>
 			{#each problems as p}<p class="error">{p}</p>{/each}
-			<button disabled={submitting || problems.length > 0}>
+			<button disabled={submitting || problems.length > 0 || !understood}>
 				{submitting ? 'Sending…' : `Request ${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'}`}
 			</button>
 		</form>
@@ -196,4 +236,19 @@
 	.summary tfoot th { text-align: left; font-family: var(--mono); font-size: 0.72rem; font-weight: 400; text-transform: uppercase; letter-spacing: 0.02em; }
 	.summary tfoot tr:first-child th, .summary tfoot tr:first-child td { border-top: 1.5px solid var(--dark); padding-top: 0.5rem; }
 	#request { max-width: 56rem; }
+	.ask { max-width: 56rem; margin: 0 0 2rem; padding: 0; border: 0; display: grid; gap: 0.5rem; }
+	.ask legend { padding: 0; }
+	.ask legend h2 { margin: 0 0 0.25rem; }
+	.ask p { margin: 0 0 0.5rem; }
+	/* Square, bordered options; the picked one takes the red. */
+	.choice {
+		display: flex; gap: 0.75rem; align-items: flex-start; padding: 0.8rem 1rem; border: 1.5px solid var(--smoke); cursor: pointer;
+		font-family: inherit; font-size: 0.95rem; text-transform: none; letter-spacing: 0; color: var(--dark); line-height: 1.4;
+	}
+	.choice:hover { border-color: var(--dark); }
+	.choice.on { border-color: var(--red); box-shadow: inset 0 0 0 1px var(--red); }
+	.choice input { width: auto; margin: 0.2rem 0 0; accent-color: var(--red); }
+	.understand { margin: 1rem 0; }
+	.understand .p { display: block; margin-bottom: 0.6rem; }
+	.understand .p:last-child { margin-bottom: 0; font-weight: 700; }
 </style>

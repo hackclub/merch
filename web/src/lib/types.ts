@@ -20,6 +20,7 @@ export type Item = {
 	binding: string; // '' (a single sheet) | 'staple' | 'perfect': booklets open in 3D
 	pages: string[]; // a booklet's page images in reading order, front cover first
 	ships_with: string[]; // warehouse SKUs packed with every unit (the magazine's card)
+	club_only: boolean; // not offered for personal requests, only clubs and events
 };
 
 export type Variant = { label: string; sku: string };
@@ -50,6 +51,9 @@ export type Address = {
 	phone_number: string;
 };
 
+/** What a request is for: for themselves and friends, a Hack Club they run, or an event. */
+export type Purpose = 'personal' | 'club' | 'event';
+
 export type Line = { item_id: number; quantity: number; sku?: string };
 
 export type RequestStatus = 'awaiting_payment' | 'pending' | 'dispatched' | 'rejected' | 'cancelled';
@@ -59,6 +63,7 @@ export type SwagRequest = {
 	user_id: number;
 	user_email?: string;
 	status: RequestStatus;
+	purpose: Purpose | ''; // '' for imported history
 	address: Address;
 	shipping_fee_cents: number;
 	paid_at: string | null;

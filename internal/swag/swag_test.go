@@ -23,7 +23,7 @@ func catalog() map[int64]Item {
 		1: {ID: 1, SKU: "Sti/Pck/1", Name: "Sticker pack", Visible: true, MaxPerRequest: 3},
 		2: {ID: 2, SKU: "Swa/Sox/1", Name: "Socks", Visible: true, MaxPerRequest: 1, MaxPerUser: intp(1)},
 		3: {ID: 3, SKU: "Swa/Hid/1", Name: "Hidden hoodie", Visible: false, MaxPerRequest: 1},
-		4: {ID: 4, SKU: "Swa/Shirt/HC", Name: "T-shirt", Visible: true, MaxPerRequest: 1, Variants: []Variant{
+		4: {ID: 4, SKU: "Swa/Shirt/HC", Name: "T-shirt", Visible: true, MaxPerRequest: 1, ClubOnly: true, Variants: []Variant{
 			{Label: "S", SKU: "Swa/Shirt/HC/S"}, {Label: "M", SKU: "Swa/Shirt/HC/M"},
 		}},
 	}
@@ -35,6 +35,7 @@ func TestValidateOK(t *testing.T) {
 	err := Validate(ValidateInput{
 		Settings: settings(),
 		Catalog:  catalog(),
+		Purpose:  PurposePersonal,
 		Lines:    []Line{{ItemID: 1, Quantity: 3}, {ItemID: 2, Quantity: 1}},
 		Now:      now,
 	})
@@ -71,11 +72,20 @@ func TestValidateErrors(t *testing.T) {
 		{"size unknown", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/XXL"}}}, ErrBadVariant},
 		{"size on sizeless item", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1, SKU: "Swa/Shirt/HC/S"}}}, ErrBadVariant},
 		{"cooldown", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}}, LastRequestAt: &last, Now: now}, ErrCooldown},
+		{"no purpose", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: "none", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrBadPurpose},
+		{"unknown purpose", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: "resale", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrBadPurpose},
+		{"club-only item for personal use", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposePersonal, Lines: []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}}, ErrUnknownItem},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.in.Now.IsZero() {
 				tc.in.Now = now
+			}
+			switch tc.in.Purpose {
+			case "":
+				tc.in.Purpose = PurposeClub
+			case "none":
+				tc.in.Purpose = ""
 			}
 			err := Validate(tc.in)
 			if !errors.Is(err, tc.want) {
@@ -85,7 +95,7 @@ func TestValidateErrors(t *testing.T) {
 	}
 
 	t.Run("cooldown elapsed", func(t *testing.T) {
-		err := Validate(ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}}, LastRequestAt: &oldEnough, Now: now})
+		err := Validate(ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposeEvent, Lines: []Line{{ItemID: 1, Quantity: 1}}, LastRequestAt: &oldEnough, Now: now})
 		if err != nil {
 			t.Fatalf("err = %v", err)
 		}
@@ -96,6 +106,7 @@ func TestValidateVariants(t *testing.T) {
 	err := Validate(ValidateInput{
 		Settings: settings(),
 		Catalog:  catalog(),
+		Purpose:  PurposeClub,
 		Lines:    []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}, {ItemID: 1, Quantity: 1, SKU: "Sti/Pck/1"}},
 		Now:      now,
 	})
@@ -229,7 +240,7 @@ func TestValidatePacks(t *testing.T) {
 	cat[6] = Item{ID: 6, SKU: "Sti/Sti/Kaw/1st", Name: "Kawaii sticker", Visible: true, MaxPerRequest: 150, Packs: "sticker"}
 	cat[7] = Item{ID: 7, SKU: "Pri/Bok/Mini25/1st", Name: "Mini-Magazine", Visible: true, MaxPerRequest: 100, Packs: "fives"}
 	in := func(id int64, q int) ValidateInput {
-		return ValidateInput{Settings: settings(), Catalog: cat, Lines: []Line{{ItemID: id, Quantity: q}, {ItemID: 1, Quantity: 3}}, Now: now}
+		return ValidateInput{Settings: settings(), Catalog: cat, Purpose: PurposePersonal, Lines: []Line{{ItemID: id, Quantity: q}, {ItemID: 1, Quantity: 3}}, Now: now}
 	}
 	// A pack counts as one item toward the per-request total (5 here).
 	for id, qs := range map[int64][]int{5: {5, 25, 50, 150}, 6: {3, 10, 50, 150}, 7: {5, 10, 15, 30, 100}} {
