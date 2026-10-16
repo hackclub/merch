@@ -25,14 +25,9 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
 a { color: inherit; text-underline-offset: 3px; }
-header {
-	display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.5rem;
-	padding: 0.75rem 1.75rem; min-height: 4rem; background: white; border-bottom: 1px solid var(--smoke);
-	position: sticky; top: 0; z-index: 1;
-}
-.brand { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
-.brand .box { background: var(--red); color: white; font-weight: 700; font-size: 1.15rem; padding: 0.1rem 0.6rem 0.2rem; }
-.brand .sub, .label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.02em; text-transform: uppercase; }
+/* No navbar: just who's signed in, in the top right corner. */
+header { display: flex; justify-content: flex-end; padding: 0.75rem 1.75rem 0; }
+.label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.02em; text-transform: uppercase; }
 .caps { font-weight: 700; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; }
 .who { margin-left: auto; display: flex; gap: 1rem; align-items: center; font-family: var(--mono); font-size: 0.75rem; text-transform: uppercase; }
 .who .button { font-family: 'Phantom Sans', system-ui, sans-serif; }
@@ -40,7 +35,7 @@ header {
 main { max-width: 1440px; margin: 0 auto; padding: 1.75rem 1.75rem 4rem; }
 @media (max-width: 600px) {
 	header { padding: 0.6rem 1rem; }
-	.brand .sub, .wide { display: none; }
+	.wide { display: none; }
 	.who .button { padding: 0.55rem 0.8rem; font-size: 0.75rem; }
 	main { padding: 1.25rem 1rem 3rem; }
 }

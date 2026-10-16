@@ -12,7 +12,6 @@
 </script>
 
 <header>
-	<a class="brand" href="/" aria-label="Hack Club merch"><span class="box">Hack Club</span><span class="sub">merch</span></a>
 	<div class="who">
 		{#if session.me?.user}
 			{#if session.me.roles.admin}<a class="button admin" href="/admin">Admin</a>{/if}
