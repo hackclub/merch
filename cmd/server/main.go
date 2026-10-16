@@ -96,6 +96,7 @@ func run(log *slog.Logger) error {
 		Places:    finder,
 		Static:    static,
 		Log:       log,
+		Warm:      true,
 	})
 
 	srv := &http.Server{

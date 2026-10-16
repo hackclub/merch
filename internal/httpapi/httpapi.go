@@ -59,6 +59,7 @@ type Deps struct {
 	Static    fs.FS         // built PWA (web/build); nil disables static serving
 	Now       func() time.Time
 	Log       *slog.Logger
+	Warm      bool // load caches (shipping history) in the background at start
 }
 
 type server struct {
@@ -82,6 +83,9 @@ func New(d Deps) http.Handler {
 		d.Log = slog.Default()
 	}
 	s := &server{Deps: d}
+	if d.Warm {
+		go s.warm(context.Background())
+	}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /healthz", s.healthz)

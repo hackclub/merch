@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hackclub/merch/internal/importer"
 	"github.com/hackclub/merch/internal/store"
@@ -165,5 +167,25 @@ func TestShippingEstimateCostsForEveryone(t *testing.T) {
 	// Postage comes from history: none in the US, $9 parcels abroad.
 	if us.PostageCents != 0 || intl.PostageCents != 900 || intl.TotalCents != 50+220+50+900 {
 		t.Fatalf("us = %+v, intl = %+v", us, intl)
+	}
+}
+
+// A new pod loads shipping history before anyone asks, so the first visitor
+// after a deploy doesn't wait on 47k rows over a tenth of a CPU.
+func TestWarmLoadsShippingHistory(t *testing.T) {
+	h := newHarness(t)
+	shippingFixture(t, h)
+	s := &server{Deps: Deps{Config: h.cfg, Store: h.store, Now: time.Now, Log: slog.Default()}}
+	s.warm(context.Background())
+	warm := s.history.h
+	if warm == nil {
+		t.Fatal("warm didn't load shipping history")
+	}
+	parcel := swag.Packing{Package: swag.Package{Class: swag.ClassParcel}, ContentsOz: 13}
+	if e := warm.Estimate("DE", parcel, time.Now()); e.TransitSamples != 12 {
+		t.Fatalf("warm history has %d German parcels, want 12", e.TransitSamples)
+	}
+	if got, err := s.shippingHistory(context.Background()); err != nil || got != warm {
+		t.Fatalf("estimates reloaded the history instead of using the warm copy (err %v)", err)
 	}
 }

@@ -38,6 +38,17 @@ func (s *server) shippingHistory(ctx context.Context) (*swag.History, error) {
 	return s.history.h, nil
 }
 
+// warm loads the shipping history ahead of the first visitor; a new pod
+// otherwise makes them wait 1-5 s for it.
+func (s *server) warm(ctx context.Context) {
+	start := time.Now()
+	if _, err := s.shippingHistory(ctx); err != nil {
+		s.Log.Error("warming shipping history failed", "err", err)
+		return
+	}
+	s.Log.Info("warmed shipping history", "ms", time.Since(start).Milliseconds())
+}
+
 // forViewer hides the postage figures from everyone but admins; requesters see
 // only FeeCents, what they'll pay.
 func forViewer(e swag.Estimate, admin bool) swag.Estimate {
