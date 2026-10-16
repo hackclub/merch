@@ -7,6 +7,7 @@ import type { PostcardOptions } from './postcard3d';
 import type { ShirtOptions } from './shirt3d';
 import type { StickerOptions } from './sticker3d';
 import { PER_BAG } from './stickers';
+import { isImage } from './tile';
 import type { Item, ItemStock } from './types';
 
 const slugify = (s: string) =>
@@ -45,7 +46,7 @@ export type Preview3D =
 
 /** What a shop tile shows instead of its photo; null = just the photo. */
 export type TilePreview =
-	| { clip: string } // a looping video, GIF or photo of the real thing
+	| { clip: string; hover?: Preview3D } // a looping video, GIF or photo of the real thing; a still photo can give way to 3D on hover
 	| Preview3D;
 
 /**
@@ -104,11 +105,13 @@ export function productPreview(item: Item, includes: Item[] = [], phone = true):
 
 /**
  * A tile's preview, on its own (no phone): the item's clip if it has one, a
- * booklet's pages, a sized print's sheet, or stickers.
+ * booklet's pages, a sized print's sheet, or stickers. A still photo clip shows
+ * the 3D view while hovered (a shirt photographed on someone turns into the shirt).
  */
 export function tilePreview(item: Item): TilePreview | null {
-	if (item.clip) return { clip: item.clip };
-	return productPreview(item, [], false);
+	const model = productPreview(item, [], false);
+	if (item.clip) return model && isImage(item.clip) ? { clip: item.clip, hover: model } : { clip: item.clip };
+	return model;
 }
 
 /**

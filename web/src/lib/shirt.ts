@@ -147,6 +147,51 @@ export function edgeDistance(mask: Uint8Array, w: number, h: number): Float32Arr
 	return d;
 }
 
+/** How far each pixel is from the shirt's outline, in pixels: positive on the shirt (edgeDistance), negative off it. */
+export function signedEdgeDistance(mask: Uint8Array, w: number, h: number): Float32Array {
+	const inside = edgeDistance(mask, w, h);
+	const outside = edgeDistance(mask.map((m) => (m ? 0 : 1)), w, h);
+	return inside.map((d, i) => (mask[i] ? d : -outside[i]));
+}
+
+/**
+ * The 3D shirt's edge runs this many pixels in from the outline in its photo,
+ * where the backdrop no longer bleeds into the cloth. The photo is solid up to
+ * there and fades over the two pixels outside it, so the edge is never see-through
+ * and alphaTest trims anything past it smoothly instead of in pixel steps.
+ */
+export const CUT_PX = 3;
+export const cutAlpha = (fromEdge: number) => Math.min(1, Math.max(0, (fromEdge - CUT_PX + 2) / 2));
+
+/** sd at (x, y), between pixels. */
+function sample(sd: Float32Array, w: number, h: number, x: number, y: number): number {
+	x = Math.min(w - 1, Math.max(0, x));
+	y = Math.min(h - 1, Math.max(0, y));
+	const x0 = Math.min(w - 2, Math.floor(x)), y0 = Math.min(h - 2, Math.floor(y));
+	const fx = x - x0, fy = y - y0;
+	const at = (i: number, j: number) => sd[(y0 + j) * w + x0 + i];
+	return (at(0, 0) * (1 - fx) + at(1, 0) * fx) * (1 - fy) + (at(0, 1) * (1 - fx) + at(1, 1) * fx) * fy;
+}
+
+/**
+ * Where the cut line is nearest a point near it, on or off the shirt: the point
+ * moved straight in or out along the distance field. The 3D shirt puts its edge
+ * vertices there, so its front and back meet along the trimmed edge.
+ */
+export function onCut(sd: Float32Array, w: number, h: number, x: number, y: number): [number, number] {
+	for (let k = 0; k < 4; k++) {
+		const gx = (sample(sd, w, h, x + 1, y) - sample(sd, w, h, x - 1, y)) / 2;
+		const gy = (sample(sd, w, h, x, y + 1) - sample(sd, w, h, x, y - 1)) / 2;
+		const g = Math.hypot(gx, gy);
+		if (g < 1e-6) break;
+		const step = (CUT_PX - sample(sd, w, h, x, y)) / g;
+		if (Math.abs(step) < 0.05) break;
+		x += (gx / g) * step;
+		y += (gy / g) * step;
+	}
+	return [x, y];
+}
+
 /** How far cloth stands out from its outline, inches: rounding over within `round` of the edge, up to `depth`. */
 export function clothDepth(fromEdge: number, round: number, depth: number): number {
 	const e = Math.min(Math.max(fromEdge, 0) / round, 1);

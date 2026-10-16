@@ -4,7 +4,9 @@
 	// them further; a booklet opens on hover and flips through its pages, and
 	// dragging across turns them by hand. A trifold brochure unfolds on hover,
 	// cover then flap, and folds back up when you leave. A clip plays while hovered (or while
-	// on screen, on touch screens); a clip can also be a GIF or a still photo. A click still follows the tile's link.
+	// on screen, on touch screens); a clip can also be a GIF or a still photo. A still photo with a 3D
+	// view behind it (a shirt on someone) gives way to the 3D view on hover, or for good when active.
+	// A click still follows the tile's link.
 	// Viewers exist only while the tile is near the screen, so a long grid never
 	// runs out of WebGL contexts; the photo underneath shows until it's ready.
 	import { onMount, untrack } from 'svelte';
@@ -25,7 +27,9 @@
 	let canvas = $state<HTMLCanvasElement>();
 	let video = $state<HTMLVideoElement>();
 	let near = $state(false);
-	let ready = $state(false);
+	let ready = $state(false); // the clip has loaded
+	let modelReady = $state(false); // the 3D view has drawn
+	let hovered = $state(false);
 	let viewer: Viewer | null = null;
 
 	let at = untrack(() => rest); // where it settles when left alone
@@ -40,8 +44,11 @@
 	let flipAt = 0; // when the next hover flip happens
 	let busyUntil = 0; // sticker bags are dropping in until then
 
-	const book = $derived('book' in preview ? preview.book : null);
-	const fold = $derived('fold' in preview);
+	const model = $derived('clip' in preview ? (preview.hover ?? null) : preview); // the 3D view, if any
+	const clip = $derived('clip' in preview && !(active && model) ? preview.clip : '');
+	const show3d = $derived(!clip || hovered);
+	const book = $derived(model && 'book' in model ? model.book : null);
+	const fold = $derived(!!model && 'fold' in model);
 	const opens = $derived(!!book || fold); // turns through positions (BookViewer.position)
 	const leaves = $derived(book ? Math.ceil(book.pages.length / 2) : fold ? FOLD_STEPS : 0);
 
@@ -81,7 +88,7 @@
 			viewer?.resize(stage.clientWidth, stage.clientHeight);
 			drawn = false;
 		});
-		loadPreviewViewer(el, preview as Preview3D, count, () => ((ready = true), (drawn = false)))
+		loadPreviewViewer(el, model as Preview3D, count, () => ((modelReady = true), (drawn = false)))
 			.then((v) => {
 				if (disposed) return v.dispose();
 				viewer = v;
@@ -134,20 +141,20 @@
 			ro.disconnect();
 			viewer?.dispose();
 			viewer = null;
-			ready = false;
+			modelReady = false;
 		};
 	}
 
 	function enter(e: PointerEvent) {
 		if (e.pointerType !== 'mouse') return;
-		hovering = true;
+		hovering = hovered = true;
 		fromX = e.clientX;
 		flipAt = performance.now() + 250;
 		video?.play().catch(() => {});
 	}
 	function leave(e: PointerEvent) {
 		if (e.pointerType !== 'mouse') return;
-		hovering = false;
+		hovering = hovered = false;
 		target = at;
 		goal = 0;
 		if (video) {
@@ -205,26 +212,27 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-<div class="spin" class:ready class:clip={'clip' in preview} bind:this={stage} aria-hidden="true"
+<div class="spin" class:ready={ready || modelReady} class:clip={clip && !model} bind:this={stage} aria-hidden="true"
 	onpointerenter={enter} onpointerleave={leave} onpointerdown={down} onpointermove={move} onpointerup={up}
 	onpointercancel={up} onclickcapture={click} ondragstart={(e) => e.preventDefault()}>
-	{#if 'clip' in preview}
-		{#if isImage(preview.clip)}
-			{#if near}<img src={preview.clip} alt="" onload={() => (ready = true)} />{/if}
+	{#if model && near}
+		<canvas class:on={modelReady && show3d} bind:this={canvas}></canvas>
+	{/if}
+	{#if clip}
+		{#if isImage(clip)}
+			{#if near}<img class:on={ready && !(show3d && modelReady)} src={clip} alt="" onload={() => (ready = true)} />{/if}
 		{:else}
-			<video bind:this={video} src={preview.clip} muted loop playsinline preload="metadata"
+			<video class:on={ready} bind:this={video} src={clip} muted loop playsinline preload="metadata"
 				onloadeddata={() => (ready = true)}></video>
 		{/if}
-	{:else if near}
-		<canvas bind:this={canvas}></canvas>
 	{/if}
 </div>
 
 <style>
 	.spin { position: absolute; inset: 0; touch-action: pan-y; cursor: grab; }
 	.spin.clip { cursor: pointer; }
-	canvas, video, img { width: 100%; height: 100%; opacity: 0; transition: opacity 0.4s; display: block; }
+	canvas, video, img { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 0.4s; display: block; }
 	video, img { object-fit: cover; }
 	img { object-position: 50% 25%; } /* photos of people: keep their face in frame */
-	.ready canvas, .ready video, .ready img { opacity: 1; }
+	.on { opacity: 1; }
 </style>

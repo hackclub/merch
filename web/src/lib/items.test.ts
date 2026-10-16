@@ -135,6 +135,17 @@ describe('tilePreview', () => {
 		expect(tilePreview({ ...poster, clip: 'https://cdn.example/flip.mp4' })).toEqual({ clip: 'https://cdn.example/flip.mp4' });
 	});
 
+	it('shows a still photo clip, and the 3D view on hover when the item has one', () => {
+		const tee = { ...poster, width_in: null, height_in: null, clip: 'https://cdn.example/wearing.jpg', variants: [{ sku: 'Swa/Shirt/CF/M', label: 'M' }] };
+		expect(tilePreview(tee)).toEqual({
+			clip: 'https://cdn.example/wearing.jpg',
+			hover: { shirt: { kind: 'shirt', front: 'https://cdn.example/front.jpg', back: 'https://cdn.example/back.jpg', size: 'M', phone: false } }
+		});
+		// A video already moves on hover, and an item with no 3D view keeps just its photo.
+		expect(tilePreview({ ...tee, clip: 'https://cdn.example/wearing.mp4' })).toEqual({ clip: 'https://cdn.example/wearing.mp4' });
+		expect(tilePreview({ ...tee, variants: [] })).toEqual({ clip: 'https://cdn.example/wearing.jpg' });
+	});
+
 	it('shows stickers as stickers, even without a size', () => {
 		expect(tilePreview({ ...poster, packs: 'sticker', width_in: null, height_in: null })).toEqual({
 			stickers: { kind: 'stickers', front: 'https://cdn.example/front.jpg', widthIn: null, heightIn: null, phone: false }
@@ -175,7 +186,7 @@ describe('shirts', () => {
 			shirt: { kind: 'shirt', front: 'https://cdn.example/tee-front.jpg', back: 'https://cdn.example/tee-back.jpg', size: 'M', phone: true }
 		});
 		expect(tilePreview(tee)).toEqual({ shirt: { kind: 'shirt', front: 'https://cdn.example/tee-front.jpg', back: 'https://cdn.example/tee-back.jpg', size: 'M', phone: false } });
-		expect(tilePreview({ ...tee, clip: 'https://cdn.example/worn.jpg' })).toEqual({ clip: 'https://cdn.example/worn.jpg' });
+		expect(tilePreview({ ...tee, clip: 'https://cdn.example/worn.jpg' })).toEqual({ clip: 'https://cdn.example/worn.jpg', hover: tilePreview(tee) });
 	});
 
 	it('show the middle size when there is no M, and need a photo', () => {

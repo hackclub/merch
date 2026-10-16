@@ -468,7 +468,8 @@ where props ? 'error' group by 1, 2 order by 3 desc;
   until touched: hover or drag turns prints and stickers, and booklets flip through on hover.
   `clip` (an MP4, GIF or photo URL, set on the admin Items tab) replaces the tile's 3D view with a
   real-world loop that plays on hover, or a still photo; the Mini-Magazine uses a loop, and the red
-  T-shirt shows a photo of someone wearing it.
+  T-shirt shows a photo of someone wearing it. A still photo gives way to the item's 3D view on hover
+  (the shop's hover peek shows the T-shirts in 3D).
 - **Print source files** for warehouse SKUs: the Marketing warehouse Airtable
   (`appK53aN0fz3sgJ4w`, table `warehouse_skus`) has `re_order_instructions`, e.g. "Order
   VP_MJR069GX on zach@hackclub.com Vistaprint". The Vistaprint order-confirmation email links a

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clothDepth, edgeDistance, fabricColor, foldedShirtTop, isProductShot, shirtCrop, shirtSize, SHIRT_PHOTO } from './shirt';
+import { clothDepth, CUT_PX, cutAlpha, edgeDistance, fabricColor, onCut, signedEdgeDistance, foldedShirtTop, isProductShot, shirtCrop, shirtSize, SHIRT_PHOTO } from './shirt';
 
 const W = 9.5, D = 12, T = 1.2;
 
@@ -105,6 +105,34 @@ describe('clothDepth', () => {
 		expect(clothDepth(10, 3, 2)).toBeCloseTo(2);
 		expect(clothDepth(0.75, 3, 2)).toBeGreaterThan(2 * 0.6);
 		expect(clothDepth(1, 3, 2)).toBeLessThan(clothDepth(2, 3, 2));
+	});
+});
+
+describe('the cut line', () => {
+	// A disc of radius 12 in a 40×40 mask.
+	const w = 40, h = 40, R = 12;
+	const mask = new Uint8Array(w * h).map((_, i) => (Math.hypot((i % w) - 20, Math.floor(i / w) - 20) < R ? 1 : 0));
+	const sd = signedEdgeDistance(mask, w, h);
+
+	it('is a signed distance from the outline: positive on the shirt, negative off it', () => {
+		expect(sd[20 * w + 20]).toBeCloseTo(R, 0);
+		expect(sd[20 * w + 20 + R + 4]).toBeLessThan(-3);
+		expect(Math.abs(sd[20 * w + 20 + R])).toBeLessThanOrEqual(1);
+	});
+
+	it('keeps the photo solid up to CUT_PX in from its outline, fading over the two pixels outside that', () => {
+		expect(cutAlpha(CUT_PX)).toBe(1);
+		expect(cutAlpha(CUT_PX - 1)).toBe(0.5);
+		expect(cutAlpha(CUT_PX - 2)).toBe(0);
+	});
+
+	it('moves a point near the edge, on or off the shirt, onto the cut, so the front and back meet there', () => {
+		for (const [x, y] of [[20 + R + 3, 20], [20, 20 - R - 2], [20 + R - 2, 20], [20 + 9, 20 + 9]]) {
+			const [cx, cy] = onCut(sd, w, h, x, y);
+			expect(Math.abs(Math.hypot(cx - 20, cy - 20) - (R - CUT_PX))).toBeLessThan(0.75);
+			// Straight in or out, toward the centre.
+			expect(Math.atan2(cy - 20, cx - 20)).toBeCloseTo(Math.atan2(y - 20, x - 20), 1);
+		}
 	});
 });
 

@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { createPhone, createStage, type Viewer } from './paper3d';
 import { GAP_IN, PHONE } from './scale';
-import { clothDepth, edgeDistance, fabricColor, foldedShirtTop, isProductShot, shirtCrop, shirtSize } from './shirt';
+import { clothDepth, CUT_PX, cutAlpha, fabricColor, foldedShirtTop, isProductShot, onCut, shirtCrop, shirtSize, signedEdgeDistance } from './shirt';
 import { maskBounds, stickerMask, type Box } from './stickers';
 
 const STEP = 0.1; // grid spacing, inches: fine enough for the rib and the rounded folds
@@ -155,12 +155,10 @@ function cutoutCanvas(c: Cutout, fabric: [number, number, number]): HTMLCanvasEl
 /**
  * The shirt's two faces: the front photo, and the back photo stretched onto the
  * front's outline and mirrored (we see it from behind), both cut out by the
- * front's outline. The cut sits a few pixels in, where the backdrop no longer
- * bleeds into the cloth, and fades over two pixels so alphaTest draws a smooth
- * edge instead of the photo's pixel steps; pale backdrop left near the edge is
- * painted the fabric color.
+ * front's outline (sd, signedEdgeDistance), trimmed at CUT_PX (cutAlpha). Pale
+ * backdrop left near the edge is painted the fabric color.
  */
-function shirtTextures(front: Cutout, back: Cutout | null, dist: Float32Array, fabric: [number, number, number], renderer: THREE.WebGLRenderer) {
+function shirtTextures(front: Cutout, back: Cutout | null, sd: Float32Array, fabric: [number, number, number], renderer: THREE.WebGLRenderer) {
 	const { box } = front;
 	const face = (draw: (ctx: CanvasRenderingContext2D) => void) => {
 		const c = document.createElement('canvas');
@@ -175,8 +173,8 @@ function shirtTextures(front: Cutout, back: Cutout | null, dist: Float32Array, f
 		const fabricLum = lum(...fabric);
 		for (let y = 0; y < box.h; y++)
 			for (let x = 0; x < box.w; x++) {
-				const d = dist[(box.y + y) * front.w + box.x + x], o = (y * box.w + x) * 4;
-				img.data[o + 3] = Math.round(Math.min(1, Math.max(0, (d - 2) / 2)) * 255);
+				const d = sd[(box.y + y) * front.w + box.x + x], o = (y * box.w + x) * 4;
+				img.data[o + 3] = Math.round(cutAlpha(d) * 255);
 				if (d < 6 && lum(img.data[o], img.data[o + 1], img.data[o + 2]) > fabricLum + 60) img.data.set(fabric, o);
 			}
 		ctx.putImageData(img, 0, 0);
@@ -198,28 +196,46 @@ function shirtTextures(front: Cutout, back: Cutout | null, dist: Float32Array, f
 /**
  * One side of the shirt standing on its hem: a grid over the photo's box,
  * pushed out (toward +z, or −z for the back) by how far each point is inside the
- * outline. Only cells on the shirt are kept; the texture's alpha trims the rest.
+ * cut line. Grid points just off the shirt move onto the cut line and stay flat,
+ * so the two sides meet along the shirt's edge with nothing to see between them.
+ * Only cells on the shirt are kept; the texture's alpha trims the rest.
  */
-function shirtSide(front: Cutout, dist: Float32Array, inPerPx: number, side: 1 | -1): THREE.BufferGeometry {
+function shirtSide(front: Cutout, sd: Float32Array, inPerPx: number, side: 1 | -1): THREE.BufferGeometry {
 	const { box } = front;
 	const W = box.w * inPerPx, H = box.h * inPerPx;
 	const nx = Math.ceil(W / GRID_IN), ny = Math.ceil(H / GRID_IN);
-	const pos: number[] = [], uv: number[] = [], on: boolean[] = [];
+	const at = (i: number, j: number) => j * (nx + 1) + i;
+	const pxAt = (i: number, j: number): [number, number] => [box.x + (i / nx) * (box.w - 1), box.y + (j / ny) * (box.h - 1)];
+	const on: boolean[] = [];
 	for (let j = 0; j <= ny; j++)
 		for (let i = 0; i <= nx; i++) {
-			const u = i / nx, v = j / ny;
-			const px = Math.min(front.w - 1, box.x + Math.round(u * (box.w - 1)));
-			const py = Math.min(front.h - 1, box.y + Math.round(v * (box.h - 1)));
-			const d = dist[py * front.w + px];
-			const x = -W / 2 + u * W, y = H - v * H;
-			// A soft ripple, so the cloth doesn't look inflated.
-			const ripple = 0.06 * Math.sin(x * 0.9 + y * 0.35) * Math.sin(y * 0.7 - x * 0.25) * Math.min(1, (d * inPerPx) / ROUND_IN);
-			pos.push(x, y, side * (clothDepth(d * inPerPx, ROUND_IN, DEPTH_IN) + ripple));
+			const [px, py] = pxAt(i, j);
+			on.push(sd[Math.round(py) * front.w + Math.round(px)] >= CUT_PX);
+		}
+	const edge = (i: number, j: number) => {
+		for (let dj = -1; dj <= 1; dj++)
+			for (let di = -1; di <= 1; di++) {
+				const a = i + di, b = j + dj;
+				if (a >= 0 && b >= 0 && a <= nx && b <= ny && on[at(a, b)]) return true;
+			}
+		return false;
+	};
+	const pos: number[] = [], uv: number[] = [];
+	for (let j = 0; j <= ny; j++)
+		for (let i = 0; i <= nx; i++) {
+			let [px, py] = pxAt(i, j);
+			let depth = 0;
+			if (on[at(i, j)]) {
+				const d = (sd[Math.round(py) * front.w + Math.round(px)] - CUT_PX) * inPerPx;
+				// A soft ripple, so the cloth doesn't look inflated.
+				const ripple = 0.06 * Math.sin(px * inPerPx * 0.9 + py * inPerPx * 0.35) * Math.sin(py * inPerPx * 0.7 - px * inPerPx * 0.25);
+				depth = clothDepth(d, ROUND_IN, DEPTH_IN) + ripple * Math.min(1, d / ROUND_IN);
+			} else if (edge(i, j)) [px, py] = onCut(sd, front.w, front.h, px, py);
+			const u = (px - box.x) / (box.w - 1), v = (py - box.y) / (box.h - 1);
+			pos.push(-W / 2 + u * W, H - v * H, side * depth);
 			uv.push(u, 1 - v);
-			on.push(d > 0);
 		}
 	const index: number[] = [];
-	const at = (i: number, j: number) => j * (nx + 1) + i;
 	for (let j = 0; j < ny; j++)
 		for (let i = 0; i < nx; i++) {
 			const a = at(i, j), b = at(i + 1, j), c = at(i, j + 1), e = at(i + 1, j + 1);
@@ -263,18 +279,18 @@ export function createShirtViewer(canvas: HTMLCanvasElement, opts: ShirtOptions,
 	let disposed = false;
 	Promise.all([loadCutout(opts.front), loadCutout(opts.back ?? '')]).then(([front, back]) => {
 		if (disposed || !front) return onReady();
-		const dist = edgeDistance(front.mask, front.w, front.h);
-		const fabric = fabricColor(front.px, front.mask, dist, front.w);
+		const sd = signedEdgeDistance(front.mask, front.w, front.h);
+		const fabric = fabricColor(front.px, front.mask, sd, front.w);
 		const inPerPx = H / front.box.h;
 		W = front.box.w * inPerPx;
-		const { frontTex, backTex } = shirtTextures(front, back, dist, fabric, stage.renderer);
+		const { frontTex, backTex } = shirtTextures(front, back, sd, fabric, stage.renderer);
 		const cloth = (map: THREE.Texture) =>
 			new THREE.MeshPhysicalMaterial({
 				map, alphaTest: 0.5, roughness: 0.9, sheen: 0.5, sheenRoughness: 0.6,
 				sheenColor: new THREE.Color().setRGB(...(fabric.map((c) => Math.min(1, c / 255 + 0.25)) as [number, number, number]), THREE.SRGBColorSpace)
 			});
 		for (const [side, tex] of [[1, frontTex], [-1, backTex]] as const) {
-			const geo = shirtSide(front, dist, inPerPx, side);
+			const geo = shirtSide(front, sd, inPerPx, side);
 			const mat = cloth(tex);
 			const mesh = new THREE.Mesh(geo, mat);
 			mesh.castShadow = true;
