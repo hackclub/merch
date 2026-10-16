@@ -33,17 +33,14 @@ header {
 .brand { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; }
 .brand .box { background: var(--red); color: white; font-weight: 700; font-size: 1.15rem; padding: 0.1rem 0.6rem 0.2rem; }
 .brand .sub, .label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.02em; text-transform: uppercase; }
-nav { display: flex; gap: 1.25rem; flex: 1; flex-wrap: wrap; }
-nav a, .caps { font-weight: 700; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; }
-nav a { text-decoration: none; padding: 0.25rem 0; }
-nav a.active { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px; }
-.who { display: flex; gap: 1rem; align-items: center; font-family: var(--mono); font-size: 0.75rem; text-transform: uppercase; }
+.caps { font-weight: 700; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.who { margin-left: auto; display: flex; gap: 1rem; align-items: center; font-family: var(--mono); font-size: 0.75rem; text-transform: uppercase; }
 .who .button { font-family: 'Phantom Sans', system-ui, sans-serif; }
+.who .admin { background: var(--dark); padding: 0.35rem 0.8rem; font-size: 0.75rem; }
 main { max-width: 1440px; margin: 0 auto; padding: 1.75rem 1.75rem 4rem; }
 @media (max-width: 600px) {
 	header { padding: 0.6rem 1rem; }
 	.brand .sub, .wide { display: none; }
-	header nav { order: 3; flex-basis: 100%; flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; gap: 1.1rem; }
 	.who .button { padding: 0.55rem 0.8rem; font-size: 0.75rem; }
 	main { padding: 1.25rem 1rem 3rem; }
 }
