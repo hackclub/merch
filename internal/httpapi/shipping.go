@@ -124,11 +124,9 @@ func (s *server) shippingEstimate(w http.ResponseWriter, r *http.Request) {
 	s.track(r, u, "shipping_estimate", props)
 	admin := s.rolesFor(r.Context(), u).Admin
 	out := map[string]any{"estimate": forViewer(e, admin), "packing": p}
-	if admin {
-		if out["costs"], err = s.costs(r.Context(), st, country, lines, cat); err != nil {
-			s.serverErr(w, err)
-			return
-		}
+	if out["costs"], err = s.costs(r.Context(), st, country, lines, cat); err != nil {
+		s.serverErr(w, err)
+		return
 	}
 	writeJSON(w, http.StatusOK, out)
 }

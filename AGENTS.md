@@ -305,14 +305,15 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
 - **Estimates** (`internal/swag/estimate.go`): arrival window = handling + transit, from the
   20th to the 80th percentile of past shipments to the same country and class. With fewer than
   10 samples, it uses all US or all international shipments instead. Postage compares packages
-  of about the same weight and is shown only to admins. The shop intro, the request form, My
-  requests and the admin request list show these estimates (`POST /api/shipping/estimate`,
-  `GET /api/shipping`).
+  of about the same weight; its range is shown only to admins (everyone sees the typical
+  postage in the cost table). The shop intro, the request form, My requests and the admin
+  request list show these estimates (`POST /api/shipping/estimate`, `GET /api/shipping`).
 - **International fee:** an international request pays the median postage of past shipments like
   it (same country, about the same contents weight), rounded up to a whole dollar
   (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback
   when there's no postage history; 0 still makes international shipping free.
-- **Cost to Hack Club** (`internal/swag/costs.go`, admins only, under Submit on the request form):
+- **Cost to Hack Club** (`internal/swag/costs.go`, shown to everyone above the request form's
+  "I understand" checkbox, with "Cost to you": $0 in the US, the shipping fee abroad):
   items at the warehouse's unit costs (mail.hackclub.com `unit_cost`, ships-with SKUs included),
   AGH labor ($1.80 an order + $0.20 for each different SKU, from its invoices; the warehouse's
   `agh_fulfillment_zenventory.invoices`), the package's `CostCents`, and the typical postage, for
@@ -320,7 +321,7 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   - **What's worth it:** Hack Club is financially transparent (its live ledger is public at
     https://hcb.hackclub.com/hq). The marketing goal is to spend at most **$50 per new teenager
     who joins Hack Club and ships one weighted project** (10 approved hours) in one of our
-    programs ($5 per approved hour). Under the cost table, `worthText` (`web/src/lib/shipping.ts`)
+    programs ($5 per approved hour). Above the cost table, `worthText` (`web/src/lib/shipping.ts`)
     says what makes the request worth it, for the destination's side: under $30, the hours one
     new teen ships ("ship 6 hours of work"); from $30, how many teens each ship a weighted
     project. Both round up. Judge swag, limits and shipping rules by this number.

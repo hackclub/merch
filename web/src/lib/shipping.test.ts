@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrivalText, costRows, worthText, dateRange, ozText, spanText, summaryText, type Costs, type ShippingEstimate } from './shipping';
+import { arrivalText, costRows, costToYou, worthText, dateRange, ozText, spanText, summaryText, type Costs, type ShippingEstimate } from './shipping';
 
 const est = (over: Partial<ShippingEstimate>): ShippingEstimate => ({
 	package: 'Mailer',
@@ -87,5 +87,13 @@ describe('worthText', () => {
 		expect(worthText(c(3000))).toBe('If you get 1 teen to join Hack Club and ship a weighted project, then this is worth it!');
 		expect(worthText(c(12000))).toBe('If you get 3 teens to join Hack Club and each ship a weighted project, then this is worth it!');
 		expect(worthText(null)).toBe('');
+	});
+});
+
+describe('costToYou', () => {
+	it('is free in the US, and the shipping fee abroad', () => {
+		expect(costToYou(false, 2149)).toBe('$0');
+		expect(costToYou(true, 2200)).toBe('$22.00 for shipping');
+		expect(costToYou(true, 0)).toBe('$0');
 	});
 });

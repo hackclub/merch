@@ -14,7 +14,7 @@
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
-	import { arrivalText, costRows, summaryText, worthText, type CostSides, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
+	import { arrivalText, costRows, summaryText, costToYou, worthText, type CostSides, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Haul3D from '$lib/Haul3D.svelte';
 	import QuantityPicker from '$lib/QuantityPicker.svelte';
@@ -35,7 +35,7 @@
 	let submitting = $state(false);
 	// Delivery times from past shipments, and this request's packing and arrival estimate.
 	let summary = $state<ShippingSummary | null>(null);
-	// Admins also get `costs`: what it costs Hack Club to send, in the US and abroad.
+	// `costs`: what it costs Hack Club to send, in the US and abroad.
 	let quote = $state<{ estimate: ShippingEstimate; packing: Packing; costs?: CostSides } | null>(null);
 	let quoteError = $state('');
 
@@ -345,6 +345,18 @@
 					{#if shown.some((i) => i.variants.length && cart[i.id])}
 						<p>T-shirts are for you to wear yourself, not to give away. If you need shirts for prizes or an event, get in touch with Zach.</p>
 					{/if}
+					<p>Hack Club is completely financially transparent. You can see our transparent realtime ledger at <a href="https://hcb.hackclub.com/hq">hcb.hackclub.com/hq</a>.</p>
+					<p>Our goal for marketing is to spend no more than $50 USD per new teenager who joins Hack Club and ships 1 weighted technical project in one of our programs (1 weighted project = 10 approved hours).</p>
+					<p>{(quote?.costs && worthText(intl ? quote.costs.international : quote.costs.us)) || 'If you get 1 teen to join Hack Club and ship a weighted project, then this is worth it!'}</p>
+					{#if quote?.costs}
+						<table class="costs">
+							<thead><tr><th>Cost to Hack Club</th><th>US</th><th>{intl ? address.country.trim().toUpperCase() : 'Global'}</th></tr></thead>
+							<tbody>
+								{#each costRows(quote.costs) as [label, us, abroad]}<tr><td>{label}</td><td>{us}</td><td>{abroad}</td></tr>{/each}
+							</tbody>
+						</table>
+						<p><strong>Cost to you: {costToYou(intl, quote.estimate.fee_cents)}</strong></p>
+					{/if}
 					<label class="choice" class:on={understood}>
 						<input type="checkbox" required bind:checked={understood} />
 						<span>I understand, and I'll only request what I'll use.</span>
@@ -358,17 +370,6 @@
 				<button disabled={submitting || problems.length > 0 || !!quoteError || !understood}>
 					{submitting ? 'Sending…' : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
 				</button>
-				{#if quote?.costs}
-					<table class="costs">
-						<thead><tr><th>Cost to Hack Club</th><th>US</th><th>{intl ? address.country.trim().toUpperCase() : 'Global'}</th></tr></thead>
-						<tbody>
-							{#each costRows(quote.costs) as [label, us, abroad]}<tr><td>{label}</td><td>{us}</td><td>{abroad}</td></tr>{/each}
-						</tbody>
-					</table>
-					<p class="muted">Hack Club is completely financially transparent. You can see our transparent realtime ledger at <a href="https://hcb.hackclub.com/hq">hcb.hackclub.com/hq</a>.</p>
-					<p class="muted">Our goal for marketing is to spend no more than $50 USD per new teenager who joins Hack Club and ships 1 weighted technical project in one of our programs (1 weighted project = 10 approved hours).</p>
-					{#if worthText(intl ? quote.costs.international : quote.costs.us)}<p>{worthText(intl ? quote.costs.international : quote.costs.us)}</p>{/if}
-				{/if}
 			</form>
 		{/if}
 	{:else if !error}

@@ -68,7 +68,7 @@ export function summaryText(s: ShippingSummary | null): string {
 
 export const ozText = (oz: number) => (oz >= 16 ? `${(oz / 16).toFixed(1)} lb` : `${oz.toFixed(1)} oz`);
 
-// What a request costs Hack Club to send (internal/swag/costs.go); admins only.
+// What a request costs Hack Club to send (internal/swag/costs.go).
 export type Costs = {
 	items_cents: number; // at the warehouse's unit costs, leaving out unpriced_skus
 	labor_cents: number; // AGH: $1.80 an order + $0.20 a SKU
@@ -113,4 +113,9 @@ export function worthText(x: Costs | null): string {
 	return n === 1
 		? 'If you get 1 teen to join Hack Club and ship a weighted project, then this is worth it!'
 		: `If you get ${n} teens to join Hack Club and each ship a weighted project, then this is worth it!`;
+}
+
+// What the requester pays: nothing in the US, the shipping fee abroad.
+export function costToYou(intl: boolean, feeCents: number): string {
+	return intl && feeCents > 0 ? `${formatCents(feeCents)} for shipping` : '$0';
 }

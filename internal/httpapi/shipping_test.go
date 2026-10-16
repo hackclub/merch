@@ -140,7 +140,7 @@ func TestInternationalFeeIsEstimatedPostage(t *testing.T) {
 	}
 }
 
-func TestShippingEstimateCostsForAdmins(t *testing.T) {
+func TestShippingEstimateCostsForEveryone(t *testing.T) {
 	h := newHarness(t)
 	_, _, magazine := shippingFixture(t, h)
 	sticker, err := h.store.CreateItem(context.Background(), swag.Item{SKU: "Sti/A", Name: "Sticker A", Packs: "sticker", Visible: true, MaxPerRequest: 50})
@@ -151,11 +151,9 @@ func TestShippingEstimateCostsForAdmins(t *testing.T) {
 	var out struct {
 		Costs *struct{ US, International *swag.Costs }
 	}
-	if code := h.do(h.client(userEmail), "POST", "/api/shipping/estimate", body, &out); code != 200 || out.Costs != nil {
-		t.Fatalf("requesters don't see costs: %d %+v", code, out.Costs)
-	}
-	if code := h.do(h.client(adminEmail), "POST", "/api/shipping/estimate", body, &out); code != 200 || out.Costs == nil {
-		t.Fatalf("admin = %d %+v", code, out.Costs)
+	// Hack Club is financially transparent: requesters see what their request costs it, too.
+	if code := h.do(h.client(userEmail), "POST", "/api/shipping/estimate", body, &out); code != 200 || out.Costs == nil {
+		t.Fatalf("requester = %d %+v", code, out.Costs)
 	}
 	us, intl := out.Costs.US, out.Costs.International
 	// Stickers at $0.25 from the warehouse; it has no cost for the magazine.
