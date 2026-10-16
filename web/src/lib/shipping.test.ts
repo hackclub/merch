@@ -44,7 +44,7 @@ describe('shipping', () => {
 	it('summarizes time in the mail, after the next-day shipping it follows', () => {
 		const us = est({ handling_days: [0, 1], transit_days: [4, 7] });
 		const intl = est({ handling_days: [0, 2], transit_days: [9, 23] });
-		expect(summaryText({ us, international: intl })).toBe('Then 4–7 business days in the mail in the US, 2–5 weeks globally.');
+		expect(summaryText({ us, international: intl })).toBe('4–7 day delivery in the US. 2–5 weeks globally.');
 		expect(summaryText({ us: est({ arrive_by: '' }), international: intl })).toBe('');
 	});
 

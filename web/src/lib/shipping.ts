@@ -55,10 +55,12 @@ export function spanText([lo, hi]: [number, number]): string {
 }
 
 // The shop intro's delivery line, after "Shipped next day Mon–Fri.": time in
-// the mail, or '' without history.
+// the mail (business days), or '' without history.
 export function summaryText(s: ShippingSummary | null): string {
 	if (!s?.us.arrive_by || !s.international.arrive_by) return '';
-	return `Then ${spanText(s.us.transit_days)} in the mail in the US, ${spanText(s.international.transit_days)} globally.`;
+	const [lo, hi] = s.us.transit_days;
+	const us = lo === hi ? `${hi} day` : `${lo}–${hi} day`;
+	return `${us} delivery in the US. ${spanText(s.international.transit_days)} globally.`;
 }
 
 export const ozText = (oz: number) => (oz >= 16 ? `${(oz / 16).toFixed(1)} lb` : `${oz.toFixed(1)} oz`);
