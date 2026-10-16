@@ -67,8 +67,15 @@ func TestValidateErrors(t *testing.T) {
 		{"over total", func() ValidateInput {
 			s := settings()
 			s.MaxItemsPerRequest = 2
-			return ValidateInput{Settings: s, Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 2}, {ItemID: 2, Quantity: 1}}}
+			return ValidateInput{Settings: s, Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}, {ItemID: 2, Quantity: 1}, {ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}}
 		}(), ErrTooManyItems},
+		{"many of one item count once toward the total", func() ValidateInput {
+			s := settings()
+			s.MaxItemsPerRequest = 2
+			c := catalog()
+			c[1] = Item{ID: 1, SKU: "Pri/Crd/1", Name: "Card", Visible: true, MaxPerRequest: 100, WidthIn: f(6), HeightIn: f(4), ThicknessIn: f(0.016)}
+			return ValidateInput{Settings: s, Catalog: c, Lines: []Line{{ItemID: 1, Quantity: 100}, {ItemID: 2, Quantity: 1}}}
+		}(), nil},
 		{"size missing", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 4, Quantity: 1}}}, ErrBadVariant},
 		{"size unknown", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/XXL"}}}, ErrBadVariant},
 		{"size on sizeless item", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1, SKU: "Swa/Shirt/HC/S"}}}, ErrBadVariant},

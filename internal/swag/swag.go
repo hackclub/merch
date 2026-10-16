@@ -25,7 +25,7 @@ const (
 // Settings are the admin-managed global limits.
 type Settings struct {
 	RequestsOpen                  bool `json:"requests_open"`
-	MaxItemsPerRequest            int  `json:"max_items_per_request"`
+	MaxItemsPerRequest            int  `json:"max_items_per_request"` // different items (each size counts); 0 = no cap
 	RequestCooldownDays           int  `json:"request_cooldown_days"`
 	InternationalShippingFeeCents int  `json:"international_shipping_fee_cents"`
 }
@@ -72,8 +72,7 @@ type Item struct {
 	// Real-world photos people have posted of it.
 	Photos []Photo `json:"photos"`
 	// Packs names how the item is packed (see Packs; "" = any quantity).
-	// Quantities are limited to PackQuantity steps, and a pack line counts as
-	// one item toward the per-request total.
+	// Quantities are limited to PackQuantity steps.
 	Packs string `json:"packs"`
 
 	// Binding (see Bindings) and Pages, the page images of a booklet in reading
@@ -245,11 +244,7 @@ func Validate(in ValidateInput) error {
 		if item.MaxPerUser != nil && in.PriorQuantities[l.ItemID]+perItem[l.ItemID] > *item.MaxPerUser {
 			return fmt.Errorf("%w: at most %d %s per person", ErrItemLimit, *item.MaxPerUser, item.Name)
 		}
-		if item.Packs != "" {
-			total++
-		} else {
-			total += l.Quantity
-		}
+		total++
 	}
 	for id, q := range perItem {
 		if item := in.Catalog[id]; q < item.MinPerRequest {

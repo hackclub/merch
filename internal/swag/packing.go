@@ -48,9 +48,12 @@ type Package struct {
 // 0.44 lb for 376 sq in of board, about 0.0187 oz per sq in.
 func cartonOz(l, w, h float64) float64 { return 0.0187 * 2 * (l*w + l*h + w*h) }
 
+// cartonMaxOz is 70 lb, the most USPS Ground Advantage and UPS take in one parcel.
+const cartonMaxOz = 70 * 16
+
 func carton(l, w, h float64, cents int) Package {
 	return Package{Name: fmt.Sprintf("%gx%gx%g box", l, w, h), Class: ClassParcel, WidthIn: l, HeightIn: w, DepthIn: h,
-		MaxOz: 800, TareOz: math.Round(cartonOz(l, w, h)*10) / 10, CostCents: cents, Piles: true}
+		MaxOz: cartonMaxOz, TareOz: math.Round(cartonOz(l, w, h)*10) / 10, CostCents: cents, Piles: true}
 }
 
 // Packages are what AGH, our warehouse, packs requests in, in the order a

@@ -28,7 +28,8 @@ through the app, not into migrations or seed files. Before every commit, read `g
 
 Items can come in **sizes** (`items.variants`, e.g. the red Hack Club T-shirt `Swa/Shirt/HC` with
 S/M/L/XL → `Swa/Shirt/HC/<size>`). Each size ships its own warehouse SKU; limits count the item as a
-whole. Request lines store the exact SKU shipped (`swag_request_items.sku`, `variant`). A SKU belongs
+whole. The admin setting `max_items_per_request` caps how many different items (each size counts) go in one
+request; how many of each is the item's own `max_per_request`. Request lines store the exact SKU shipped (`swag_request_items.sku`, `variant`). A SKU belongs
 to one item: saving sizes folds any item listed under a size's SKU (e.g. imported per-size shirts)
 into the sized item, history included, and the importer attaches size SKUs to the sized item.
 
@@ -291,7 +292,7 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   of contents, one stack); bubble mailers; 6x4x2 box mailers; and the cartons on AGH's invoices
   (8x6x6, 10x8x6, 13x10x4, 14x10x6, 18x12x6, 18x14x10). StayFlat sizes and weights come from
   Uline's specs (case weight / 100). Carton weights scale Uline's 10x8x6 (0.44 lb) by board
-  area. The bubble mailer's size isn't on the invoices; it's modeled as a #4 (9x13½, 1 oz).
+  area, and each holds up to 70 lb (the USPS Ground Advantage and UPS limit). The bubble mailer's size isn't on the invoices; it's modeled as a #4 (9x13½, 1 oz).
   Posters (thin, longer than 13½") ship only in the 13x18 StayFlat. `Pack` uses item sizes
   (`width_in`, `height_in`, `thickness_in`; stickers and postcards have defaults; anything else
   counts as a bulky 10x8x1) and `items.weight_oz`. With no weight set, it works one out from

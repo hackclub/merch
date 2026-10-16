@@ -90,10 +90,13 @@ export const sizeLabel = (item: Item, sku: string | undefined): string => item.v
 export function cartErrors(cart: Cart, maxItemsPerRequest: number, items: Item[] = [], sizes: Sizes = {}): string[] {
 	const total = totalQuantity(cart);
 	if (total === 0) return ['Pick at least one item.'];
-	// A pack counts as one item toward the per-request total, as on the server.
-	const packed = items.filter((i) => i.packs && cart[i.id]).reduce((n, i) => n + cart[i.id] - 1, 0);
-	if (maxItemsPerRequest > 0 && total - packed > maxItemsPerRequest)
-		return [`You can request at most ${maxItemsPerRequest} items at a time.`];
+	// Each different item (each size of a sized one) counts once toward the per-request total, as on the server.
+	const lines = Object.keys(cart).reduce((n, id) => {
+		const item = items.find((i) => i.id === Number(id));
+		return n + (item?.variants.length ? Math.max(picked(item, sizes).length, 1) : 1);
+	}, 0);
+	if (maxItemsPerRequest > 0 && lines > maxItemsPerRequest)
+		return [`You can request at most ${maxItemsPerRequest} different item${maxItemsPerRequest === 1 ? '' : 's'} at a time.`];
 	return items.filter((i) => cart[i.id] && i.variants.length && !picked(i, sizes).length).map((i) => `Pick a size for ${i.name}.`);
 }
 

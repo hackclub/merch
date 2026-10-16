@@ -58,10 +58,10 @@ describe('packs', () => {
 		expect(setQuantity(emptyCart(), { ...postcard, max_per_request: 4 }, 5)[4]).toBeUndefined();
 	});
 
-	it('counts a pack as one item toward the per-request total', () => {
+	it('counts each different item once toward the per-request total', () => {
 		const c = setQuantity(setQuantity(emptyCart(), postcard, 50), items[0], 3);
-		expect(cartErrors(c, 5, [...items, postcard])).toEqual([]);
-		expect(cartErrors(c, 3, [...items, postcard])).toEqual(['You can request at most 3 items at a time.']);
+		expect(cartErrors(c, 2, [...items, postcard])).toEqual([]);
+		expect(cartErrors(c, 1, [...items, postcard])).toEqual(['You can request at most 1 different item at a time.']);
 	});
 });
 
@@ -91,7 +91,8 @@ describe('cart', () => {
 		expect(cartErrors(emptyCart(), 5)).toEqual(['Pick at least one item.']);
 		let c = setQuantity(emptyCart(), items[0], 3);
 		c = setQuantity(c, items[1], 1);
-		expect(cartErrors(c, 3)).toEqual(['You can request at most 3 items at a time.']);
+		expect(cartErrors(c, 2)).toEqual([]);
+		expect(cartErrors(c, 1)).toEqual(['You can request at most 1 different item at a time.']);
 		expect(cartErrors(c, 0)).toEqual([]);
 	});
 
@@ -141,6 +142,9 @@ describe('cart', () => {
 		expect(cartErrors(c, 5, items, {})).toEqual(['Pick a size for T-shirt.']);
 		expect(cartErrors(c, 5, items, { 3: { 'Swa/Shirt/HC/XXL': 1 } })).toEqual(['Pick a size for T-shirt.']);
 		expect(cartErrors(c, 5, items, { 3: { 'Swa/Shirt/HC/S': 1 } })).toEqual([]);
+		// Each size ships as its own line, so it counts as a different item, as on the server.
+		const both = { 3: { 'Swa/Shirt/HC/S': 1, 'Swa/Shirt/HC/M': 1 } };
+		expect(cartErrors(setQuantity(emptyCart(), { ...items[2], max_per_request: 2 }, 2), 1, items, both)).toEqual(['You can request at most 1 different item at a time.']);
 	});
 
 	it('restores and prunes saved sizes, reading the old one-size format too', () => {

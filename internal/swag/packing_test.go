@@ -45,6 +45,8 @@ func TestPack(t *testing.T) {
 		{"a poster and a stack of postcards don't pack together", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 2, Quantity: 50}}, false, "", ErrWontPack},
 		{"a poster and a magazine don't pack together", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 4, Quantity: 1}}, false, "", ErrWontPack},
 		{"a club's magazines go in a box", []Line{{ItemID: 4, Quantity: 25}}, false, "13x10x4 box", nil},
+		{"100 magazines fill the biggest box, under 70 lb", []Line{{ItemID: 4, Quantity: 100}}, false, "18x14x10 box", nil},
+		{"110 magazines are more than a box holds", []Line{{ItemID: 4, Quantity: 110}}, false, "", ErrWontPack},
 		{"four magazines are under 3 lb abroad", []Line{{ItemID: 4, Quantity: 4}}, true, "Bubble mailer", nil},
 		{"five magazines are over 3 lb abroad", []Line{{ItemID: 4, Quantity: 5}}, true, "", ErrTooHeavy},
 		{"five magazines are fine in the US", []Line{{ItemID: 4, Quantity: 5}}, false, "Bubble mailer", nil},

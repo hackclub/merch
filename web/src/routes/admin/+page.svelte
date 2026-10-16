@@ -354,7 +354,7 @@
 		<form class="card" onsubmit={(e) => { e.preventDefault(); saveSettings(); }}>
 			<div class="form-grid">
 				<label class="row"><input type="checkbox" style="width: auto" bind:checked={settings.requests_open} /> Requests open</label>
-				<label>Max items per request (0 = no cap) <input type="number" min="0" bind:value={settings.max_items_per_request} /></label>
+				<label>Max different items per request (0 = no cap) <input type="number" min="0" bind:value={settings.max_items_per_request} /></label>
 				<label>Days between requests per person <input type="number" min="0" bind:value={settings.request_cooldown_days} /></label>
 				<label>International shipping fee (cents) when there's no postage history; 0 = free international shipping <input type="number" min="0" bind:value={settings.international_shipping_fee_cents} /></label>
 			</div>
