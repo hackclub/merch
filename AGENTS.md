@@ -316,6 +316,13 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   AGH labor ($1.80 an order + $0.20 for each different SKU, from its invoices; the warehouse's
   `agh_fulfillment_zenventory.invoices`), the package's `CostCents`, and the typical postage, for
   the US and abroad. Out-of-stock SKUs have no unit cost and show as unpriced.
+  - **What's worth it:** Hack Club is financially transparent (its live ledger is public at
+    https://hcb.hackclub.com/hq). The marketing goal is to spend at most **$50 per new teenager
+    who joins Hack Club and ships one weighted project** (10 approved hours) in one of our
+    programs ($5 per approved hour). Under the cost table, `worthText` (`web/src/lib/shipping.ts`)
+    says what makes the request worth it, for the destination's side: under $30, the hours one
+    new teen ships ("ship 6 hours of work"); from $30, how many teens each ship a weighted
+    project. Both round up. Judge swag, limits and shipping rules by this number.
 - **History** (`shipping_history`, no names or addresses) comes from the Hack Club data warehouse:
   - `scripts/shipping-history/zenventory.sql`: AGH shipments, for postage and Asendia tracking.
   - `theseus-orders.sql`: orders placed through mail.hackclub.com, for handling time.

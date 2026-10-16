@@ -14,7 +14,7 @@
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
-	import { arrivalText, costRows, summaryText, type CostSides, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
+	import { arrivalText, costRows, summaryText, worthText, type CostSides, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Haul3D from '$lib/Haul3D.svelte';
 	import QuantityPicker from '$lib/QuantityPicker.svelte';
@@ -365,6 +365,9 @@
 							{#each costRows(quote.costs) as [label, us, abroad]}<tr><td>{label}</td><td>{us}</td><td>{abroad}</td></tr>{/each}
 						</tbody>
 					</table>
+					<p class="muted">Hack Club is completely financially transparent. You can see our transparent realtime ledger at <a href="https://hcb.hackclub.com/hq">hcb.hackclub.com/hq</a>.</p>
+					<p class="muted">Our goal for marketing is to spend no more than $50 USD per new teenager who joins Hack Club and ships 1 weighted technical project in one of our programs (1 weighted project = 10 approved hours).</p>
+					{#if worthText(intl ? quote.costs.international : quote.costs.us)}<p>{worthText(intl ? quote.costs.international : quote.costs.us)}</p>{/if}
 				{/if}
 			</form>
 		{/if}

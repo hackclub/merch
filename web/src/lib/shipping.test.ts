@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrivalText, costRows, dateRange, ozText, spanText, summaryText, type Costs, type ShippingEstimate } from './shipping';
+import { arrivalText, costRows, worthText, dateRange, ozText, spanText, summaryText, type Costs, type ShippingEstimate } from './shipping';
 
 const est = (over: Partial<ShippingEstimate>): ShippingEstimate => ({
 	package: 'Mailer',
@@ -71,5 +71,21 @@ describe('costRows', () => {
 		expect(rows[0]).toEqual(['Items', '$9.45 + 1 unpriced', '—']);
 		expect(rows[2]).toEqual(['Postage (estimated)', 'no history', '—']);
 		expect(rows[3]).toEqual(['Total', '$17.67+', 'over 3 lb']);
+	});
+});
+
+describe('worthText', () => {
+	const c = (total_cents: number): Costs => ({
+		items_cents: 0, labor_cents: 0, packing_cents: 0, postage_cents: 100, total_cents, unpriced_skus: []
+	});
+	it('says the approved hours that make it worth it under $30, at $5 an hour', () => {
+		expect(worthText(c(2900))).toBe('If you get 1 teen to join Hack Club and ship 6 hours of work, then this is worth it!');
+		expect(worthText(c(320))).toBe('If you get 1 teen to join Hack Club and ship 1 hour of work, then this is worth it!');
+		expect(worthText(c(1767))).toBe('If you get 1 teen to join Hack Club and ship 4 hours of work, then this is worth it!');
+	});
+	it('counts teens who each ship a weighted project from $30, rounded up', () => {
+		expect(worthText(c(3000))).toBe('If you get 1 teen to join Hack Club and ship a weighted project, then this is worth it!');
+		expect(worthText(c(12000))).toBe('If you get 3 teens to join Hack Club and each ship a weighted project, then this is worth it!');
+		expect(worthText(null)).toBe('');
 	});
 });

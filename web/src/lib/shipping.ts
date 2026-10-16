@@ -95,3 +95,22 @@ export function costRows(c: CostSides): [string, string, string][] {
 		['Total', side(c.us, total), c.international ? total(c.international) : 'over 3 lb']
 	];
 }
+
+// Hack Club's marketing goal: spend at most $50 per new teenager who joins and ships a weighted
+// project (10 approved hours, so $5 an hour) in one of our programs.
+export const CENTS_PER_NEW_TEEN = 5000;
+const CENTS_PER_HOUR = CENTS_PER_NEW_TEEN / 10;
+
+// What a request has to bring in to be worth its cost: under $30, the approved hours one new
+// teen ships; from $30, how many new teens each ship a weighted project. Both round up.
+export function worthText(x: Costs | null): string {
+	if (!x) return '';
+	if (x.total_cents < 3000) {
+		const h = Math.max(1, Math.ceil(x.total_cents / CENTS_PER_HOUR));
+		return `If you get 1 teen to join Hack Club and ship ${h} hour${h === 1 ? '' : 's'} of work, then this is worth it!`;
+	}
+	const n = Math.ceil(x.total_cents / CENTS_PER_NEW_TEEN);
+	return n === 1
+		? 'If you get 1 teen to join Hack Club and ship a weighted project, then this is worth it!'
+		: `If you get ${n} teens to join Hack Club and each ship a weighted project, then this is worth it!`;
+}
