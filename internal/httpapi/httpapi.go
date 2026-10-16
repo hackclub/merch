@@ -105,7 +105,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET /api/requests", s.requireUser(s.myRequests))
 	mux.Handle("POST /api/requests", s.requireUser(s.createRequest))
 	mux.Handle("POST /api/requests/{id}/cancel", s.requireUser(s.cancelRequest))
-	mux.Handle("GET /api/requests/{id}/pay", s.requireUser(s.payRequest))
+	mux.Handle("POST /api/requests/{id}/pay", s.requireUser(s.payRequest))
 	mux.Handle("GET /api/address/suggest", s.requireUser(s.addressSuggest))
 	mux.Handle("GET /api/address/place", s.requireUser(s.addressPlace))
 
@@ -358,7 +358,7 @@ func (s *server) catalog(w http.ResponseWriter, r *http.Request) {
 			"request_cooldown_days":            st.RequestCooldownDays,
 			"international_shipping_fee_cents": st.InternationalShippingFeeCents,
 			"hcb_payment_url":                  s.Config.HCBShippingPaymentURL,
-			"card_payments":                    s.Payments != nil,
+			"stripe_key":                       s.stripeKey(),
 		},
 	})
 }
@@ -438,13 +438,14 @@ func (s *server) cachedSKUs(ctx context.Context) ([]theseus.SKU, error) {
 type requestView struct {
 	*store.Request
 	PaymentURL string         `json:"payment_url,omitempty"`
-	Estimate   *swag.Estimate `json:"estimate,omitempty"` // when it should arrive, while it waits to ship
+	StripeKey  string         `json:"stripe_key,omitempty"` // pay by card on the page, with this publishable key
+	Estimate   *swag.Estimate `json:"estimate,omitempty"`   // when it should arrive, while it waits to ship
 }
 
 func (s *server) view(r *store.Request) requestView {
 	v := requestView{Request: r}
 	if r.Status == swag.StatusAwaitingPayment && s.Payments != nil {
-		v.PaymentURL = payPath(r.ID)
+		v.StripeKey = s.stripeKey()
 	} else if r.Status == swag.StatusAwaitingPayment && s.Config.HCBShippingPaymentURL != "" {
 		q := url.Values{}
 		q.Set("amount", strconv.Itoa(r.ShippingFeeCents))

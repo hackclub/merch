@@ -8,16 +8,16 @@ import (
 	"testing"
 )
 
-func TestCreateCheckout(t *testing.T) {
+func TestCreatePayment(t *testing.T) {
 	var form map[string]string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" || r.URL.Path != "/v1/checkout/sessions" {
+		if r.Method != "POST" || r.URL.Path != "/v1/payment_intents" {
 			t.Errorf("%s %s", r.Method, r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer sk_test_x" {
 			t.Errorf("auth = %q", r.Header.Get("Authorization"))
 		}
-		if r.Header.Get("Idempotency-Key") != "merch-request-7-pay-1" {
+		if r.Header.Get("Idempotency-Key") != "merch-request-7-pay" {
 			t.Errorf("idempotency key = %q", r.Header.Get("Idempotency-Key"))
 		}
 		r.ParseForm()
@@ -25,32 +25,26 @@ func TestCreateCheckout(t *testing.T) {
 		for k := range r.PostForm {
 			form[k] = r.PostForm.Get(k)
 		}
-		json.NewEncoder(w).Encode(map[string]any{"id": "cs_test_1", "url": "https://checkout.stripe.com/c/pay/cs_test_1", "status": "open", "payment_status": "unpaid", "amount_total": 1500, "currency": "usd", "payment_intent": nil})
+		json.NewEncoder(w).Encode(map[string]any{"id": "pi_1", "client_secret": "pi_1_secret_x", "status": "requires_payment_method", "amount": 1500, "currency": "usd"})
 	}))
 	defer srv.Close()
 
-	s, err := New(srv.URL, "sk_test_x", nil).CreateCheckout(context.Background(), CheckoutInput{
-		RequestID: 7, AmountCents: 1500, Name: "Shipping for swag request #7", Email: "orpheus@hackclub.com",
-		SuccessURL: "http://app.test/requests?paid=7", CancelURL: "http://app.test/requests", IdempotencyKey: "merch-request-7-pay-1",
+	p, err := New(srv.URL, "sk_test_x", nil).CreatePayment(context.Background(), PaymentInput{
+		RequestID: 7, AmountCents: 1500, Description: "Shipping for Hack Club swag request #7", Email: "orpheus@hackclub.com", IdempotencyKey: "merch-request-7-pay",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.ID != "cs_test_1" || s.URL == "" || s.Status != "open" || s.AmountTotal != 1500 {
-		t.Fatalf("session = %+v", s)
+	if p.ID != "pi_1" || p.ClientSecret != "pi_1_secret_x" || p.Status != "requires_payment_method" || p.Amount != 1500 {
+		t.Fatalf("payment = %+v", p)
 	}
 	for k, want := range map[string]string{
-		"mode":                                          "payment",
-		"line_items[0][quantity]":                       "1",
-		"line_items[0][price_data][currency]":           "usd",
-		"line_items[0][price_data][unit_amount]":        "1500",
-		"line_items[0][price_data][product_data][name]": "Shipping for swag request #7",
-		"client_reference_id":                           "7",
-		"metadata[request_id]":                          "7",
-		"payment_intent_data[metadata][request_id]":     "7",
-		"customer_email":                                "orpheus@hackclub.com",
-		"success_url":                                   "http://app.test/requests?paid=7",
-		"cancel_url":                                    "http://app.test/requests",
+		"amount":                          "1500",
+		"currency":                        "usd",
+		"allowed_payment_method_types[0]": "card",
+		"description":                     "Shipping for Hack Club swag request #7",
+		"receipt_email":                   "orpheus@hackclub.com",
+		"metadata[request_id]":            "7",
 	} {
 		if form[k] != want {
 			t.Errorf("%s = %q, want %q", k, form[k], want)
@@ -58,36 +52,36 @@ func TestCreateCheckout(t *testing.T) {
 	}
 }
 
-func TestGetCheckoutAndErrors(t *testing.T) {
+func TestGetCancelAndErrors(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v1/checkout/sessions/cs_paid":
-			json.NewEncoder(w).Encode(map[string]any{"id": "cs_paid", "status": "complete", "payment_status": "paid", "amount_total": 900, "currency": "usd",
-				"payment_intent": "pi_1", "client_reference_id": "3", "metadata": map[string]string{"request_id": "3"}})
-		case "/v1/checkout/sessions/cs_open/expire":
+		case "/v1/payment_intents/pi_paid":
+			json.NewEncoder(w).Encode(map[string]any{"id": "pi_paid", "status": "succeeded", "amount": 900, "amount_received": 900, "currency": "usd",
+				"metadata": map[string]string{"request_id": "3"}})
+		case "/v1/payment_intents/pi_open/cancel":
 			if r.Method != "POST" {
-				t.Errorf("expire method %s", r.Method)
+				t.Errorf("cancel method %s", r.Method)
 			}
-			json.NewEncoder(w).Encode(map[string]any{"id": "cs_open", "status": "expired"})
+			json.NewEncoder(w).Encode(map[string]any{"id": "pi_open", "status": "canceled"})
 		default:
 			w.WriteHeader(404)
-			w.Write([]byte(`{"error":{"message":"No such checkout.session: 'cs_nope'"}}`))
+			w.Write([]byte(`{"error":{"message":"No such payment_intent: 'pi_nope'"}}`))
 		}
 	}))
 	defer srv.Close()
 	c := New(srv.URL, "sk_test_x", nil)
 
-	s, err := c.GetCheckout(context.Background(), "cs_paid")
-	if err != nil || !s.Paid() || s.PaymentIntent != "pi_1" || s.RequestID() != 3 || s.AmountTotal != 900 {
-		t.Fatalf("get = %+v, %v", s, err)
+	p, err := c.GetPayment(context.Background(), "pi_paid")
+	if err != nil || !p.Paid() || p.RequestID() != 3 || p.AmountReceived != 900 {
+		t.Fatalf("get = %+v, %v", p, err)
 	}
-	if _, err := c.GetCheckout(context.Background(), "cs_nope"); err == nil || err.Error() != "stripe: 404: No such checkout.session: 'cs_nope'" {
+	if _, err := c.GetPayment(context.Background(), "pi_nope"); err == nil || err.Error() != "stripe: 404: No such payment_intent: 'pi_nope'" {
 		t.Fatalf("err = %v", err)
 	}
-	if err := c.ExpireCheckout(context.Background(), "cs_open"); err != nil {
+	if err := c.CancelPayment(context.Background(), "pi_open"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.GetCheckout(context.Background(), "../x"); err == nil {
+	if _, err := c.GetPayment(context.Background(), "../x"); err == nil {
 		t.Fatal("bad id must be refused before the call")
 	}
 }

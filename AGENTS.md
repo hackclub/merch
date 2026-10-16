@@ -22,7 +22,7 @@ through the app, not into migrations or seed files. Before every commit, read `g
 
 | Who | How we know | What they do |
 | --- | --- | --- |
-| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card (Stripe Checkout; HCB without a Stripe key) before we ship (see "Shipping estimates and packing"). |
+| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card on the form (Stripe; HCB without Stripe keys) before we ship (see "Shipping estimates and packing"). |
 | YSWS author | Their HCA email matches `Hack Club Auth Email` in the **YSWS Authors** table of the Unified YSWS Projects DB (Airtable `app3A5kJwYqxMLOgh`) | Submit print-ready material (stickers, posters…) to be printed and stocked in the warehouse. |
 | Admin | Email is in `ADMIN_EMAILS` (admins are also authors) | Manage global limits, list warehouse SKUs as items, set visibility and order, review requests (mark paid → ship → tracking), and review author submissions. |
 
@@ -50,7 +50,7 @@ internal/db/dbtest/  per-test throwaway database (CREATE DATABASE test_<rand> �
 internal/auth/       Hack Club Auth OAuth client (auth.hackclub.com, GET /api/v1/me)
 internal/authors/    YSWS author lookup (Airtable REST, 10 min cache)
 internal/theseus/    mail.hackclub.com warehouse client (SKUs, warehouse_orders)
-internal/stripe/     Stripe Checkout client (international shipping payments)
+internal/stripe/     Stripe PaymentIntents client (international shipping payments)
 internal/asendia/    Asendia tracking lookups (delivery dates for shipping history)
 cmd/shiphistory/     loads past shipments for estimates (see "Shipping estimates and packing")
 internal/cdn/        cdn.hackclub.com upload client (item images)
@@ -279,7 +279,7 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   backups.
 - Required env: `DATABASE_URL`, `BASE_URL` (public https origin), `SESSION_SECRET`,
   `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, `THESEUS_API_KEY`, `ADMIN_EMAILS`. Also needed:
-  `AIRTABLE_API_KEY` for authors, `STRIPE_SECRET_KEY` for international payments (or
+  `AIRTABLE_API_KEY` for authors, `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` for international payments (or
   `HCB_SHIPPING_PAYMENT_URL` without Stripe),
   `HACKCLUB_CDN_API_KEY` for item image uploads, and `GOOGLE_PLACES_API_KEY` for address
   autocomplete.
@@ -405,14 +405,15 @@ blocks landing):
   nothing clickable was hit), `field` (which field changed; the choice for radios, checkboxes and
   selects, only `chars` for typed text), `cart` and `cart_size` (`item_id`, `sku`, `from`, `to`; from
   every page, since all cart changes go through `$lib/bag.svelte`), `purpose`, `item_hover` (mouse
-  over an item for ≥ 0.5 s), `api_error`, `js_error`, `pwa_installed`. `/admin` sends only page views and
+  over an item for ≥ 0.5 s), `payment_error` (a card didn't go through: `request_id` and Stripe's `type`,
+  `code`, `decline_code`; never the message), `api_error`, `js_error`, `pwa_installed`. `/admin` sends only page views and
   page time.
 - `api`: every `/api/*` and `/auth/*` call (except `/api/events`), logged by middleware: `route`
   (the mux pattern), `url` (the path, never the query), `status`, `ms`. Use it for errors and
   slow routes, and for admin actions (the URL has the id).
 - Server events (`s.track` in `internal/httpapi`): `login_start`, `sign_in`, `sign_in_refused`,
-  `sign_out`, `payment_started` (opened a new Stripe payment page: `request_id`, `fee_cents`, `country`),
-  `payment_completed` (Stripe says it's paid in full; the request moved to `pending`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
+  `sign_out`, `payment_started` (the card form is about to charge: `request_id`, `fee_cents`, `country`,
+  `retry`), `payment_completed` (Stripe says it's paid in full; the request moved to `pending`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
   postage, sample counts, or `error` when it won't pack), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `submission_created`. They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
@@ -467,18 +468,22 @@ where props ? 'error' group by 1, 2 order by 3 desc;
   - International orders need a phone number for customs.
   - A billing profile is required; it comes from the API key's default.
   - **Never call CreateOrder outside the admin "Ship" action. It ships real mail.**
-- **Stripe** (`internal/stripe`, `internal/httpapi/payments.go`) takes international shipping
-  payments through hosted Checkout pages, so card numbers never reach us. An `awaiting_payment`
-  request's `payment_url` is `GET /api/requests/{id}/pay`, which reopens its open Checkout
-  Session or creates one (USD, the request's `shipping_fee_cents`, `metadata.request_id`) and
-  redirects there; Stripe sends people back to `/requests?paid=<id>`. There is no webhook
-  (production sits behind Orchard login): loading My requests or the admin request list checks
-  Stripe for each `awaiting_payment` request with a `stripe_session_id`, and a session paid in
-  full in USD moves it to `pending` (`paid_at`, `stripe_payment_intent`). A completed but
-  unpaid session (a bank payment on its way) waits; the pay link never opens a second page then,
-  or when Stripe can't be reached. Cancelling expires the open page. Admins can still "Mark paid" by hand. Refunds are done in the Stripe dashboard.
-  Dev uses the sandbox (`sk_test_…`, test card 4242 4242 4242 4242); `STRIPE_SECRET_KEY` lives
-  only in the shared `.env` and Orchard, never in the repo.
+- **Stripe** (`internal/stripe`, `internal/httpapi/payments.go`, `web/src/lib/CardField.svelte`)
+  takes international shipping payments with a card field right on the request form: Stripe's
+  Payment Element, cards only, no wallets. It asks for just the number, expiry and CVC (the
+  shipping address is the billing address), and its iframe sends card numbers straight to
+  Stripe. Submit checks the card, creates the request, then `POST /api/requests/{id}/pay`
+  starts a PaymentIntent (USD, the request's `shipping_fee_cents`, `metadata.request_id`;
+  reused while it can still be paid) and the browser confirms it (`payShipping` in
+  `$lib/payment`). A declined card lands on My requests, where an unpaid request has the same
+  field and a Pay button. There is no webhook (production sits behind Orchard login): loading
+  My requests or the admin request list checks Stripe, and a PaymentIntent that `succeeded` for
+  the full amount moves the request to `pending` (`paid_at`, `stripe_payment_intent`). Pay
+  never starts a second payment while the first is processing or Stripe can't be reached.
+  Cancelling cancels the unpaid PaymentIntent. Admins can still "Mark paid" by hand; refunds
+  are done in the Stripe dashboard. Both `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` turn
+  it on (without them, HCB). Dev uses the sandbox (`sk_test_…`/`pk_test_…`, test card
+  4242 4242 4242 4242); the keys live only in the shared `.env` and Orchard, never in the repo.
 - **cdn.hackclub.com** hosts item images. Admins upload them on the admin Items tab; the
   server re-encodes them as ≤1600px JPEGs (print PNGs are ~9 MB) and stores the CDN URLs in
   `items.images` (ordered; the first is the thumbnail). Each item has a product page at

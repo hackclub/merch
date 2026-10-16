@@ -3,14 +3,37 @@
 	import { api, ApiError, formatCents, statusLabel } from '$lib/api';
 	import { purposeLabel } from '$lib/purpose';
 	import { arrivalText } from '$lib/shipping';
-	import { paidNotice, payLabel } from '$lib/payment';
+	import { paidNotice, payShipping, type CardForm } from '$lib/payment';
+	import CardField from '$lib/CardField.svelte';
 	import { page } from '$app/state';
 	import { session } from '$lib/session.svelte';
 	import type { SwagRequest } from '$lib/types';
 
 	let requests = $state<SwagRequest[] | null>(null);
 	let error = $state('');
-	const thanks = $derived(paidNotice(requests, page.url.searchParams.get('paid')));
+	let paidNow = $state<string | null>(null);
+	const thanks = $derived(paidNotice(requests, paidNow ?? page.url.searchParams.get('paid')));
+
+	// Card fields for requests still waiting on their shipping payment, and why a card failed.
+	let cards = $state<Record<number, CardForm>>({});
+	const unpaid = Number(page.url.searchParams.get('unpaid'));
+	let payErrors = $state<Record<number, string>>(unpaid && page.state.payError ? { [unpaid]: page.state.payError } : {});
+	let paying = $state(0);
+
+	async function pay(id: number) {
+		const card = cards[id];
+		if (!card) return;
+		paying = id;
+		payErrors[id] = '';
+		try {
+			const problem = (await card.check()) || (await payShipping(card, id, (path) => api.post(path), window.location.origin));
+			payErrors[id] = problem;
+			if (!problem) paidNow = String(id);
+			await load();
+		} finally {
+			paying = 0;
+		}
+	}
 
 	async function load() {
 		try {
@@ -54,8 +77,13 @@
 			{#if r.status === 'awaiting_payment'}
 				<p>
 					Shipping to {r.address.country} costs {formatCents(r.shipping_fee_cents)}.
-					{#if r.payment_url}<a class="button" href={r.payment_url} data-sveltekit-reload data-track="pay-shipping">{payLabel(r.payment_url)}</a>{/if}
+					{#if r.payment_url}<a class="button" href={r.payment_url} data-track="pay-shipping">Pay shipping on HCB</a>{/if}
 				</p>
+				{#if r.stripe_key}
+					<CardField bind:this={cards[r.id]} stripeKey={r.stripe_key} amountCents={r.shipping_fee_cents} billing={r.address} />
+					{#if payErrors[r.id]}<p class="error">{payErrors[r.id]}</p>{/if}
+					<button disabled={paying === r.id} onclick={() => pay(r.id)}>{paying === r.id ? 'Paying…' : `Pay ${formatCents(r.shipping_fee_cents)}`}</button>
+				{/if}
 			{/if}
 			{#if arrivalText(r.estimate)}<p>{arrivalText(r.estimate)}, by {r.estimate?.service}.</p>{/if}
 			{#if r.mailed_at}<p>Mailed {new Date(r.mailed_at).toLocaleDateString()}</p>{/if}

@@ -41,7 +41,7 @@ export type Settings = {
 export type Catalog = {
 	items: Item[];
 	includes: Item[]; // what listed items ship with, often hidden items
-	settings: Settings & { hcb_payment_url: string; card_payments?: boolean };
+	settings: Settings & { hcb_payment_url: string; stripe_key?: string };
 };
 
 export type Address = {
@@ -83,7 +83,8 @@ export type SwagRequest = {
 	internal_note?: string; // admin-only
 	created_at: string;
 	lines: { item_id: number; sku: string; name: string; variant?: string; quantity: number }[];
-	payment_url?: string;
+	payment_url?: string; // HCB
+	stripe_key?: string; // pay by card on the page
 	estimate?: ShippingEstimate; // while it waits to ship; postage only for admins
 };
 

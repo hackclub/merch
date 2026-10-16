@@ -1,15 +1,64 @@
 import { describe, expect, it } from 'vitest';
-import { paidNotice, payLabel, payWhere } from './payment';
+import { billingDetails, paidNotice, payShipping, payWhere, type CardForm } from './payment';
+import type { Address } from './types';
+
+const de: Address = { first_name: 'Orpheus', last_name: 'Dino', line_1: 'Teststr 1', line_2: '', city: 'Berlin', state: '', postal_code: '10115', country: 'de', phone_number: '+49301234567' };
+
+function fakeCard(result: Awaited<ReturnType<CardForm['confirm']>>) {
+	const calls: string[] = [];
+	const card: CardForm = {
+		check: async () => null,
+		setAmount: (c) => void calls.push(`amount ${c}`),
+		confirm: async (secret, returnUrl) => {
+			calls.push(`confirm ${secret} ${returnUrl}`);
+			return result;
+		}
+	};
+	return { card, calls };
+}
 
 describe('payment', () => {
-	it('says where international shipping is paid', () => {
-		expect(payWhere(true)).toBe("After you submit we'll take you to a secure page to pay it by card; we ship once it's paid.");
+	it('says how international shipping is paid', () => {
+		expect(payWhere(true)).toBe("Pay it by card below; we ship once it's paid.");
 		expect(payWhere(false)).toBe("After you submit we'll send you to HCB to pay it; we ship once it's received.");
-		expect(payLabel('/api/requests/3/pay')).toBe('Pay shipping');
-		expect(payLabel('https://hcb.hackclub.com/donations/start/swag?amount=900')).toBe('Pay shipping on HCB');
 	});
 
-	it('thanks people back from paying, once the payment shows up', () => {
+	it('bills the shipping address, so the card form only asks for the card', () => {
+		expect(billingDetails(de)).toEqual({
+			name: 'Orpheus Dino',
+			phone: '+49301234567',
+			address: { line1: 'Teststr 1', line2: '', city: 'Berlin', state: '', postal_code: '10115', country: 'DE' }
+		});
+	});
+
+	it('pays a request: start the payment, match the amount, confirm the card', async () => {
+		const { card, calls } = fakeCard({});
+		const events: unknown[] = [];
+		const err = await payShipping(card, 7, async (path) => {
+			calls.push(`post ${path}`);
+			return { client_secret: 'pi_1_secret', amount_cents: 900 };
+		}, 'http://app.test', (n, p) => events.push([n, p]));
+		expect(err).toBe('');
+		expect(calls).toEqual(['post /api/requests/7/pay', 'amount 900', 'confirm pi_1_secret http://app.test/requests?paid=7']);
+		expect(events).toEqual([]);
+	});
+
+	it('says why a card failed and records the reason, not the message', async () => {
+		const { card } = fakeCard({ error: { type: 'card_error', code: 'card_declined', decline_code: 'insufficient_funds', message: 'Your card has insufficient funds.' } });
+		const events: unknown[] = [];
+		const err = await payShipping(card, 7, async () => ({ client_secret: 's', amount_cents: 900 }), 'http://app.test', (n, p) => events.push([n, p]));
+		expect(err).toBe('Your card has insufficient funds.');
+		expect(events).toEqual([['payment_error', { request_id: 7, type: 'card_error', code: 'card_declined', decline_code: 'insufficient_funds' }]]);
+	});
+
+	it('passes on the server refusing to start a payment', async () => {
+		const { card, calls } = fakeCard({});
+		const err = await payShipping(card, 7, async () => { throw new Error('this request is already paid'); }, 'http://app.test', () => {});
+		expect(err).toBe('this request is already paid');
+		expect(calls).toEqual([]);
+	});
+
+	it('thanks people once the payment shows up', () => {
 		const reqs = [
 			{ id: 3, status: 'pending' as const },
 			{ id: 4, status: 'awaiting_payment' as const }

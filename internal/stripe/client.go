@@ -1,6 +1,7 @@
-// Package stripe takes international shipping payments through Stripe Checkout
-// (hosted payment pages), so card details never touch our server.
-// Docs: https://docs.stripe.com/api/checkout/sessions
+// Package stripe takes international shipping payments by card. The card form
+// is Stripe's Payment Element inside our page, so card details go straight to
+// Stripe and never touch our server.
+// Docs: https://docs.stripe.com/api/payment_intents
 package stripe
 
 import (
@@ -29,77 +30,78 @@ func New(baseURL, key string, hc *http.Client) *Client {
 	return &Client{baseURL: strings.TrimRight(baseURL, "/"), key: key, http: hc}
 }
 
-// CheckoutInput is one request's shipping payment.
-type CheckoutInput struct {
+// PaymentInput is one request's shipping payment, by card.
+type PaymentInput struct {
 	RequestID      int64
 	AmountCents    int    // USD
-	Name           string // what the payment page says it's for
-	Email          string // prefills the receipt email
-	SuccessURL     string
-	CancelURL      string
-	IdempotencyKey string // so a retried call doesn't open a second session
+	Description    string // on the card statement's receipt and in the dashboard
+	Email          string // where Stripe sends the receipt
+	IdempotencyKey string // so a retried call doesn't make a second payment
 }
 
-// Session is a Checkout Session: a hosted payment page and its outcome.
-type Session struct {
-	ID                string            `json:"id"`
-	URL               string            `json:"url"`            // the payment page, while open
-	Status            string            `json:"status"`         // open, complete, expired
-	PaymentStatus     string            `json:"payment_status"` // paid, unpaid, no_payment_required
-	AmountTotal       int               `json:"amount_total"`
-	Currency          string            `json:"currency"`
-	PaymentIntent     string            `json:"payment_intent"`
-	ClientReferenceID string            `json:"client_reference_id"`
-	Metadata          map[string]string `json:"metadata"`
+// Payment is a PaymentIntent: one attempt to collect an amount.
+type Payment struct {
+	ID             string            `json:"id"`
+	ClientSecret   string            `json:"client_secret"` // the browser confirms the card with it
+	Status         string            `json:"status"`        // requires_payment_method, requires_action, processing, succeeded, canceled…
+	Amount         int               `json:"amount"`
+	AmountReceived int               `json:"amount_received"`
+	Currency       string            `json:"currency"`
+	Metadata       map[string]string `json:"metadata"`
 }
 
 // Paid reports whether the money has been collected.
-func (s *Session) Paid() bool { return s.PaymentStatus == "paid" }
+func (p *Payment) Paid() bool { return p.Status == "succeeded" }
 
-// RequestID is the swag request this session pays for (0 if none).
-func (s *Session) RequestID() int64 {
-	id, _ := strconv.ParseInt(s.Metadata["request_id"], 10, 64)
+// Open reports whether the payment can still be paid (or retried with another card).
+func (p *Payment) Open() bool {
+	switch p.Status {
+	case "requires_payment_method", "requires_confirmation", "requires_action":
+		return true
+	}
+	return false
+}
+
+// RequestID is the swag request this payment is for (0 if none).
+func (p *Payment) RequestID() int64 {
+	id, _ := strconv.ParseInt(p.Metadata["request_id"], 10, 64)
 	return id
 }
 
-func (c *Client) CreateCheckout(ctx context.Context, in CheckoutInput) (*Session, error) {
-	id := strconv.FormatInt(in.RequestID, 10)
+// CreatePayment starts a card payment the browser then confirms with the
+// Payment Element (https://docs.stripe.com/payments/accept-a-payment-deferred).
+func (c *Client) CreatePayment(ctx context.Context, in PaymentInput) (*Payment, error) {
 	f := url.Values{
-		"mode":                                          {"payment"},
-		"line_items[0][quantity]":                       {"1"},
-		"line_items[0][price_data][currency]":           {"usd"},
-		"line_items[0][price_data][unit_amount]":        {strconv.Itoa(in.AmountCents)},
-		"line_items[0][price_data][product_data][name]": {in.Name},
-		"client_reference_id":                           {id},
-		"metadata[request_id]":                          {id},
-		"payment_intent_data[metadata][request_id]":     {id},
-		"success_url":                                   {in.SuccessURL},
-		"cancel_url":                                    {in.CancelURL},
+		"amount":                          {strconv.Itoa(in.AmountCents)},
+		"currency":                        {"usd"},
+		"allowed_payment_method_types[0]": {"card"},
+		"description":                     {in.Description},
+		"metadata[request_id]":            {strconv.FormatInt(in.RequestID, 10)},
 	}
 	if in.Email != "" {
-		f.Set("customer_email", in.Email)
+		f.Set("receipt_email", in.Email)
 	}
-	var s Session
-	return &s, c.call(ctx, "POST", "/v1/checkout/sessions", f, in.IdempotencyKey, &s)
+	var p Payment
+	return &p, c.call(ctx, "POST", "/v1/payment_intents", f, in.IdempotencyKey, &p)
 }
 
-func (c *Client) GetCheckout(ctx context.Context, id string) (*Session, error) {
+func (c *Client) GetPayment(ctx context.Context, id string) (*Payment, error) {
 	if !validID.MatchString(id) {
-		return nil, fmt.Errorf("stripe: bad session id %q", id)
+		return nil, fmt.Errorf("stripe: bad payment id %q", id)
 	}
-	var s Session
-	return &s, c.call(ctx, "GET", "/v1/checkout/sessions/"+id, nil, "", &s)
+	var p Payment
+	return &p, c.call(ctx, "GET", "/v1/payment_intents/"+id, nil, "", &p)
 }
 
-// ExpireCheckout closes an open payment page so it can't be paid any more.
-func (c *Client) ExpireCheckout(ctx context.Context, id string) error {
+// CancelPayment stops an unpaid payment so it can't be paid any more.
+func (c *Client) CancelPayment(ctx context.Context, id string) error {
 	if !validID.MatchString(id) {
-		return fmt.Errorf("stripe: bad session id %q", id)
+		return fmt.Errorf("stripe: bad payment id %q", id)
 	}
-	return c.call(ctx, "POST", "/v1/checkout/sessions/"+id+"/expire", url.Values{}, "", nil)
+	return c.call(ctx, "POST", "/v1/payment_intents/"+id+"/cancel", url.Values{}, "", nil)
 }
 
-var validID = regexp.MustCompile(`^cs_[A-Za-z0-9_]+$`)
+var validID = regexp.MustCompile(`^pi_[A-Za-z0-9_]+$`)
 
 func (c *Client) call(ctx context.Context, method, path string, form url.Values, idempotencyKey string, out any) error {
 	var body io.Reader

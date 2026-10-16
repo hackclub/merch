@@ -10,19 +10,27 @@ import (
 	"github.com/hackclub/merch/internal/swag"
 )
 
-// Payments takes international shipping payments (Stripe Checkout in
+// Payments takes international shipping payments by card (Stripe in
 // production). Without it, requests link to the HCB donation page instead.
 type Payments interface {
-	CreateCheckout(ctx context.Context, in stripe.CheckoutInput) (*stripe.Session, error)
-	GetCheckout(ctx context.Context, id string) (*stripe.Session, error)
-	ExpireCheckout(ctx context.Context, id string) error
+	CreatePayment(ctx context.Context, in stripe.PaymentInput) (*stripe.Payment, error)
+	GetPayment(ctx context.Context, id string) (*stripe.Payment, error)
+	CancelPayment(ctx context.Context, id string) error
 }
 
-func payPath(id int64) string { return "/api/requests/" + strconv.FormatInt(id, 10) + "/pay" }
+// stripeKey is the publishable key the browser's card form uses, or "" when
+// card payments are off.
+func (s *server) stripeKey() string {
+	if s.Payments == nil {
+		return ""
+	}
+	return s.Config.StripePublishableKey
+}
 
-// payRequest sends the requester to the payment page for their request's
-// shipping: the one already open, or a new one. A paid or settled request goes
-// back to My requests.
+// payRequest starts (or picks up) the card payment for a request's shipping
+// and hands the browser its client secret; the card form on the page confirms
+// it with Stripe directly. A payment that already went through is recorded
+// instead of charged again.
 func (s *server) payRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -37,75 +45,74 @@ func (s *server) payRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 		writeErr(w, http.StatusNotFound, "card payments are off")
 		return
 	}
-	prev := req.StripeSessionID
+	if req.Status != swag.StatusAwaitingPayment {
+		writeErr(w, http.StatusConflict, "this request has nothing to pay")
+		return
+	}
+	prev := req.StripePaymentIntent
 	if prev != "" {
-		sess, err := s.Payments.GetCheckout(r.Context(), prev)
+		p, err := s.Payments.GetPayment(r.Context(), prev)
 		if err != nil {
-			// Don't open a second page when we can't tell whether the first was paid.
-			s.Log.Error("stripe: get checkout", "request", id, "err", err)
-			writeErr(w, http.StatusBadGateway, "couldn't reach the payment page; try again in a minute")
+			// Don't start a second payment when we can't tell whether the first went through.
+			s.Log.Error("stripe: get payment", "request", id, "err", err)
+			writeErr(w, http.StatusBadGateway, "couldn't reach the card processor; try again in a minute")
 			return
 		}
 		switch {
-		case sess.Status == "open" && req.Status == swag.StatusAwaitingPayment:
-			http.Redirect(w, r, sess.URL, http.StatusSeeOther)
-			return
-		case sess.Status == "complete":
-			// Paid, or a bank payment still on its way: either way, nothing more to pay.
+		case p.Paid():
 			s.syncPayment(r, req)
-			http.Redirect(w, r, "/requests", http.StatusSeeOther)
+			writeErr(w, http.StatusConflict, "this request is already paid")
+			return
+		case p.Status == "processing":
+			writeErr(w, http.StatusConflict, "your payment is still processing; check back in a few minutes")
+			return
+		case p.Open() && p.Amount == req.ShippingFeeCents:
+			s.track(r, v.user, "payment_started", map[string]any{"request_id": id, "fee_cents": req.ShippingFeeCents, "country": req.Address.Country, "retry": true})
+			writeJSON(w, http.StatusOK, map[string]any{"client_secret": p.ClientSecret, "amount_cents": p.Amount})
 			return
 		}
 	}
-	if req.Status != swag.StatusAwaitingPayment {
-		http.Redirect(w, r, "/requests", http.StatusSeeOther)
-		return
-	}
-	origin := s.origin(r)
 	key := s.Config.TheseusOrderTag + "-request-" + strconv.FormatInt(id, 10) + "-pay"
 	if prev != "" {
-		key += "-after-" + prev // a new page once the last one expired
+		key += "-after-" + prev // the last one was cancelled
 	}
-	sess, err := s.Payments.CreateCheckout(r.Context(), stripe.CheckoutInput{
-		RequestID: id, AmountCents: req.ShippingFeeCents, Email: v.user.Email,
-		Name:           "Shipping for Hack Club swag request #" + strconv.FormatInt(id, 10),
-		SuccessURL:     origin + "/requests?paid=" + strconv.FormatInt(id, 10),
-		CancelURL:      origin + "/requests",
-		IdempotencyKey: key,
+	p, err := s.Payments.CreatePayment(r.Context(), stripe.PaymentInput{
+		RequestID: id, AmountCents: req.ShippingFeeCents, Email: v.user.Email, IdempotencyKey: key,
+		Description: "Shipping for Hack Club swag request #" + strconv.FormatInt(id, 10),
 	})
 	if err != nil {
-		s.Log.Error("stripe: create checkout", "request", id, "err", err)
-		writeErr(w, http.StatusBadGateway, "couldn't open the payment page; try again in a minute")
+		s.Log.Error("stripe: create payment", "request", id, "err", err)
+		writeErr(w, http.StatusBadGateway, "couldn't reach the card processor; try again in a minute")
 		return
 	}
-	if err := s.Store.SetStripeSession(r.Context(), id, sess.ID); err != nil {
+	if err := s.Store.SetStripePayment(r.Context(), id, p.ID); err != nil {
 		s.serverErr(w, err)
 		return
 	}
-	s.track(r, v.user, "payment_started", map[string]any{"request_id": id, "fee_cents": req.ShippingFeeCents, "country": req.Address.Country})
-	http.Redirect(w, r, sess.URL, http.StatusSeeOther)
+	s.track(r, v.user, "payment_started", map[string]any{"request_id": id, "fee_cents": req.ShippingFeeCents, "country": req.Address.Country, "retry": prev != ""})
+	writeJSON(w, http.StatusOK, map[string]any{"client_secret": p.ClientSecret, "amount_cents": p.Amount})
 }
 
 // syncPayment checks Stripe for a request still waiting on its shipping
 // payment and, once it's paid in full, moves it to review. Errors leave the
 // request as it was; the next look tries again.
 func (s *server) syncPayment(r *http.Request, req *store.Request) *store.Request {
-	if s.Payments == nil || req.Status != swag.StatusAwaitingPayment || req.StripeSessionID == "" {
+	if s.Payments == nil || req.Status != swag.StatusAwaitingPayment || req.StripePaymentIntent == "" {
 		return req
 	}
-	sess, err := s.Payments.GetCheckout(r.Context(), req.StripeSessionID)
+	p, err := s.Payments.GetPayment(r.Context(), req.StripePaymentIntent)
 	if err != nil {
-		s.Log.Warn("stripe: get checkout", "request", req.ID, "err", err)
+		s.Log.Warn("stripe: get payment", "request", req.ID, "err", err)
 		return req
 	}
-	if !sess.Paid() {
+	if !p.Paid() {
 		return req
 	}
-	if sess.RequestID() != req.ID || sess.AmountTotal != req.ShippingFeeCents || sess.Currency != "usd" {
-		s.Log.Error("stripe: payment doesn't match request", "request", req.ID, "session", sess.ID, "amount", sess.AmountTotal, "currency", sess.Currency)
+	if p.RequestID() != req.ID || p.AmountReceived != req.ShippingFeeCents || p.Currency != "usd" {
+		s.Log.Error("stripe: payment doesn't match request", "request", req.ID, "payment", p.ID, "received", p.AmountReceived, "currency", p.Currency)
 		return req
 	}
-	paid, err := s.Store.MarkPaidByStripe(r.Context(), req.ID, sess.ID, sess.PaymentIntent)
+	paid, err := s.Store.MarkPaidByStripe(r.Context(), req.ID, p.ID)
 	if err != nil {
 		s.Log.Warn("stripe: mark paid", "request", req.ID, "err", err)
 		return req
@@ -120,13 +127,13 @@ func (s *server) syncPayments(r *http.Request, rs []*store.Request) {
 	}
 }
 
-// closePayment expires a cancelled request's open payment page, so it can't
-// be paid after all.
+// closePayment cancels a cancelled request's unpaid payment, so it can't be
+// paid after all.
 func (s *server) closePayment(r *http.Request, req *store.Request) {
-	if s.Payments == nil || req.StripeSessionID == "" {
+	if s.Payments == nil || req.StripePaymentIntent == "" {
 		return
 	}
-	if err := s.Payments.ExpireCheckout(r.Context(), req.StripeSessionID); err != nil {
-		s.Log.Warn("stripe: expire checkout", "request", req.ID, "err", err)
+	if err := s.Payments.CancelPayment(r.Context(), req.StripePaymentIntent); err != nil {
+		s.Log.Warn("stripe: cancel payment", "request", req.ID, "err", err)
 	}
 }

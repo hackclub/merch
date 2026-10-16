@@ -46,9 +46,10 @@ type Config struct {
 	// HCB donation page international recipients pay shipping through
 	HCBShippingPaymentURL string
 
-	// Stripe takes international shipping payments by card when set (replaces HCB)
-	StripeBaseURL   string
-	StripeSecretKey string
+	// Stripe takes international shipping payments by card when both keys are set (replaces HCB)
+	StripeBaseURL        string
+	StripeSecretKey      string
+	StripePublishableKey string // the browser's card form
 
 	AdminEmails []string
 	// When set, only these emails may sign in (ALLOWED_EMAILS). Empty lets
@@ -88,6 +89,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		HCBShippingPaymentURL:   get("HCB_SHIPPING_PAYMENT_URL", ""),
 		StripeBaseURL:           strings.TrimRight(get("STRIPE_BASE_URL", "https://api.stripe.com"), "/"),
 		StripeSecretKey:         get("STRIPE_SECRET_KEY", ""),
+		StripePublishableKey:    get("STRIPE_PUBLISHABLE_KEY", ""),
 		GooglePlacesBaseURL:     strings.TrimRight(get("GOOGLE_PLACES_BASE_URL", "https://places.googleapis.com"), "/"),
 		GooglePlacesAPIKey:      get("GOOGLE_PLACES_API_KEY", ""),
 		StaticDir:               get("STATIC_DIR", "web/build"),

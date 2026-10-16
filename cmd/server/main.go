@@ -77,13 +77,13 @@ func run(log *slog.Logger) error {
 	}
 
 	var payments httpapi.Payments
-	if cfg.StripeSecretKey != "" {
+	if cfg.StripeSecretKey != "" && cfg.StripePublishableKey != "" {
 		payments = stripe.New(cfg.StripeBaseURL, cfg.StripeSecretKey, nil)
 		if strings.HasPrefix(cfg.StripeSecretKey, "sk_test_") {
 			log.Warn("STRIPE_SECRET_KEY is a sandbox key: card payments are test payments")
 		}
 	} else {
-		log.Warn("STRIPE_SECRET_KEY not set: international shipping is paid on HCB (HCB_SHIPPING_PAYMENT_URL)")
+		log.Warn("STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY not both set: international shipping is paid on HCB (HCB_SHIPPING_PAYMENT_URL)")
 	}
 
 	var static fs.FS

@@ -407,21 +407,21 @@ func TestStripePayment(t *testing.T) {
 	it := mkItem(t, s, "Sti/A", true)
 	r, _ := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: it.ID, Quantity: 1}}, Status: swag.StatusAwaitingPayment, ShippingFeeCents: 1500}, noCheck)
 
-	if err := s.SetStripeSession(ctx, r.ID, "cs_1"); err != nil {
+	if err := s.SetStripePayment(ctx, r.ID, "pi_1"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.GetRequest(ctx, r.ID)
-	if got.StripeSessionID != "cs_1" || got.Status != swag.StatusAwaitingPayment {
-		t.Fatalf("after session = %+v", got)
+	if got.StripePaymentIntent != "pi_1" || got.Status != swag.StatusAwaitingPayment || got.PaidAt != nil {
+		t.Fatalf("after starting payment = %+v", got)
 	}
-	got, err := s.MarkPaidByStripe(ctx, r.ID, "cs_1", "pi_1")
+	got, err := s.MarkPaidByStripe(ctx, r.ID, "pi_1")
 	if err != nil || got.Status != swag.StatusPending || got.PaidAt == nil || got.StripePaymentIntent != "pi_1" {
 		t.Fatalf("MarkPaidByStripe = %+v, %v", got, err)
 	}
-	if _, err := s.MarkPaidByStripe(ctx, r.ID, "cs_1", "pi_1"); !errors.Is(err, ErrBadTransition) {
+	if _, err := s.MarkPaidByStripe(ctx, r.ID, "pi_1"); !errors.Is(err, ErrBadTransition) {
 		t.Fatalf("paying twice err = %v", err)
 	}
-	if err := s.SetStripeSession(ctx, 99999, "cs_2"); !errors.Is(err, ErrNotFound) {
+	if err := s.SetStripePayment(ctx, 99999, "pi_2"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing request err = %v", err)
 	}
 }

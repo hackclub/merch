@@ -316,8 +316,7 @@ type Request struct {
 	CreatedAt        time.Time     `json:"created_at"`
 	Lines            []RequestLine `json:"lines"`
 
-	// Stripe Checkout: the latest payment page opened, and the payment that paid it.
-	StripeSessionID     string `json:"-"`
+	// Stripe: the request's card payment (paid once paid_at is set).
 	StripePaymentIntent string `json:"stripe_payment_intent,omitempty"`
 }
 
@@ -407,7 +406,7 @@ const requestSelect = `
 	SELECT r.id, r.user_id, u.email, r.status, r.purpose, r.first_name, r.last_name, r.line_1, r.line_2, r.city, r.state,
 		r.postal_code, r.country, r.phone_number, r.shipping_fee_cents, r.paid_at, r.note, r.admin_note, r.internal_note,
 		coalesce(r.theseus_order_id, ''), r.tracking_number, r.carrier, r.mailed_at, r.source, r.airtable_record_id,
-		r.stripe_session_id, r.stripe_payment_intent, r.created_at
+		r.stripe_payment_intent, r.created_at
 	FROM swag_requests r JOIN users u ON u.id = r.user_id`
 
 func scanRequest(row pgx.Row) (*Request, error) {
@@ -416,7 +415,7 @@ func scanRequest(row pgx.Row) (*Request, error) {
 	err := row.Scan(&r.ID, &r.UserID, &r.UserEmail, &r.Status, &r.Purpose, &a.FirstName, &a.LastName, &a.Line1, &a.Line2, &a.City, &a.State,
 		&a.PostalCode, &a.Country, &a.Phone, &r.ShippingFeeCents, &r.PaidAt, &r.Note, &r.AdminNote, &r.InternalNote,
 		&r.TheseusOrderID, &r.TrackingNumber, &r.Carrier, &r.MailedAt, &r.Source, &r.AirtableRecordID,
-		&r.StripeSessionID, &r.StripePaymentIntent, &r.CreatedAt)
+		&r.StripePaymentIntent, &r.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -492,9 +491,9 @@ func (s *Store) MarkPaid(ctx context.Context, id int64) (*Request, error) {
 	return s.transition(ctx, id, swag.StatusPending, `paid_at = now(), admin_note = admin_note || $3`, "")
 }
 
-// SetStripeSession remembers the payment page opened for a request.
-func (s *Store) SetStripeSession(ctx context.Context, id int64, sessionID string) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE swag_requests SET stripe_session_id = $2, updated_at = now() WHERE id = $1`, id, sessionID)
+// SetStripePayment remembers the card payment started for a request.
+func (s *Store) SetStripePayment(ctx context.Context, id int64, paymentIntent string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE swag_requests SET stripe_payment_intent = $2, updated_at = now() WHERE id = $1`, id, paymentIntent)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
@@ -502,8 +501,8 @@ func (s *Store) SetStripeSession(ctx context.Context, id int64, sessionID string
 }
 
 // MarkPaidByStripe records a card payment and moves the request to review.
-func (s *Store) MarkPaidByStripe(ctx context.Context, id int64, sessionID, paymentIntent string) (*Request, error) {
-	return s.transition(ctx, id, swag.StatusPending, `paid_at = now(), stripe_session_id = $3, stripe_payment_intent = $4`, sessionID, paymentIntent)
+func (s *Store) MarkPaidByStripe(ctx context.Context, id int64, paymentIntent string) (*Request, error) {
+	return s.transition(ctx, id, swag.StatusPending, `paid_at = now(), stripe_payment_intent = $3`, paymentIntent)
 }
 
 // MarkDispatched records the mail.hackclub.com order id.

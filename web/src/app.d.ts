@@ -5,7 +5,9 @@ declare global {
 		// interface Error {}
 		// interface Locals {}
 		// interface PageData {}
-		// interface PageState {}
+		interface PageState {
+			payError?: string; // why the card on the request form didn't go through
+		}
 		// interface Platform {}
 	}
 }

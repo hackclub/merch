@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strconv"
 	"sync"
 	"testing"
@@ -13,64 +12,74 @@ import (
 	"github.com/hackclub/merch/internal/swag"
 )
 
-// fakeStripe stands in for Stripe Checkout.
+// fakeStripe stands in for Stripe's PaymentIntents.
 type fakeStripe struct {
-	mu       sync.Mutex
-	sessions map[string]*stripe.Session
-	created  []stripe.CheckoutInput
-	expired  []string
+	mu        sync.Mutex
+	payments  map[string]*stripe.Payment
+	created   []stripe.PaymentInput
+	cancelled []string
 }
 
-func (f *fakeStripe) CreateCheckout(_ context.Context, in stripe.CheckoutInput) (*stripe.Session, error) {
+func (f *fakeStripe) CreatePayment(_ context.Context, in stripe.PaymentInput) (*stripe.Payment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.created = append(f.created, in)
-	id := fmt.Sprintf("cs_test_%d", len(f.created))
-	s := &stripe.Session{ID: id, URL: "https://checkout.example/" + id, Status: "open", PaymentStatus: "unpaid", AmountTotal: in.AmountCents, Currency: "usd",
+	id := fmt.Sprintf("pi_%d", len(f.created))
+	p := &stripe.Payment{ID: id, ClientSecret: id + "_secret", Status: "requires_payment_method", Amount: in.AmountCents, Currency: "usd",
 		Metadata: map[string]string{"request_id": strconv.FormatInt(in.RequestID, 10)}}
-	if f.sessions == nil {
-		f.sessions = map[string]*stripe.Session{}
+	if f.payments == nil {
+		f.payments = map[string]*stripe.Payment{}
 	}
-	f.sessions[id] = s
-	cp := *s
+	f.payments[id] = p
+	cp := *p
 	return &cp, nil
 }
 
-func (f *fakeStripe) GetCheckout(_ context.Context, id string) (*stripe.Session, error) {
+func (f *fakeStripe) GetPayment(_ context.Context, id string) (*stripe.Payment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	s, ok := f.sessions[id]
+	p, ok := f.payments[id]
 	if !ok {
-		return nil, fmt.Errorf("stripe: 404: no such session")
+		return nil, fmt.Errorf("stripe: 404: no such payment")
 	}
-	cp := *s
+	cp := *p
 	return &cp, nil
 }
 
-func (f *fakeStripe) ExpireCheckout(_ context.Context, id string) error {
+func (f *fakeStripe) CancelPayment(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.expired = append(f.expired, id)
-	f.sessions[id].Status = "expired"
+	f.cancelled = append(f.cancelled, id)
+	f.payments[id].Status = "canceled"
 	return nil
 }
 
-// pay completes a session as if the person paid amount cents on it.
-func (f *fakeStripe) pay(id string, amount int) {
+// set changes a payment as if the browser confirmed a card: status, and what was received.
+func (f *fakeStripe) set(id, status string, received int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	s := f.sessions[id]
-	s.Status, s.PaymentStatus, s.AmountTotal, s.PaymentIntent = "complete", "paid", amount, "pi_"+id
+	f.payments[id].Status, f.payments[id].AmountReceived = status, received
 }
 
 func newStripeHarness(t *testing.T) (*harness, *fakeStripe) {
 	fs := &fakeStripe{}
-	return newHarness(t, func(d *Deps) { d.Payments = fs }), fs
+	h := newHarness(t, func(d *Deps) {
+		d.Payments = fs
+		d.Config.StripePublishableKey = "pk_test_x"
+	})
+	return h, fs
 }
 
 type viewed struct {
 	store.Request
 	PaymentURL string `json:"payment_url"`
+	StripeKey  string `json:"stripe_key"`
+}
+
+type payResponse struct {
+	ClientSecret string `json:"client_secret"`
+	AmountCents  int    `json:"amount_cents"`
+	Error        string `json:"error"`
 }
 
 func (h *harness) intlRequest(email string) viewed {
@@ -83,76 +92,112 @@ func (h *harness) intlRequest(email string) viewed {
 	return r
 }
 
-// pay follows the request's payment link and returns where it redirects.
-func (h *harness) payLink(c *http.Client, r viewed) (int, string) {
+func (h *harness) pay(email string, id int64) (int, payResponse) {
 	h.t.Helper()
-	resp, err := c.Get(h.srv.URL + r.PaymentURL)
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	resp.Body.Close()
-	return resp.StatusCode, resp.Header.Get("Location")
+	var out payResponse
+	code := h.do(h.client(email), "POST", fmt.Sprintf("/api/requests/%d/pay", id), map[string]any{}, &out)
+	return code, out
 }
 
 func TestCardPaymentForInternationalShipping(t *testing.T) {
 	h, fs := newStripeHarness(t)
-	user := h.client(userEmail)
 	r := h.intlRequest(userEmail)
-	if r.Status != swag.StatusAwaitingPayment || r.PaymentURL != fmt.Sprintf("/api/requests/%d/pay", r.ID) {
+	if r.Status != swag.StatusAwaitingPayment || r.StripeKey != "pk_test_x" || r.PaymentURL != "" {
 		t.Fatalf("created = %+v", r)
+	}
+	var cat struct {
+		Settings struct {
+			StripeKey string `json:"stripe_key"`
+		}
+	}
+	h.do(h.client(""), "GET", "/api/catalog", nil, &cat)
+	if cat.Settings.StripeKey != "pk_test_x" {
+		t.Fatalf("catalog stripe_key = %q", cat.Settings.StripeKey)
 	}
 
 	// Only the requester can pay.
-	if code, _ := h.payLink(h.client(authorEmail), r); code != 404 {
-		t.Fatalf("someone else's pay link = %d", code)
+	if code, _ := h.pay(authorEmail, r.ID); code != 404 {
+		t.Fatalf("someone else's pay = %d", code)
 	}
 
-	code, loc := h.payLink(user, r)
-	if code != http.StatusSeeOther || loc != "https://checkout.example/cs_test_1" {
-		t.Fatalf("pay = %d %q", code, loc)
+	code, p := h.pay(userEmail, r.ID)
+	if code != 200 || p.ClientSecret != "pi_1_secret" || p.AmountCents != 1500 {
+		t.Fatalf("pay = %d %+v", code, p)
 	}
 	in := fs.created[0]
-	if in.RequestID != r.ID || in.AmountCents != 1500 || in.Email != userEmail ||
-		in.SuccessURL != fmt.Sprintf("http://app.test/requests?paid=%d", r.ID) || in.CancelURL != "http://app.test/requests" ||
-		in.IdempotencyKey != fmt.Sprintf("merch-request-%d-pay", r.ID) {
-		t.Fatalf("checkout input = %+v", in)
+	if in.RequestID != r.ID || in.AmountCents != 1500 || in.Email != userEmail || in.IdempotencyKey != fmt.Sprintf("merch-request-%d-pay", r.ID) {
+		t.Fatalf("payment input = %+v", in)
 	}
 	if ev := h.events("payment_started"); len(ev) != 1 || props(t, ev[0])["fee_cents"] != 1500.0 || props(t, ev[0])["country"] != "DE" {
 		t.Fatalf("payment_started = %+v", ev)
 	}
 
-	// Clicking again reopens the same payment page instead of a second one.
-	if _, loc := h.payLink(user, r); loc != "https://checkout.example/cs_test_1" || len(fs.created) != 1 {
-		t.Fatalf("second click = %q, %d sessions", loc, len(fs.created))
+	// A declined card leaves the payment open: trying again reuses it.
+	if _, p := h.pay(userEmail, r.ID); p.ClientSecret != "pi_1_secret" || len(fs.created) != 1 {
+		t.Fatalf("retry = %+v, %d payments", p, len(fs.created))
 	}
 
-	// Paying moves the request to review as soon as they're back on My requests.
-	fs.pay("cs_test_1", 1500)
+	// Once the card goes through, the request moves to review the next time it's looked at.
+	fs.set("pi_1", "succeeded", 1500)
 	var mine struct{ Requests []viewed }
-	h.do(user, "GET", "/api/requests", nil, &mine)
+	h.do(h.client(userEmail), "GET", "/api/requests", nil, &mine)
 	got := mine.Requests[0]
-	if got.Status != swag.StatusPending || got.PaidAt == nil || got.StripePaymentIntent != "pi_cs_test_1" || got.PaymentURL != "" {
+	if got.Status != swag.StatusPending || got.PaidAt == nil || got.StripePaymentIntent != "pi_1" || got.StripeKey != "" {
 		t.Fatalf("after paying = %+v", got)
 	}
 	if ev := h.events("payment_completed"); len(ev) != 1 || props(t, ev[0])["request_id"] != float64(r.ID) || ev[0].UserID == nil {
 		t.Fatalf("payment_completed = %+v", ev)
 	}
-	h.do(user, "GET", "/api/requests", nil, &mine)
+	h.do(h.client(userEmail), "GET", "/api/requests", nil, &mine)
 	if len(h.events("payment_completed")) != 1 {
 		t.Fatal("payment recorded twice")
 	}
+	if code, p := h.pay(userEmail, r.ID); code != 409 || p.Error == "" {
+		t.Fatalf("pay after paid = %d %+v", code, p)
+	}
+}
 
-	// An old pay link goes back to My requests.
-	if code, loc := h.payLink(user, r); code != http.StatusSeeOther || loc != "/requests" {
-		t.Fatalf("pay after paid = %d %q", code, loc)
+func TestPayChecksStripeFirst(t *testing.T) {
+	h, fs := newStripeHarness(t)
+	r := h.intlRequest(userEmail)
+	h.pay(userEmail, r.ID)
+
+	// Paid but not yet seen: pay records it instead of charging again.
+	fs.set("pi_1", "succeeded", 1500)
+	if code, _ := h.pay(userEmail, r.ID); code != 409 || len(fs.created) != 1 {
+		t.Fatalf("pay when already paid = %d, %d payments", code, len(fs.created))
+	}
+	if got, _ := h.store.GetRequest(context.Background(), r.ID); got.Status != swag.StatusPending {
+		t.Fatalf("status = %s", got.Status)
+	}
+}
+
+func TestPaymentStillProcessing(t *testing.T) {
+	h, fs := newStripeHarness(t)
+	r := h.intlRequest(userEmail)
+	h.pay(userEmail, r.ID)
+	fs.set("pi_1", "processing", 0)
+	if code, p := h.pay(userEmail, r.ID); code != 409 || len(fs.created) != 1 {
+		t.Fatalf("pay while processing = %d %+v, %d payments", code, p, len(fs.created))
+	}
+}
+
+func TestCancelledPaymentStartsANewOne(t *testing.T) {
+	h, fs := newStripeHarness(t)
+	r := h.intlRequest(userEmail)
+	h.pay(userEmail, r.ID)
+	fs.set("pi_1", "canceled", 0)
+	code, p := h.pay(userEmail, r.ID)
+	if code != 200 || p.ClientSecret != "pi_2_secret" || fs.created[1].IdempotencyKey != fmt.Sprintf("merch-request-%d-pay-after-pi_1", r.ID) {
+		t.Fatalf("pay after cancel = %d %+v %+v", code, p, fs.created)
 	}
 }
 
 func TestCardPaymentSeenByAdminList(t *testing.T) {
 	h, fs := newStripeHarness(t)
 	r := h.intlRequest(userEmail)
-	h.payLink(h.client(userEmail), r)
-	fs.pay("cs_test_1", 1500)
+	h.pay(userEmail, r.ID)
+	fs.set("pi_1", "succeeded", 1500)
 	var all struct{ Requests []viewed }
 	h.do(h.client(adminEmail), "GET", "/api/admin/requests", nil, &all)
 	if all.Requests[0].Status != swag.StatusPending {
@@ -166,54 +211,37 @@ func TestCardPaymentSeenByAdminList(t *testing.T) {
 func TestCardPaymentWrongAmountIsNotAccepted(t *testing.T) {
 	h, fs := newStripeHarness(t)
 	r := h.intlRequest(userEmail)
-	h.payLink(h.client(userEmail), r)
-	fs.pay("cs_test_1", 100)
-	got, _ := h.store.GetRequest(context.Background(), r.ID)
+	h.pay(userEmail, r.ID)
+	fs.set("pi_1", "succeeded", 100)
 	var mine struct{ Requests []viewed }
 	h.do(h.client(userEmail), "GET", "/api/requests", nil, &mine)
-	if mine.Requests[0].Status != swag.StatusAwaitingPayment || got.PaidAt != nil {
+	if mine.Requests[0].Status != swag.StatusAwaitingPayment || mine.Requests[0].PaidAt != nil {
 		t.Fatalf("underpaid request = %+v", mine.Requests[0])
 	}
 }
 
-func TestCancelClosesPaymentPage(t *testing.T) {
+func TestCancelStopsPayment(t *testing.T) {
 	h, fs := newStripeHarness(t)
 	r := h.intlRequest(userEmail)
-	h.payLink(h.client(userEmail), r)
+	h.pay(userEmail, r.ID)
 	var got store.Request
 	if code := h.do(h.client(userEmail), "POST", fmt.Sprintf("/api/requests/%d/cancel", r.ID), map[string]any{}, &got); code != 200 || got.Status != swag.StatusCancelled {
 		t.Fatalf("cancel = %d %+v", code, got)
 	}
-	if len(fs.expired) != 1 || fs.expired[0] != "cs_test_1" {
-		t.Fatalf("expired = %v", fs.expired)
+	if len(fs.cancelled) != 1 || fs.cancelled[0] != "pi_1" {
+		t.Fatalf("cancelled = %v", fs.cancelled)
 	}
 }
 
-func TestUSRequestHasNoPaymentLink(t *testing.T) {
+func TestUSRequestHasNothingToPay(t *testing.T) {
 	h, _ := newStripeHarness(t)
 	it := h.mkItem("Sti/A", true)
 	var r viewed
 	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
-	if r.Status != swag.StatusPending || r.PaymentURL != "" {
+	if r.Status != swag.StatusPending || r.StripeKey != "" {
 		t.Fatalf("US request = %+v", r)
 	}
-}
-
-// A bank payment finishes Checkout before the money arrives: wait for it, don't
-// open a second page.
-func TestBankPaymentStillProcessing(t *testing.T) {
-	h, fs := newStripeHarness(t)
-	user := h.client(userEmail)
-	r := h.intlRequest(userEmail)
-	h.payLink(user, r)
-	fs.mu.Lock()
-	fs.sessions["cs_test_1"].Status = "complete"
-	fs.mu.Unlock()
-	if code, loc := h.payLink(user, r); code != http.StatusSeeOther || loc != "/requests" || len(fs.created) != 1 {
-		t.Fatalf("pay while processing = %d %q, %d sessions", code, loc, len(fs.created))
-	}
-	got, _ := h.store.GetRequest(context.Background(), r.ID)
-	if got.Status != swag.StatusAwaitingPayment {
-		t.Fatalf("status = %s", got.Status)
+	if code, _ := h.pay(userEmail, r.ID); code != 409 {
+		t.Fatalf("pay US request = %d", code)
 	}
 }

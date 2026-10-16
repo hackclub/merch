@@ -14,7 +14,8 @@
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
-	import { payWhere } from '$lib/payment';
+	import { payShipping, payWhere, type CardForm } from '$lib/payment';
+	import CardField from '$lib/CardField.svelte';
 	import { arrivalText, costRows, summaryText, costToYou, worthText, type CostSides, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Haul3D from '$lib/Haul3D.svelte';
@@ -34,6 +35,7 @@
 	let understood = $state(false);
 	let error = $state('');
 	let submitting = $state(false);
+	let card = $state<CardForm | null>(null);
 	// Delivery times from past shipments, and this request's packing and arrival estimate.
 	let summary = $state<ShippingSummary | null>(null);
 	// `costs`: what it costs Hack Club to send, in the US and abroad.
@@ -70,6 +72,8 @@
 	const count = $derived(totalQuantity(cart));
 	const problems = $derived(catalog ? cartErrors(cart, catalog.settings.max_items_per_request, catalog.items, sizes) : []);
 	const intl = $derived(isInternational(address.country));
+	// International shipping is paid by card right on the form when Stripe is set up.
+	const payByCard = $derived(intl && !!catalog?.settings.stripe_key && !!quote?.estimate.fee_cents);
 	// Two strips of everything under the intro: photos and products on top, magazine pages and backs below.
 	const rows = $derived(catalog ? galleryRows(catalog.items) : null);
 	// What's coming, line by line (one per size), for the 3D preview: beside the sheet on wide screens, above Submit otherwise.
@@ -147,15 +151,26 @@
 		error = '';
 		submitting = true;
 		try {
+			// Check the card before the request exists, so a typo doesn't leave an unpaid request.
+			const cardProblem = payByCard && card ? await card.check() : null;
+			if (cardProblem) {
+				error = cardProblem;
+				return;
+			}
 			const r = await api.post<SwagRequest>('/api/requests', {
 				purpose,
 				address: { ...address, country: address.country.trim().toUpperCase() },
 				lines: cartLines(cart, catalog.items, sizes),
 				note: needsReason(purpose) ? note : ''
 			});
+			// Charge the card before emptying the bag: the card field goes away with it.
+			const failed = r.stripe_key && card ? await payShipping(card, r.id, (path) => api.post(path), window.location.origin) : null;
 			setCart(emptyCart());
 			setSizes({});
-			if (r.payment_url) window.location.href = r.payment_url;
+			if (failed !== null) {
+				// Paid: My requests thanks them. Not paid: the request waits there, with the card field to try again.
+				goto(failed ? `/requests?unpaid=${r.id}` : `/requests?paid=${r.id}`, { state: { payError: failed } });
+			} else if (r.payment_url) window.location.href = r.payment_url;
 			else goto('/requests');
 		} catch (e) {
 			error = e instanceof ApiError ? e.message : 'Something went wrong.';
@@ -337,8 +352,11 @@
 				{#if intl && quote?.estimate.fee_cents}
 					<p>
 						Shipping is <strong>{formatCents(quote.estimate.fee_cents)}</strong>, what postage for this package usually costs.
-						{payWhere(!!catalog?.settings.card_payments)}
+						{payWhere(payByCard)}
 					</p>
+					{#if payByCard && catalog?.settings.stripe_key}
+						<CardField bind:this={card} stripeKey={catalog.settings.stripe_key} amountCents={quote.estimate.fee_cents} billing={address} />
+					{/if}
 				{/if}
 				<div class="understand">
 					<p>Hack Club is a charity. The most effective way we can get more teenagers into Hack Club is to help people like you spread it!</p>
@@ -368,7 +386,7 @@
 				{#each problems as p}<p class="error">{p}</p>{/each}
 				{#if quoteError}<p class="error">{quoteError}</p>{/if}
 				<button disabled={submitting || problems.length > 0 || !!quoteError || !understood}>
-					{submitting ? 'Sending…' : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
+					{submitting ? 'Sending…' : payByCard && quote ? `Submit and pay ${formatCents(quote.estimate.fee_cents)}` : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
 				</button>
 			</form>
 		{/if}
