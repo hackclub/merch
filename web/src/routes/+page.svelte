@@ -80,6 +80,8 @@
 	);
 	// Wide enough for the haul to sit in the grey space left of the sheet, so it grows as people pick.
 	const side = new MediaQuery('min-width: 74rem');
+	// The side haul can grow to fill the window for a closer look.
+	let bigHaul = $state(false);
 	const fee = $derived(catalog?.settings.international_shipping_fee_cents ?? 0);
 
 	// Re-quote shipping as the bag or country changes. The server refuses what won't pack together
@@ -372,15 +374,20 @@
 		<p class="muted">Loading swag…</p>
 	{/if}
 	{#if catalog && count > 0 && haul.length && side.current}
-		<aside class="haul-side" aria-label="Your request so far">
+		<aside class="haul-side" class:big={bigHaul} aria-label="Your request so far">
 			<div class="haul-head">
 				<strong>Your request · {count} item{count === 1 ? '' : 's'}</strong>
-				<button type="button" class="link" onclick={clearAll}>Clear</button>
+				<span class="haul-actions">
+					<button type="button" class="link" data-track={bigHaul ? 'haul-shrink' : 'haul-expand'} aria-expanded={bigHaul} onclick={() => (bigHaul = !bigHaul)}>{bigHaul ? 'Shrink' : 'Expand'}</button>
+					<button type="button" class="link" onclick={clearAll}>Clear</button>
+				</span>
 			</div>
 			<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
 		</aside>
 	{/if}
 </div>
+
+<svelte:window onkeydown={(e) => e.key === 'Escape' && bigHaul && (bigHaul = false)} />
 
 <style>
 	.reason {
@@ -469,6 +476,14 @@
 	}
 	.haul-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
 	.haul-head button.link { font-size: 0.9rem; }
+	.haul-actions { display: flex; gap: 1rem; }
+	/* Expanded: the haul fills the window, its view as tall as the window allows. */
+	.haul-side.big {
+		z-index: 3; top: 1.5rem; right: 1.5rem; width: auto; max-height: none; overflow: hidden; grid-template-rows: auto 1fr;
+		box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.5);
+	}
+	.haul-side.big :global(.haul) { grid-template-rows: 1fr auto; min-height: 0; }
+	.haul-side.big :global(.stage) { aspect-ratio: auto; min-height: 0; }
 	.send button.link { margin-top: 0.5rem; }
 	/* Picking how many of a booklet or an item that plays a clip: the amount, stacked up in 3D, under the row. */
 	.amount-3d { flex-basis: 100%; padding-left: 4.65rem; }
