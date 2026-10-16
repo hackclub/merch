@@ -55,11 +55,20 @@ func scanEstimate(history []PastShipment, country string, p Packing, now time.Ti
 		e.TransitBasis, e.TransitSamples = basis, len(transit)
 	}
 	near := func(s PastShipment) bool {
-		return s.WeightOz > 0 && math.Abs(s.WeightOz-p.ContentsOz) <= max(2, 0.25*p.ContentsOz)
+		return s.WeightOz > 0 && math.Abs(s.WeightOz-p.WeightOz) <= max(2, 0.25*p.WeightOz)
 	}
+	var newest time.Time
+	for _, s := range history {
+		if s.ShippedOn.After(newest) {
+			newest = s.ShippedOn
+		}
+	}
+	recent := func(s PastShipment) bool { return !s.ShippedOn.Before(newest.AddDate(0, 0, -RecentPostageDays)) }
 	postage, basis := pick(func(s PastShipment) (float64, bool) {
 		return float64(s.PostageCents), s.PostageCents > 0
-	}, level{country, func(s PastShipment) bool { return sameCountry(s) && near(s) }},
+	}, level{country, func(s PastShipment) bool { return sameCountry(s) && near(s) && recent(s) }},
+		level{country, func(s PastShipment) bool { return sameCountry(s) && near(s) }},
+		level{scope, func(s PastShipment) bool { return sameScope(s) && near(s) && recent(s) }},
 		level{scope, func(s PastShipment) bool { return sameScope(s) && near(s) }})
 	if postage != nil {
 		e.PostageCents = [2]int{int(math.Round(percentile(postage, 0.2))), int(math.Round(percentile(postage, 0.8)))}
@@ -91,7 +100,8 @@ func randomHistory(r *rand.Rand, n int) []PastShipment {
 	classes := []string{ClassParcel, ClassLetter}
 	var h []PastShipment
 	for range n {
-		s := PastShipment{Country: countries[r.IntN(len(countries))], Class: classes[r.IntN(2)]}
+		s := PastShipment{Country: countries[r.IntN(len(countries))], Class: classes[r.IntN(2)],
+			ShippedOn: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, -r.IntN(400))}
 		if r.IntN(5) > 0 {
 			s.WeightOz = math.Round(r.Float64()*400) / 10
 		}

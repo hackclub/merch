@@ -293,23 +293,29 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   (8x6x6, 10x8x6, 13x10x4, 14x10x6, 18x12x6, 18x14x10). StayFlat sizes and weights come from
   Uline's specs (case weight / 100). Carton weights scale Uline's 10x8x6 (0.44 lb) by board
   area, and each holds up to 70 lb (the USPS Ground Advantage and UPS limit). The bubble mailer's size isn't on the invoices; it's modeled as a #4 (9x13½, 1 oz).
-  Posters (thin, longer than 13½") ship only in the 13x18 StayFlat. `Pack` uses item sizes
+  Posters (thin, longer than 13½") ship in the 13x18 StayFlat, or flat on the bottom of an
+  18-inch carton with whatever else is in the request (as AGH ships 50 posters, or posters with
+  shirts). The envelope stops at 1.8 oz packed (30 stickers): AGH mails bigger sticker orders as
+  parcels. What an item `ships_with` is packed too (one per unit). `Pack` uses item sizes
   (`width_in`, `height_in`, `thickness_in`; stickers and postcards have defaults; anything else
   counts as a bulky 10x8x1) and `items.weight_oz`. With no weight set, it works one out from
-  the paper size (0.625 oz/in³). `Validate` refuses requests that don't fit in one package (a
-  poster with 50 postcards) and international requests over 3 lb packed.
-- **Warehouse weights don't include packaging.** Zenventory logs each shipment's weight from
-  per-SKU weights (all 78 single M shirts are exactly 6.0 oz), and labels are bought at that
-  weight. So `items.weight_oz` is the item alone, `Pack` adds the mailer's `TareOz` for the
-  real weight (the 3 lb check), and postage estimates match history on the contents weight.
+  the paper size (0.625 oz/in³). `Validate` refuses requests that don't fit in one package and
+  international requests over 3 lb packed.
+- **Warehouse weights include the packaging** (except shirts). Zenventory has no per-SKU
+  weights; AGH weighs packages and buys labels at that weight. One poster logs 7.2 oz (1.2 oz
+  of paper in a 6 oz StayFlat), n Mini-Magazines about n × 0.96 + 1 oz; only single shirts log
+  a flat 6.0 oz. So `items.weight_oz` is the item alone, `Pack` adds the mailer's `TareOz`, and
+  postage estimates match history on that packed weight.
 - **Estimates** (`internal/swag/estimate.go`): arrival window = handling + transit, in business
   days (Mon–Fri; the shop intro gives transit only, after "Shipped next day Mon–Fri"), from the 20th to the 80th percentile of past shipments to the same country and class. With fewer than
   10 samples, it uses all US or all international shipments instead. Postage compares packages
-  of about the same weight; its range is shown only to admins (everyone sees the typical
+  of about the same packed weight, from the last 180 days of history first (postage rises every
+  year: a 5-9 oz US parcel went from $4.71 in early 2025 to $7.27 in mid-2026), then the same
+  country's older history, then all US or all international; its range is shown only to admins (everyone sees the typical
   postage in the cost table). The shop intro, the request form, My requests and the admin
   request list show these estimates (`POST /api/shipping/estimate`, `GET /api/shipping`).
 - **International fee:** an international request pays the median postage of past shipments like
-  it (same country, about the same contents weight), rounded up to a whole dollar
+  it (same country, about the same packed weight, recent first), rounded up to a whole dollar
   (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback
   when there's no postage history; 0 still makes international shipping free.
 - **Cost to Hack Club** (`internal/swag/costs.go`, shown to everyone above the request form's

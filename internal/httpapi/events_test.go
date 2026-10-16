@@ -154,14 +154,14 @@ func TestEventsAreJSONOnly(t *testing.T) {
 
 func TestShippingEstimateIsLogged(t *testing.T) {
 	h := newHarness(t)
-	poster, postcard, magazine := shippingFixture(t, h)
+	poster, _, magazine := shippingFixture(t, h)
 	c := h.visitorClient(userEmail, "s1", "/#request")
 	body := map[string]any{"country": "de", "lines": []swag.Line{{ItemID: magazine.ID, Quantity: 1}}}
 	if code := h.do(c, "POST", "/api/shipping/estimate", body, nil); code != 200 {
 		t.Fatalf("estimate = %d", code)
 	}
 	// One that won't pack is logged with why.
-	body = map[string]any{"country": "US", "lines": []swag.Line{{ItemID: poster.ID, Quantity: 1}, {ItemID: postcard.ID, Quantity: 50}}}
+	body = map[string]any{"country": "US", "lines": []swag.Line{{ItemID: poster.ID, Quantity: 1}, {ItemID: magazine.ID, Quantity: 150}}}
 	if code := h.do(c, "POST", "/api/shipping/estimate", body, nil); code != 422 {
 		t.Fatalf("won't pack = %d", code)
 	}

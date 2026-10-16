@@ -16,6 +16,7 @@ type PastShipment struct {
 	PostageCents int      // 0 = unknown
 	HandlingDays *float64 // ordered -> mailed, in business days
 	TransitDays  *float64 // mailed -> delivered, in business days
+	ShippedOn    time.Time
 }
 
 // BusinessDays counts the weekdays after from, up to and including to.
@@ -72,6 +73,12 @@ type Estimate struct {
 // fewer, the estimate widens to all of the US or all international shipments.
 const MinSamples = 10
 
+// RecentPostageDays is how far back postage looks first, counted from the
+// newest shipment in the history. Rates go up every year (a US parcel of 5-9 oz
+// cost $4.71 in early 2025 and $7.27 in mid-2026), so older prices come in only
+// when there are too few recent ones.
+const RecentPostageDays = 180
+
 // Dates are in Hack Club HQ's time zone, where the warehouse ships from.
 var shipZone = func() *time.Location {
 	if l, err := time.LoadLocation("America/New_York"); err == nil {
@@ -116,6 +123,7 @@ type group struct {
 	intl      bool   // !byCountry
 	anyClass  bool
 	class     string
+	recent    bool // postage only: shipped in the last RecentPostageDays
 }
 
 type weighed struct{ oz, cents float64 }
@@ -128,9 +136,18 @@ func scopeGroup(intl bool, class string) group { return group{intl: intl, class:
 
 func anyClassGroup(intl bool) group { return group{intl: intl, anyClass: true} }
 
+func recentGroup(g group) group { g.recent = true; return g }
+
 // NewHistory indexes past shipments for estimates.
 func NewHistory(ships []PastShipment) *History {
 	h := &History{transit: map[group][]float64{}, handling: map[group][]float64{}, postage: map[group][]weighed{}}
+	var newest time.Time
+	for _, s := range ships {
+		if s.ShippedOn.After(newest) {
+			newest = s.ShippedOn
+		}
+	}
+	since := newest.AddDate(0, 0, -RecentPostageDays)
 	for _, s := range ships {
 		intl := IsInternational(s.Country)
 		if s.TransitDays != nil {
@@ -147,6 +164,10 @@ func NewHistory(ships []PastShipment) *History {
 			w := weighed{s.WeightOz, float64(s.PostageCents)}
 			for _, g := range []group{countryGroup(s.Country, s.Class), scopeGroup(intl, s.Class)} {
 				h.postage[g] = append(h.postage[g], w)
+				if !s.ShippedOn.Before(since) {
+					g.recent = true
+					h.postage[g] = append(h.postage[g], w)
+				}
 			}
 		}
 	}
@@ -192,15 +213,17 @@ func (h *History) Estimate(country string, p Packing, now time.Time) Estimate {
 	}
 
 	// Postage depends on weight, so compare with packages of about the same
-	// weight. The warehouse logs weights from per-SKU weights without the
-	// packaging (78 single M shirts all logged at exactly 6.0 oz), and labels
-	// were bought at those weights, so match on the contents.
+	// weight. The warehouse weighs packages with their packaging (one poster
+	// logs 7.2 oz: 1.2 oz of paper in a 6 oz StayFlat) and buys labels at that
+	// weight, so match on the packed weight. Recent prices come first (see
+	// RecentPostageDays); the country matters more than the date, since
+	// Asendia's rates differ a lot by country.
 	near := func(ws []weighed) []float64 {
-		d := max(2, 0.25*p.ContentsOz)
-		i, _ := slices.BinarySearchFunc(ws, p.ContentsOz-d-1e-6, func(w weighed, oz float64) int { return cmp.Compare(w.oz, oz) })
+		d := max(2, 0.25*p.WeightOz)
+		i, _ := slices.BinarySearchFunc(ws, p.WeightOz-d-1e-6, func(w weighed, oz float64) int { return cmp.Compare(w.oz, oz) })
 		var xs []float64
-		for ; i < len(ws) && ws[i].oz <= p.ContentsOz+d+1e-6; i++ {
-			if math.Abs(ws[i].oz-p.ContentsOz) <= d {
+		for ; i < len(ws) && ws[i].oz <= p.WeightOz+d+1e-6; i++ {
+			if math.Abs(ws[i].oz-p.WeightOz) <= d {
 				xs = append(xs, ws[i].cents)
 			}
 		}
@@ -209,7 +232,8 @@ func (h *History) Estimate(country string, p Packing, now time.Time) Estimate {
 	for _, l := range []struct {
 		g     group
 		basis string
-	}{{countryGroup(country, class), country}, {scopeGroup(intl, class), scope}} {
+	}{{recentGroup(countryGroup(country, class)), country}, {countryGroup(country, class), country},
+		{recentGroup(scopeGroup(intl, class)), scope}, {scopeGroup(intl, class), scope}} {
 		postage := near(h.postage[l.g])
 		if len(postage) < MinSamples {
 			continue

@@ -39,9 +39,13 @@ type Package struct {
 	// Piles reports whether contents can sit side by side. A StayFlat is one
 	// stack, poster on the bottom.
 	Piles bool `json:"-"`
-	// KeepsFlat marks rigid flat mailers (StayFlats), the only packaging big
-	// prints like posters ship in.
+	// KeepsFlat marks rigid flat mailers (StayFlats), where big prints like
+	// posters ship on their own or with a few small things.
 	KeepsFlat bool `json:"-"`
+	// Boxed marks cartons: a big print lies flat on the bottom of one whose
+	// floor it fits, under everything else (AGH ships 50 posters, or posters
+	// with shirts and magazines, this way).
+	Boxed bool `json:"-"`
 }
 
 // cartonOz is a corrugated box's weight: Uline's 10x8x6 (S-4103) weighs
@@ -53,7 +57,7 @@ const cartonMaxOz = 70 * 16
 
 func carton(l, w, h float64, cents int) Package {
 	return Package{Name: fmt.Sprintf("%gx%gx%g box", l, w, h), Class: ClassParcel, WidthIn: l, HeightIn: w, DepthIn: h,
-		MaxOz: cartonMaxOz, TareOz: math.Round(cartonOz(l, w, h)*10) / 10, CostCents: cents, Piles: true}
+		MaxOz: cartonMaxOz, TareOz: math.Round(cartonOz(l, w, h)*10) / 10, CostCents: cents, Piles: true, Boxed: true}
 }
 
 // Packages are what AGH, our warehouse, packs requests in, in the order a
@@ -65,8 +69,11 @@ func carton(l, w, h float64, cents int) Package {
 // $708.76 in 2025), and Uline's carton price over 100 for the StayFlats
 // (2026-10-15). AGH doesn't bill for envelopes.
 var Packages = []Package{
-	// #6x9 envelope: First Class letter mail, max 1/4" thick and 3.5 oz.
-	{Name: "Envelope", Class: ClassLetter, WidthIn: 5.75, HeightIn: 8.75, DepthIn: 0.25, MaxOz: 3.5, TareOz: 0.3, Piles: true},
+	// #6x9 envelope: First Class letter mail. USPS takes letters up to 3.5 oz,
+	// but AGH mails about 30 stickers or more as parcels (2025-26: 12 of 14
+	// sticker orders of 20-29 went as letters, 37 of 40 of 30-49 as parcels),
+	// so it stops at 1.8 oz packed: 30 stickers.
+	{Name: "Envelope", Class: ClassLetter, WidthIn: 5.75, HeightIn: 8.75, DepthIn: 0.25, MaxOz: 1.8, TareOz: 0.3, Piles: true},
 	// Uline S-11837 (#5, 9 3/4 x 12 1/4), S-11838 (#3, 11 x 13 1/2) and
 	// S-11839 (#6, 13 x 18): rigid, for contents up to 1/4" thick.
 	{Name: "9x12 StayFlat", Class: ClassParcel, WidthIn: 9.25, HeightIn: 12, DepthIn: 0.25, MaxOz: 48, TareOz: 3.5, CostCents: 95, KeepsFlat: true},
@@ -144,12 +151,12 @@ func shapeOf(it Item, qty int) shape {
 }
 
 // bigSheet reports whether s is a big print (a poster), which ships only in a
-// StayFlat so it doesn't bend.
+// StayFlat or flat in a box, so it doesn't bend.
 func (s shape) bigSheet() bool { return s.t <= 0.02 && max(s.w, s.h) > 13.5 }
 
 // piles is how many stacks of s fit side by side in p (0 if s doesn't fit).
 func (p Package) piles(s shape) int {
-	if s.bigSheet() && !p.KeepsFlat {
+	if s.bigSheet() && !p.KeepsFlat && !p.Boxed {
 		return 0
 	}
 	n := 0
@@ -188,16 +195,33 @@ func (p Package) fits(shapes []shape) bool {
 
 // Pack picks the package a request ships in. It refuses requests that don't
 // fit in one package (ErrWontPack), and international ones over 3 lb
-// (ErrTooHeavy). Lines must name items in the catalog.
+// (ErrTooHeavy). Lines must name items in the catalog. What an item ships with
+// (ShipsWith, one per unit) goes in too: the catalog's item for that SKU, or a
+// postcard when the catalog doesn't list it (they're intro cards).
 func Pack(lines []Line, catalog map[int64]Item, international bool) (Packing, error) {
+	bySKU := map[string]Item{}
+	for _, it := range catalog {
+		bySKU[it.SKU] = it
+	}
 	var shapes []shape
 	var contentOz float64
 	known := true
-	for _, l := range lines {
-		s := shapeOf(catalog[l.ItemID], l.Quantity)
+	add := func(it Item, qty int) {
+		s := shapeOf(it, qty)
 		shapes = append(shapes, s)
 		contentOz += s.oz * float64(s.qty)
 		known = known && s.known
+	}
+	for _, l := range lines {
+		it := catalog[l.ItemID]
+		add(it, l.Quantity)
+		for _, sku := range it.ShipsWith {
+			extra, ok := bySKU[sku]
+			if !ok {
+				extra = Item{SKU: sku, Name: sku, Packs: "postcard", WidthIn: &postcardSize[0], HeightIn: &postcardSize[1], ThicknessIn: &postcardSize[2]}
+			}
+			add(extra, l.Quantity)
+		}
 	}
 	tooHeavy := false
 	for _, p := range Packages {
@@ -220,7 +244,7 @@ func Pack(lines []Line, catalog map[int64]Item, international bool) (Packing, er
 	// Name the big print the rest won't go in with, if there is one.
 	for _, s := range shapes {
 		if s.bigSheet() {
-			return Packing{}, fmt.Errorf("%w: the %s ships flat in a 13x18 StayFlat, which holds a stack no more than 1/4 inch thick; a few stickers fit with it, but request the rest separately", ErrWontPack, s.name)
+			return Packing{}, fmt.Errorf("%w: the %s ships flat, in a 13x18 StayFlat or on the bottom of an 18-inch box, and this is more than either holds; ask for fewer", ErrWontPack, s.name)
 		}
 	}
 	return Packing{}, fmt.Errorf("%w: that's more than fits in one box; ask for fewer", ErrWontPack)

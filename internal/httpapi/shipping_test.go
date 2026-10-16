@@ -72,12 +72,12 @@ func TestShippingEstimate(t *testing.T) {
 
 func TestShippingEstimateRefusesWhatWontShip(t *testing.T) {
 	h := newHarness(t)
-	poster, postcard, magazine := shippingFixture(t, h)
+	poster, _, magazine := shippingFixture(t, h)
 	var errBody map[string]string
 	code := h.do(h.client(userEmail), "POST", "/api/shipping/estimate", map[string]any{"country": "US",
-		"lines": []swag.Line{{ItemID: poster.ID, Quantity: 1}, {ItemID: postcard.ID, Quantity: 50}}}, &errBody)
+		"lines": []swag.Line{{ItemID: poster.ID, Quantity: 1}, {ItemID: magazine.ID, Quantity: 150}}}, &errBody)
 	if code != 422 || !strings.Contains(errBody["error"], "StayFlat") {
-		t.Fatalf("poster + 50 postcards = %d %v", code, errBody)
+		t.Fatalf("poster + 150 magazines = %d %v", code, errBody)
 	}
 	code = h.do(h.client(userEmail), "POST", "/api/shipping/estimate", map[string]any{"country": "DE",
 		"lines": []swag.Line{{ItemID: magazine.ID, Quantity: 5}}}, &errBody)

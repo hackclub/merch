@@ -3,6 +3,7 @@ package store
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hackclub/merch/internal/importer"
 	"github.com/hackclub/merch/internal/swag"
@@ -43,7 +44,8 @@ zenventory,CA,parcel,12,1010,2026-09-12,2026-09-14,,
 	}
 	gb := byCountry["GB"]
 	// Days are business days: Fri 09-11 -> Mon 09-14 -> Sat 09-26.
-	if gb.Class != swag.ClassParcel || gb.WeightOz != 9.1 || gb.PostageCents != 630 || *gb.HandlingDays != 1 || *gb.TransitDays != 9 {
+	if gb.Class != swag.ClassParcel || gb.WeightOz != 9.1 || gb.PostageCents != 630 || *gb.HandlingDays != 1 || *gb.TransitDays != 9 ||
+		gb.ShippedOn.Format(time.DateOnly) != "2026-09-14" {
 		t.Fatalf("GB = %+v", gb)
 	}
 	if ca := byCountry["CA"]; ca.TransitDays != nil {

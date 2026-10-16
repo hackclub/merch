@@ -61,6 +61,7 @@ func (s *Store) ShippingHistory(ctx context.Context) ([]swag.PastShipment, error
 		var ordered, delivered *time.Time
 		var shipped time.Time
 		err := r.Scan(&p.Country, &p.Class, &p.WeightOz, &p.PostageCents, &ordered, &shipped, &delivered)
+		p.ShippedOn = shipped
 		p.HandlingDays, p.TransitDays = between(ordered, &shipped), between(&shipped, delivered)
 		return p, err
 	})

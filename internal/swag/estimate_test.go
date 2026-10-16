@@ -139,14 +139,38 @@ func TestEstimateFromMailed(t *testing.T) {
 	}
 }
 
-// The warehouse logs each shipment's weight from per-SKU nominal weights, without
-// the packaging, so postage is matched on what's inside, not the packed weight.
-func TestEstimatePostageIgnoresPackaging(t *testing.T) {
+// The warehouse weighs packages with their packaging (a poster logs 7.2 oz:
+// 1.2 oz of paper in a 6 oz StayFlat), and labels are bought at that weight,
+// so postage is matched on the packed weight.
+func TestEstimatePostageMatchesPackedWeight(t *testing.T) {
 	var h []PastShipment
 	h = append(h, past(30, "CA", ClassParcel, 8, [2]float64{1, 1}, [2]float64{7, 9}, [2]float64{700, 800})...)
-	h = append(h, past(30, "CA", ClassParcel, 14, [2]float64{1, 1}, [2]float64{7, 9}, [2]float64{1200, 1300})...)
+	h = append(h, past(30, "CA", ClassParcel, 16, [2]float64{1, 1}, [2]float64{7, 9}, [2]float64{1200, 1300})...)
 	boxed := Packing{Package: Package{Name: "Box", Class: ClassParcel, TareOz: 8}, ContentsOz: 8, WeightOz: 16}
-	if e := EstimateShipping(h, "CA", boxed, now); e.PostageCents[1] > 800 {
-		t.Fatalf("postage = %v, want the 8 oz shipments' (700-800)", e.PostageCents)
+	if e := EstimateShipping(h, "CA", boxed, now); e.PostageCents[0] < 1200 {
+		t.Fatalf("postage = %v, want the 16 oz shipments' (1200-1300)", e.PostageCents)
+	}
+}
+
+// Postage goes up every year, so it comes from the last RecentPostageDays of
+// history when there's enough of it.
+func TestEstimatePostageUsesRecentPrices(t *testing.T) {
+	old := past(40, "CA", ClassParcel, 10, [2]float64{1, 1}, [2]float64{7, 9}, [2]float64{700, 750})
+	recent := past(15, "CA", ClassParcel, 10, [2]float64{1, 1}, [2]float64{7, 9}, [2]float64{1000, 1050})
+	last := time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC)
+	for i := range old {
+		old[i].ShippedOn = last.AddDate(-1, 0, 0)
+	}
+	for i := range recent {
+		recent[i].ShippedOn = last.AddDate(0, 0, -i)
+	}
+	e := EstimateShipping(append(old, recent...), "CA", parcel, now)
+	if e.PostageTypicalCents < 1000 || e.PostageSamples != 15 {
+		t.Fatalf("postage = %d (%d samples), want the recent 1000-1050", e.PostageTypicalCents, e.PostageSamples)
+	}
+	// Too few recent shipments to go on: all of the country's history.
+	e = EstimateShipping(append(old, recent[:5]...), "CA", parcel, now)
+	if e.PostageSamples != 45 || e.PostageBasis != "CA" {
+		t.Fatalf("got %d samples (%s), want all 45 CA", e.PostageSamples, e.PostageBasis)
 	}
 }
