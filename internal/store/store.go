@@ -315,6 +315,10 @@ type Request struct {
 	AirtableRecordID string        `json:"airtable_record_id,omitempty"`
 	CreatedAt        time.Time     `json:"created_at"`
 	Lines            []RequestLine `json:"lines"`
+
+	// Stripe Checkout: the latest payment page opened, and the payment that paid it.
+	StripeSessionID     string `json:"-"`
+	StripePaymentIntent string `json:"stripe_payment_intent,omitempty"`
 }
 
 type NewRequest struct {
@@ -402,7 +406,8 @@ func (s *Store) CreateRequest(ctx context.Context, nr NewRequest, check UsageChe
 const requestSelect = `
 	SELECT r.id, r.user_id, u.email, r.status, r.purpose, r.first_name, r.last_name, r.line_1, r.line_2, r.city, r.state,
 		r.postal_code, r.country, r.phone_number, r.shipping_fee_cents, r.paid_at, r.note, r.admin_note, r.internal_note,
-		coalesce(r.theseus_order_id, ''), r.tracking_number, r.carrier, r.mailed_at, r.source, r.airtable_record_id, r.created_at
+		coalesce(r.theseus_order_id, ''), r.tracking_number, r.carrier, r.mailed_at, r.source, r.airtable_record_id,
+		r.stripe_session_id, r.stripe_payment_intent, r.created_at
 	FROM swag_requests r JOIN users u ON u.id = r.user_id`
 
 func scanRequest(row pgx.Row) (*Request, error) {
@@ -410,7 +415,8 @@ func scanRequest(row pgx.Row) (*Request, error) {
 	a := &r.Address
 	err := row.Scan(&r.ID, &r.UserID, &r.UserEmail, &r.Status, &r.Purpose, &a.FirstName, &a.LastName, &a.Line1, &a.Line2, &a.City, &a.State,
 		&a.PostalCode, &a.Country, &a.Phone, &r.ShippingFeeCents, &r.PaidAt, &r.Note, &r.AdminNote, &r.InternalNote,
-		&r.TheseusOrderID, &r.TrackingNumber, &r.Carrier, &r.MailedAt, &r.Source, &r.AirtableRecordID, &r.CreatedAt)
+		&r.TheseusOrderID, &r.TrackingNumber, &r.Carrier, &r.MailedAt, &r.Source, &r.AirtableRecordID,
+		&r.StripeSessionID, &r.StripePaymentIntent, &r.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -486,12 +492,27 @@ func (s *Store) MarkPaid(ctx context.Context, id int64) (*Request, error) {
 	return s.transition(ctx, id, swag.StatusPending, `paid_at = now(), admin_note = admin_note || $3`, "")
 }
 
+// SetStripeSession remembers the payment page opened for a request.
+func (s *Store) SetStripeSession(ctx context.Context, id int64, sessionID string) error {
+	tag, err := s.pool.Exec(ctx, `UPDATE swag_requests SET stripe_session_id = $2, updated_at = now() WHERE id = $1`, id, sessionID)
+	if err == nil && tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return err
+}
+
+// MarkPaidByStripe records a card payment and moves the request to review.
+func (s *Store) MarkPaidByStripe(ctx context.Context, id int64, sessionID, paymentIntent string) (*Request, error) {
+	return s.transition(ctx, id, swag.StatusPending, `paid_at = now(), stripe_session_id = $3, stripe_payment_intent = $4`, sessionID, paymentIntent)
+}
+
 // MarkDispatched records the mail.hackclub.com order id.
 func (s *Store) MarkDispatched(ctx context.Context, id int64, theseusOrderID string) (*Request, error) {
 	return s.transition(ctx, id, swag.StatusDispatched, `theseus_order_id = $3`, theseusOrderID)
 }
 
-func (s *Store) transition(ctx context.Context, id int64, to swag.Status, set string, arg string) (*Request, error) {
+// transition's set clause gets args as $3, $4…
+func (s *Store) transition(ctx context.Context, id int64, to swag.Status, set string, args ...any) (*Request, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -507,7 +528,7 @@ func (s *Store) transition(ctx context.Context, id int64, to swag.Status, set st
 	if !swag.CanTransition(from, to) {
 		return nil, fmt.Errorf("%w (%s -> %s)", ErrBadTransition, from, to)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE swag_requests SET status = $2, updated_at = now(), `+set+` WHERE id = $1`, id, to, arg); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE swag_requests SET status = $2, updated_at = now(), `+set+` WHERE id = $1`, append([]any{id, to}, args...)...); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {

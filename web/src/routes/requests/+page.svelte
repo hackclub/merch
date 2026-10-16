@@ -3,11 +3,14 @@
 	import { api, ApiError, formatCents, statusLabel } from '$lib/api';
 	import { purposeLabel } from '$lib/purpose';
 	import { arrivalText } from '$lib/shipping';
+	import { paidNotice, payLabel } from '$lib/payment';
+	import { page } from '$app/state';
 	import { session } from '$lib/session.svelte';
 	import type { SwagRequest } from '$lib/types';
 
 	let requests = $state<SwagRequest[] | null>(null);
 	let error = $state('');
+	const thanks = $derived(paidNotice(requests, page.url.searchParams.get('paid')));
 
 	async function load() {
 		try {
@@ -36,6 +39,7 @@
 	<p><a class="button" href="/auth/login" data-sveltekit-reload>Sign in with Hack Club</a></p>
 {:else}
 	{#if error}<p class="error">{error}</p>{/if}
+	{#if thanks}<p>{thanks}</p>{/if}
 	{#each requests ?? [] as r (r.id)}
 		<div class="card" style="margin-bottom: 1rem">
 			<div class="row">
@@ -50,7 +54,7 @@
 			{#if r.status === 'awaiting_payment'}
 				<p>
 					Shipping to {r.address.country} costs {formatCents(r.shipping_fee_cents)}.
-					{#if r.payment_url}<a class="button" href={r.payment_url}>Pay shipping on HCB</a>{/if}
+					{#if r.payment_url}<a class="button" href={r.payment_url} data-sveltekit-reload data-track="pay-shipping">{payLabel(r.payment_url)}</a>{/if}
 				</p>
 			{/if}
 			{#if arrivalText(r.estimate)}<p>{arrivalText(r.estimate)}, by {r.estimate?.service}.</p>{/if}

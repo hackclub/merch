@@ -56,6 +56,7 @@ type Deps struct {
 	Warehouse Warehouse
 	Images    ImageStore    // nil disables image uploads
 	Places    AddressFinder // nil disables address autocomplete
+	Payments  Payments      // nil: international shipping is paid on HCB
 	Static    fs.FS         // built PWA (web/build); nil disables static serving
 	Now       func() time.Time
 	Log       *slog.Logger
@@ -104,6 +105,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET /api/requests", s.requireUser(s.myRequests))
 	mux.Handle("POST /api/requests", s.requireUser(s.createRequest))
 	mux.Handle("POST /api/requests/{id}/cancel", s.requireUser(s.cancelRequest))
+	mux.Handle("GET /api/requests/{id}/pay", s.requireUser(s.payRequest))
 	mux.Handle("GET /api/address/suggest", s.requireUser(s.addressSuggest))
 	mux.Handle("GET /api/address/place", s.requireUser(s.addressPlace))
 
@@ -356,6 +358,7 @@ func (s *server) catalog(w http.ResponseWriter, r *http.Request) {
 			"request_cooldown_days":            st.RequestCooldownDays,
 			"international_shipping_fee_cents": st.InternationalShippingFeeCents,
 			"hcb_payment_url":                  s.Config.HCBShippingPaymentURL,
+			"card_payments":                    s.Payments != nil,
 		},
 	})
 }
@@ -440,7 +443,9 @@ type requestView struct {
 
 func (s *server) view(r *store.Request) requestView {
 	v := requestView{Request: r}
-	if r.Status == swag.StatusAwaitingPayment && s.Config.HCBShippingPaymentURL != "" {
+	if r.Status == swag.StatusAwaitingPayment && s.Payments != nil {
+		v.PaymentURL = payPath(r.ID)
+	} else if r.Status == swag.StatusAwaitingPayment && s.Config.HCBShippingPaymentURL != "" {
 		q := url.Values{}
 		q.Set("amount", strconv.Itoa(r.ShippingFeeCents))
 		q.Set("message", "Shipping for swag request #"+strconv.FormatInt(r.ID, 10))
@@ -474,6 +479,7 @@ func (s *server) myRequests(w http.ResponseWriter, r *http.Request, v viewer) {
 		s.serverErr(w, err)
 		return
 	}
+	s.syncPayments(r, rs)
 	out := make([]requestView, len(rs))
 	for i, r := range rs {
 		out[i] = s.userView(r)
@@ -572,6 +578,12 @@ func (s *server) cancelRequest(w http.ResponseWriter, r *http.Request, v viewer)
 		writeErr(w, http.StatusNotFound, "request not found")
 		return
 	}
+	// Record a payment that just went through, and close an unpaid payment page.
+	if req.Status == swag.StatusAwaitingPayment {
+		if req = s.syncPayment(r, req); req.Status == swag.StatusAwaitingPayment {
+			s.closePayment(r, req)
+		}
+	}
 	from := req.Status
 	req, err = s.Store.TransitionRequest(r.Context(), id, swag.StatusCancelled, "")
 	if err == nil {
@@ -635,6 +647,7 @@ func (s *server) adminRequests(w http.ResponseWriter, r *http.Request, v viewer)
 		s.serverErr(w, err)
 		return
 	}
+	s.syncPayments(r, rs)
 	out := s.views(rs)
 	if err := s.withEstimates(r.Context(), out, true); err != nil {
 		s.serverErr(w, err)

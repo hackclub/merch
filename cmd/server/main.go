@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/hackclub/merch/internal/httpapi"
 	"github.com/hackclub/merch/internal/places"
 	"github.com/hackclub/merch/internal/store"
+	"github.com/hackclub/merch/internal/stripe"
 	"github.com/hackclub/merch/internal/theseus"
 )
 
@@ -74,6 +76,16 @@ func run(log *slog.Logger) error {
 		log.Warn("GOOGLE_PLACES_API_KEY not set: the request form has no address autocomplete")
 	}
 
+	var payments httpapi.Payments
+	if cfg.StripeSecretKey != "" {
+		payments = stripe.New(cfg.StripeBaseURL, cfg.StripeSecretKey, nil)
+		if strings.HasPrefix(cfg.StripeSecretKey, "sk_test_") {
+			log.Warn("STRIPE_SECRET_KEY is a sandbox key: card payments are test payments")
+		}
+	} else {
+		log.Warn("STRIPE_SECRET_KEY not set: international shipping is paid on HCB (HCB_SHIPPING_PAYMENT_URL)")
+	}
+
 	var static fs.FS
 	if cfg.StaticDir != "" {
 		if st, err := os.Stat(cfg.StaticDir); err == nil && st.IsDir() {
@@ -94,6 +106,7 @@ func run(log *slog.Logger) error {
 		Warehouse: theseus.New(cfg.TheseusBaseURL, cfg.TheseusAPIKey, nil),
 		Images:    images,
 		Places:    finder,
+		Payments:  payments,
 		Static:    static,
 		Log:       log,
 		Warm:      true,

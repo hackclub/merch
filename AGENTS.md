@@ -22,7 +22,7 @@ through the app, not into migrations or seed files. Before every commit, read `g
 
 | Who | How we know | What they do |
 | --- | --- | --- |
-| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage on HCB before we ship (see "Shipping estimates and packing"). |
+| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card (Stripe Checkout; HCB without a Stripe key) before we ship (see "Shipping estimates and packing"). |
 | YSWS author | Their HCA email matches `Hack Club Auth Email` in the **YSWS Authors** table of the Unified YSWS Projects DB (Airtable `app3A5kJwYqxMLOgh`) | Submit print-ready material (stickers, posters…) to be printed and stocked in the warehouse. |
 | Admin | Email is in `ADMIN_EMAILS` (admins are also authors) | Manage global limits, list warehouse SKUs as items, set visibility and order, review requests (mark paid → ship → tracking), and review author submissions. |
 
@@ -50,6 +50,7 @@ internal/db/dbtest/  per-test throwaway database (CREATE DATABASE test_<rand> �
 internal/auth/       Hack Club Auth OAuth client (auth.hackclub.com, GET /api/v1/me)
 internal/authors/    YSWS author lookup (Airtable REST, 10 min cache)
 internal/theseus/    mail.hackclub.com warehouse client (SKUs, warehouse_orders)
+internal/stripe/     Stripe Checkout client (international shipping payments)
 internal/asendia/    Asendia tracking lookups (delivery dates for shipping history)
 cmd/shiphistory/     loads past shipments for estimates (see "Shipping estimates and packing")
 internal/cdn/        cdn.hackclub.com upload client (item images)
@@ -278,7 +279,8 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   backups.
 - Required env: `DATABASE_URL`, `BASE_URL` (public https origin), `SESSION_SECRET`,
   `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, `THESEUS_API_KEY`, `ADMIN_EMAILS`. Also needed:
-  `AIRTABLE_API_KEY` for authors, `HCB_SHIPPING_PAYMENT_URL` for international payments,
+  `AIRTABLE_API_KEY` for authors, `STRIPE_SECRET_KEY` for international payments (or
+  `HCB_SHIPPING_PAYMENT_URL` without Stripe),
   `HACKCLUB_CDN_API_KEY` for item image uploads, and `GOOGLE_PLACES_API_KEY` for address
   autocomplete.
 - `$BASE_URL/auth/callback` must be registered as a redirect URI on the Hack Club Auth app.
@@ -409,7 +411,8 @@ blocks landing):
   (the mux pattern), `url` (the path, never the query), `status`, `ms`. Use it for errors and
   slow routes, and for admin actions (the URL has the id).
 - Server events (`s.track` in `internal/httpapi`): `login_start`, `sign_in`, `sign_in_refused`,
-  `sign_out`, `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
+  `sign_out`, `payment_started` (opened a new Stripe payment page: `request_id`, `fee_cents`, `country`),
+  `payment_completed` (Stripe says it's paid in full; the request moved to `pending`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
   postage, sample counts, or `error` when it won't pack), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `submission_created`. They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
@@ -464,6 +467,17 @@ where props ? 'error' group by 1, 2 order by 3 desc;
   - International orders need a phone number for customs.
   - A billing profile is required; it comes from the API key's default.
   - **Never call CreateOrder outside the admin "Ship" action. It ships real mail.**
+- **Stripe** (`internal/stripe`, `internal/httpapi/payments.go`) takes international shipping
+  payments through hosted Checkout pages, so card numbers never reach us. An `awaiting_payment`
+  request's `payment_url` is `GET /api/requests/{id}/pay`, which reopens its open Checkout
+  Session or creates one (USD, the request's `shipping_fee_cents`, `metadata.request_id`) and
+  redirects there; Stripe sends people back to `/requests?paid=<id>`. There is no webhook
+  (production sits behind Orchard login): loading My requests or the admin request list checks
+  Stripe for each `awaiting_payment` request with a `stripe_session_id`, and a session paid in
+  full in USD moves it to `pending` (`paid_at`, `stripe_payment_intent`). Cancelling expires the
+  open page. Admins can still "Mark paid" by hand. Refunds are done in the Stripe dashboard.
+  Dev uses the sandbox (`sk_test_…`, test card 4242 4242 4242 4242); `STRIPE_SECRET_KEY` lives
+  only in the shared `.env` and Orchard, never in the repo.
 - **cdn.hackclub.com** hosts item images. Admins upload them on the admin Items tab; the
   server re-encodes them as ≤1600px JPEGs (print PNGs are ~9 MB) and stores the CDN URLs in
   `items.images` (ordered; the first is the thumbnail). Each item has a product page at

@@ -41,7 +41,7 @@ export type Settings = {
 export type Catalog = {
 	items: Item[];
 	includes: Item[]; // what listed items ship with, often hidden items
-	settings: Settings & { hcb_payment_url: string };
+	settings: Settings & { hcb_payment_url: string; card_payments?: boolean };
 };
 
 export type Address = {

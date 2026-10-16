@@ -14,6 +14,7 @@
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
+	import { payWhere } from '$lib/payment';
 	import { arrivalText, costRows, summaryText, costToYou, worthText, type CostSides, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Haul3D from '$lib/Haul3D.svelte';
@@ -336,7 +337,7 @@
 				{#if intl && quote?.estimate.fee_cents}
 					<p>
 						Shipping is <strong>{formatCents(quote.estimate.fee_cents)}</strong>, what postage for this package usually costs.
-						After you submit we'll send you to HCB to pay it; we ship once it's received.
+						{payWhere(!!catalog?.settings.card_payments)}
 					</p>
 				{/if}
 				<div class="understand">

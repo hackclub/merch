@@ -127,7 +127,7 @@ const (
 	userEmail   = "hacker@example.com"
 )
 
-func newHarness(t *testing.T) *harness {
+func newHarness(t *testing.T, opts ...func(*Deps)) *harness {
 	t.Helper()
 	st := store.New(dbtest.New(t))
 	cfg := &config.Config{
@@ -140,7 +140,7 @@ func newHarness(t *testing.T) *harness {
 	wh := &fakeWarehouse{}
 	cdn := &fakeCDN{}
 	pl := &fakePlaces{}
-	h := New(Deps{
+	d := Deps{
 		Config: cfg,
 		Store:  st,
 		Provider: fakeProvider{ids: map[string]auth.Identity{
@@ -158,8 +158,11 @@ func newHarness(t *testing.T) *harness {
 			"manifest.webmanifest": {Data: []byte(`{"name":"x"}`)},
 		},
 		Now: time.Now,
-	})
-	srv := httptest.NewServer(h)
+	}
+	for _, o := range opts {
+		o(&d)
+	}
+	srv := httptest.NewServer(New(d))
 	t.Cleanup(srv.Close)
 	return &harness{t: t, srv: srv, store: st, wh: wh, cdn: cdn, places: pl, cfg: cfg}
 }
