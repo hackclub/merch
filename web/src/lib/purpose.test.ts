@@ -7,7 +7,7 @@ const shirt: Item = { ...base, id: 2, sku: 'Swa/Shirt/HC', name: 'T-shirt', club
 
 describe('purpose', () => {
 	it('asks the three kinds of request, personal first', () => {
-		expect(PURPOSES.map((p) => p.value)).toEqual(['personal', 'club', 'event']);
+		expect(PURPOSES.map((p) => p.value)).toEqual(['personal', 'event', 'club']);
 	});
 
 	it('asks clubs and events, not personal requests, how they will use it', () => {

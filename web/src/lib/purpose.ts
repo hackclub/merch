@@ -9,14 +9,14 @@ const REASON =
 export const PURPOSES: { value: Purpose; label: string; short: string; reason: string; example: string }[] = [
 	{ value: 'personal', label: 'Personal / to share with friends', short: 'Personal', reason: '', example: '' },
 	{
-		value: 'club', label: 'I run a Hack Club', short: 'Hack Club',
-		reason: REASON,
-		example: 'e.g. Handing out stickers and mini-magazines at our school club fair on Sept 12.'
-	},
-	{
 		value: 'event', label: 'Hackathon / event', short: 'Event',
 		reason: REASON,
 		example: 'e.g. Running https://example-hacks.dev on Nov 8, about 120 hackers expected.'
+	},
+	{
+		value: 'club', label: 'I run a Hack Club', short: 'Hack Club',
+		reason: REASON,
+		example: 'e.g. Handing out stickers and mini-magazines at our school club fair on Sept 12.'
 	}
 ];
 
