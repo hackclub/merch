@@ -346,7 +346,6 @@
 					{#if shown.some((i) => i.variants.length && cart[i.id])}
 						<p>T-shirts are for you to wear yourself, not to give away. If you need shirts for prizes or an event, get in touch with Zach.</p>
 					{/if}
-					<p>Hack Club is completely financially transparent. You can see our transparent realtime ledger at <a href="https://hcb.hackclub.com/hq">hcb.hackclub.com/hq</a>.</p>
 					<p>Our goal for marketing is to spend no more than $50 USD per new teenager who joins Hack Club and ships 1 weighted technical project in one of our programs (1 weighted project = 10 approved hours).</p>
 					<p>{(quote?.costs && worthText(intl ? quote.costs.international : quote.costs.us)) || 'If you get 1 teen to join Hack Club and ship a weighted project, then this is worth it!'}</p>
 					{#if quote?.costs}
