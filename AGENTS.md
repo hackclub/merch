@@ -303,7 +303,7 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   weight. So `items.weight_oz` is the item alone, `Pack` adds the mailer's `TareOz` for the
   real weight (the 3 lb check), and postage estimates match history on the contents weight.
 - **Estimates** (`internal/swag/estimate.go`): arrival window = handling + transit, in business
-  days (Mon–Fri; the shop says "4–8 business days"), from the 20th to the 80th percentile of past shipments to the same country and class. With fewer than
+  days (Mon–Fri; the shop intro gives transit only, after "Shipped next day Mon–Fri"), from the 20th to the 80th percentile of past shipments to the same country and class. With fewer than
   10 samples, it uses all US or all international shipments instead. Postage compares packages
   of about the same weight; its range is shown only to admins (everyone sees the typical
   postage in the cost table). The shop intro, the request form, My requests and the admin

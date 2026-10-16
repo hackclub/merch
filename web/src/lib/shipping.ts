@@ -45,12 +45,6 @@ export function arrivalText(e: ShippingEstimate | null | undefined): string {
 	return `Arrives about ${dateRange(e.arrive_from, e.arrive_by)}`;
 }
 
-// Order to doorstep, in business days: handling plus transit.
-export const totalDays = (e: ShippingEstimate): [number, number] => [
-	e.handling_days[0] + e.transit_days[0],
-	e.handling_days[1] + e.transit_days[1]
-];
-
 // Business days in words: "3–6 business days", or "2–5 weeks" past two weeks.
 export function spanText([lo, hi]: [number, number]): string {
 	if (hi > 10) {
@@ -60,10 +54,11 @@ export function spanText([lo, hi]: [number, number]): string {
 	return lo === hi ? `${hi} business day${hi === 1 ? '' : 's'}` : `${lo}–${hi} business days`;
 }
 
-// The shop intro's delivery line, or '' without history.
+// The shop intro's delivery line, after "Shipped next day Mon–Fri.": time in
+// the mail, or '' without history.
 export function summaryText(s: ShippingSummary | null): string {
 	if (!s?.us.arrive_by || !s.international.arrive_by) return '';
-	return `Usually arrives in ${spanText(totalDays(s.us))} in the US, ${spanText(totalDays(s.international))} globally.`;
+	return `Then ${spanText(s.us.transit_days)} in the mail in the US, ${spanText(s.international.transit_days)} globally.`;
 }
 
 export const ozText = (oz: number) => (oz >= 16 ? `${(oz / 16).toFixed(1)} lb` : `${oz.toFixed(1)} oz`);
