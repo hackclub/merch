@@ -373,7 +373,7 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 				x: viewer.pan.x,
 				z: viewer.pan.z,
 				room: shown.room,
-				y: shown.tallest * 0.3,
+				y: 0, // the tabletop: the camera turns and tilts around the table's own height
 				below: legsDown()
 			});
 			stage.render();

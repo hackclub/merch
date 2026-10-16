@@ -75,6 +75,7 @@ export type TableFrameOptions = {
 	elevation?: number;
 	room?: number;
 	x?: number;
+	/** Height the camera looks at and turns around, inches (default: a bit up the stacks, less half of below). */
 	y?: number;
 	/** Shifts what the camera looks at toward (+) or away from (−) the viewer, inches. */
 	z?: number;
@@ -191,7 +192,7 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 			camera.near = Math.max(0.1, dist * 0.05);
 			camera.far = dist * 4;
 			camera.updateProjectionMatrix();
-			target.set(opts.x ?? 0, (opts.y ?? tallest * 0.35) - below * 0.5, opts.z ?? 0);
+			target.set(opts.x ?? 0, opts.y ?? tallest * 0.35 - below * 0.5, opts.z ?? 0);
 			camera.position.set(target.x, target.y + dist * Math.sin(el), target.z + dist * Math.cos(el));
 			camera.lookAt(target);
 			return dist;
