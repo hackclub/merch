@@ -198,3 +198,22 @@ func TestUSRequestHasNoPaymentLink(t *testing.T) {
 		t.Fatalf("US request = %+v", r)
 	}
 }
+
+// A bank payment finishes Checkout before the money arrives: wait for it, don't
+// open a second page.
+func TestBankPaymentStillProcessing(t *testing.T) {
+	h, fs := newStripeHarness(t)
+	user := h.client(userEmail)
+	r := h.intlRequest(userEmail)
+	h.payLink(user, r)
+	fs.mu.Lock()
+	fs.sessions["cs_test_1"].Status = "complete"
+	fs.mu.Unlock()
+	if code, loc := h.payLink(user, r); code != http.StatusSeeOther || loc != "/requests" || len(fs.created) != 1 {
+		t.Fatalf("pay while processing = %d %q, %d sessions", code, loc, len(fs.created))
+	}
+	got, _ := h.store.GetRequest(context.Background(), r.ID)
+	if got.Status != swag.StatusAwaitingPayment {
+		t.Fatalf("status = %s", got.Status)
+	}
+}

@@ -41,12 +41,21 @@ func (s *server) payRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 	if prev != "" {
 		sess, err := s.Payments.GetCheckout(r.Context(), prev)
 		if err != nil {
-			s.Log.Warn("stripe: get checkout", "request", id, "err", err)
-		} else if sess.Status == "open" && req.Status == swag.StatusAwaitingPayment {
-			http.Redirect(w, r, sess.URL, http.StatusSeeOther)
+			// Don't open a second page when we can't tell whether the first was paid.
+			s.Log.Error("stripe: get checkout", "request", id, "err", err)
+			writeErr(w, http.StatusBadGateway, "couldn't reach the payment page; try again in a minute")
 			return
 		}
-		req = s.syncPayment(r, req)
+		switch {
+		case sess.Status == "open" && req.Status == swag.StatusAwaitingPayment:
+			http.Redirect(w, r, sess.URL, http.StatusSeeOther)
+			return
+		case sess.Status == "complete":
+			// Paid, or a bank payment still on its way: either way, nothing more to pay.
+			s.syncPayment(r, req)
+			http.Redirect(w, r, "/requests", http.StatusSeeOther)
+			return
+		}
 	}
 	if req.Status != swag.StatusAwaitingPayment {
 		http.Redirect(w, r, "/requests", http.StatusSeeOther)

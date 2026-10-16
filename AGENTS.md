@@ -474,8 +474,9 @@ where props ? 'error' group by 1, 2 order by 3 desc;
   redirects there; Stripe sends people back to `/requests?paid=<id>`. There is no webhook
   (production sits behind Orchard login): loading My requests or the admin request list checks
   Stripe for each `awaiting_payment` request with a `stripe_session_id`, and a session paid in
-  full in USD moves it to `pending` (`paid_at`, `stripe_payment_intent`). Cancelling expires the
-  open page. Admins can still "Mark paid" by hand. Refunds are done in the Stripe dashboard.
+  full in USD moves it to `pending` (`paid_at`, `stripe_payment_intent`). A completed but
+  unpaid session (a bank payment on its way) waits; the pay link never opens a second page then,
+  or when Stripe can't be reached. Cancelling expires the open page. Admins can still "Mark paid" by hand. Refunds are done in the Stripe dashboard.
   Dev uses the sandbox (`sk_test_…`, test card 4242 4242 4242 4242); `STRIPE_SECRET_KEY` lives
   only in the shared `.env` and Orchard, never in the repo.
 - **cdn.hackclub.com** hosts item images. Admins upload them on the admin Items tab; the
