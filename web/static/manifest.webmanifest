@@ -1,6 +1,6 @@
 {
-	"name": "Hack Club Mail Room",
-	"short_name": "Mail Room",
+	"name": "Hack Club Merch Request",
+	"short_name": "HC Merch",
 	"description": "Request Hack Club swag, and stock the warehouse with your YSWS materials.",
 	"start_url": "/",
 	"scope": "/",
