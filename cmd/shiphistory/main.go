@@ -7,7 +7,9 @@
 // have no names or addresses, but the raw exports carry tracking numbers: keep
 // them out of the repo. track drops tracking numbers from its output. Asendia
 // only keeps about six months of tracking, so -cache keeps every delivery date
-// found (tracking,date lines) for the next refresh.
+// found (tracking,date lines) for the next refresh. USPS and UPS block scripted
+// lookups, so their delivery dates go into the same cache from Safari
+// (scripts/shipping-history/us-tracking.py).
 package main
 
 import (
@@ -83,17 +85,7 @@ func track(workers int, since, cachePath string, files []string) error {
 	}
 	ctx := context.Background()
 	c := &asendia.Client{}
-	var todo []int
-	for i, s := range ships {
-		if s.DeliveredOn != nil || !strings.HasPrefix(s.Tracking, "AS") {
-			continue
-		}
-		if d, ok := cache[s.Tracking]; ok {
-			ships[i].DeliveredOn = &d
-		} else if since == "" || s.ShippedOn.Format(time.DateOnly) >= since {
-			todo = append(todo, i)
-		}
-	}
+	todo := applyCache(ships, cache, since)
 	fmt.Fprintf(os.Stderr, "looking up %d Asendia parcels\n", len(todo))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
@@ -136,6 +128,23 @@ func track(workers int, since, cachePath string, files []string) error {
 		return err
 	}
 	return importer.WriteShipments(os.Stdout, ships, false)
+}
+
+// applyCache fills in delivery dates from the cache, whatever the carrier, and
+// returns the Asendia parcels still to look up (shipped on or after since).
+func applyCache(ships []importer.Shipment, cache map[string]time.Time, since string) []int {
+	var todo []int
+	for i, s := range ships {
+		if s.DeliveredOn != nil || s.Tracking == "" {
+			continue
+		}
+		if d, ok := cache[s.Tracking]; ok {
+			ships[i].DeliveredOn = &d
+		} else if strings.HasPrefix(s.Tracking, "AS") && (since == "" || s.ShippedOn.Format(time.DateOnly) >= since) {
+			todo = append(todo, i)
+		}
+	}
+	return todo
 }
 
 func readCache(path string) (map[string]time.Time, error) {

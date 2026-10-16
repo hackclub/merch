@@ -344,12 +344,22 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   - Asendia delivery dates come from Asendia's public tracking API
     (`cmd/shiphistory track`, `internal/asendia`). It keeps only about 6 months, so keep the
     `-cache` file.
-  - US parcels have no delivery data yet, so they use the US letter transit times.
+  - US parcels: USPS and UPS block scripted tracking lookups, so
+    `scripts/shipping-history/us-tracking.py` reads a random sample of them from their
+    tracking pages in Safari (WebDriver) into the same `-cache` file. On 2026-10-16, 164
+    parcels shipped from 2026-08 to 2026-10 took 2–5 business days (median 4). UPS SurePost
+    takes 3–5 and USPS Ground Advantage 2–4. The US letter times (4–7) are slower because
+    HQ batches letters before USPS first scans them.
+  - India is the slowest common destination: 13–20 business days (19–28 calendar days),
+    against 9–16 for all international parcels. About 15% of Indian parcels never show a
+    delivery scan, and their last scans are 3–5 weeks out, so the real tail is a little longer.
 
   Refresh (keep every file outside the repo; the raw exports contain tracking numbers):
 
   ```sh
   # export each .sql to CSV (one `r` column per row; the query tool caps at 10k rows, so page by date)
+  scripts/shipping-history/us-tracking.py -cache ~/merch-ship/asendia.csv \
+      -since <2 months ago> -sample 250 zenventory.csv           # needs `safaridriver -p 4455`
   go run ./cmd/shiphistory track -since <6 months ago> -cache ~/merch-ship/asendia.csv \
       zenventory.csv letters.csv > history.csv
   DATABASE_URL=… go run ./cmd/shiphistory load history.csv orders.csv   # replaces those sources

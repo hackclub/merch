@@ -4,7 +4,7 @@
 -- international); "parcel" = everything else we ship by default: USPS Ground
 -- Advantage, UPS SurePost or FedEx in the US, Asendia abroad (up to 3 lb).
 -- Expedited and freight shipments are left out. delivered_on is filled in later
--- (Asendia tracking); tracking is dropped before import. ordered_on is left
+-- (Asendia, USPS and UPS tracking); tracking is dropped before import. ordered_on is left
 -- empty: handling time comes from theseus-orders.sql, the orders placed the way
 -- this app places them (these include bulk and hand-batched orders).
 select concat_ws(',',
@@ -16,7 +16,8 @@ select concat_ws(',',
     '',
     s.shipped_date,
     '',
-    case when s.carrier = 'Asendia' then s.tracking_number else '' end
+    case when s.carrier = 'Asendia' or (s.country = 'US' and s.service not ilike 'USPS First Class Mail%')
+         then s.tracking_number else '' end
 ) r
 from agh_fulfillment_zenventory.shipments s
 join agh_fulfillment_zenventory.customer_orders o using (order_number)

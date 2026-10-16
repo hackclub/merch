@@ -48,8 +48,10 @@ export function arrivalText(e: ShippingEstimate | null | undefined): string {
 // Business days in words: "3–6 business days", or "2–5 weeks" past two weeks.
 export function spanText([lo, hi]: [number, number]): string {
 	if (hi > 10) {
-		const w = (n: number) => Math.max(1, Math.round(n / 5));
-		return w(lo) === w(hi) ? `${w(hi)} weeks` : `${w(lo)}–${w(hi)} weeks`;
+		// Rounded outward at the far end, like the days: 17 business days is "4 weeks".
+		const a = Math.max(1, Math.round(lo / 5));
+		const b = Math.max(a, Math.ceil(hi / 5));
+		return a === b ? `${b} weeks` : `${a}–${b} weeks`;
 	}
 	return lo === hi ? `${hi} business day${hi === 1 ? '' : 's'}` : `${lo}–${hi} business days`;
 }

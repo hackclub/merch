@@ -38,7 +38,10 @@ describe('shipping', () => {
 		expect(spanText([4, 8])).toBe('4–8 business days');
 		expect(spanText([1, 1])).toBe('1 business day');
 		expect(spanText([9, 25])).toBe('2–5 weeks');
-		expect(spanText([10, 11])).toBe('2 weeks');
+		// Up to 17 business days is over 3 weeks: round the far end up, like days.
+		expect(spanText([9, 17])).toBe('2–4 weeks');
+		expect(spanText([10, 15])).toBe('2–3 weeks');
+		expect(spanText([13, 15])).toBe('3 weeks');
 	});
 
 	it('summarizes time in the mail, after the next-day shipping it follows', () => {
