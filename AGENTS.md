@@ -258,6 +258,9 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   Since then the two have diverged: make catalog changes in production through the app. Dev
   sets `THESEUS_ORDER_TAG=merch-dev` and production uses `merch`, so the same request id in both
   databases never shares a warehouse idempotency key.
+- The pod requests 100m CPU, so a few ms of CPU per request gets throttled into hundreds of ms.
+  Do heavy work once and cache it (shipping history is indexed once and loaded at startup), and
+  check `api` events' `ms` after you land.
 - One container: `Dockerfile`, which builds the PWA and a static Go binary on distroless. It
   listens on `$PORT` (default 8080). Health check: `GET /healthz` (pings the DB).
 - Migrations run automatically at startup (goose, embedded).
@@ -360,7 +363,8 @@ used and improve it. **Use it as evidence, and keep it complete:**
 
 1. **Before you change a flow, look at how it's used.** Run `scripts/usage-report [days]`
    (production, read-only, default 7 days; admins and headless browsers are left out; `--dev`
-   reads the dev DB). Write ad-hoc queries with `scripts/prod-psql`. Dev's table has only agent and
+   reads the dev DB, `--all` keeps admins in, e.g. for errors and slow routes while the site is
+   private). Write ad-hoc queries with `scripts/prod-psql`. Dev's table has only agent and
    test traffic. Mention what the data showed in your reply or commit message ("12 of 40 people
    who added a poster were refused at the estimate").
 2. **Instrument every new feature, test first.** Every action records a server event that says

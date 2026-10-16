@@ -4,19 +4,29 @@
 #   scripts/usage-report            production, last 7 days
 #   scripts/usage-report 30         production, last 30 days
 #   scripts/usage-report --dev 1    the dev DB (agent and test traffic; DATABASE_URL overrides)
+#   scripts/usage-report --all 1    keep admins in (errors and slow routes while the site is private)
 # Admins (ADMIN_EMAILS) and headless browsers are left out, so it's real people.
 # The output is aggregate counts; keep it out of commits anyway.
 set -e
 dir=$(dirname "$0")
 env_file=$("$dir/env-file")
 dev=
-if [ "$1" = "--dev" ]; then dev=1; shift; fi
+all=
+while :; do
+  case $1 in
+    --dev) dev=1; shift ;;
+    --all) all=1; shift ;;
+    *) break ;;
+  esac
+done
 days=${1:-7}
 case $days in *[!0-9]* | '') echo "days must be a whole number" >&2; exit 1 ;; esac
 admins=$(sed -n 's/^ADMIN_EMAILS=//p' "$env_file" | tail -1 | tr -d "\"' " | tr 'A-Z' 'a-z')
 case $admins in *[!a-z0-9@.,_+-]*) echo "ADMIN_EMAILS has unexpected characters" >&2; exit 1 ;; esac
 
 staff="(select id from users where lower(email) = any(string_to_array('$admins', ',')))"
+who="real people only"
+if [ -n "$all" ]; then staff="(select null::bigint where false)"; who="admins included"; fi
 ev="with skip as (
     select distinct visitor from usage_events
     where visitor <> '' and (user_id in $staff or (name = 'visit_start' and props->>'automated' = 'true'))
@@ -28,7 +38,7 @@ ev="with skip as (
 
 sql=$(cat <<SQL
 \pset footer off
-\echo '== Overview: last $days days, real people only'
+\echo '== Overview: last $days days, $who'
 $ev select count(distinct visitor) visitors, count(distinct nullif(visit, '')) visits,
     count(distinct user_id) signed_in_users,
     count(*) filter (where name = 'page_view') page_views,
