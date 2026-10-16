@@ -65,6 +65,7 @@
 			.then(({ createHaulViewer }) => {
 				if (disposed) return;
 				const v = createHaulViewer(el, table, () => (ready = true));
+				v.folding = !still;
 				viewer = v;
 				v.resize(stage.clientWidth, stage.clientHeight);
 				ro.observe(stage);

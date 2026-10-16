@@ -19,6 +19,7 @@ export type Pile = {
 	label: string; // "3 × Poster"
 	art: string; // image on top of the pile ('' = plain)
 	artPart?: { from: number; to: number; aspect: number }; // only this slice of art (u from…to) shows on top; aspect is the whole art's
+	fold?: { outside: string; inside: string; w: number; sheet: number }; // a trifold: the top one opens out flat and folds back up (w: folded; sheet: one sheet's thickness)
 	w: number; // footprint, left to right
 	d: number; // footprint, front to back
 	height: number; // the whole stack
@@ -133,12 +134,14 @@ function pileOf({ item, quantity, size }: HaulLine): Pile {
 		};
 	}
 	if (item.width_in != null && item.height_in != null && isTrifold(item)) {
-		// Trifolds ship folded, cover up, springing open a little at the creases.
+		// Trifolds ship folded, cover up, springing open a little at the creases. The
+		// footprint is the open sheet's, so the top one has room to open out flat.
 		const f = foldedSize(item.width_in, item.height_in, sheetThickness(item));
 		const [from, to] = panelU('cover', 'outside');
 		return {
 			key, label, art, artPart: { from, to, aspect: item.width_in / item.height_in },
-			w: f.w, d: f.h, height: f.t * loft('trifold') * quantity, kind: 'paper', count: quantity, finish: item.finish
+			fold: { outside: item.images[0], inside: item.images[1], w: f.w, sheet: sheetThickness(item) },
+			w: item.width_in, d: f.h, height: f.t * loft('trifold') * quantity, kind: 'paper', count: quantity, finish: item.finish
 		};
 	}
 	if (item.width_in != null && item.height_in != null) {

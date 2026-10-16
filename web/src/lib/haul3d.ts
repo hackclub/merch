@@ -1,12 +1,15 @@
 // Draws layoutHaul's table (haul.ts): every pile at true size — sealed clear zip
 // bags of 50 die-cut stickers, fanned loose stickers, banded postcard bundles,
-// booklet stacks with spines and page edges, shop-folded T-shirts (shirt3d.ts), and posters —
+// booklet stacks with spines and page edges, shop-folded T-shirts (shirt3d.ts), posters, and
+// trifold brochures whose top one opens out flat and folds back up on a loop (fold3d.ts) —
 // next to a phone (and, on folding tables, an open laptop) for scale, seen from
 // above at an angle. Units are inches.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { bookletStack, LAPTOP, TABLE, tall, type HaulLayout, type Placed } from './haul';
 import { finishInfo } from './paper';
+import { foldCycle } from './fold';
+import { createTrifold, type Trifold } from './fold3d';
 import { createPhone, createStage, edgeColor, loadArt, pageEdges, paperBand, paperEdge, paperFace, PHONE_DEPTH } from './paper3d';
 import { foldedShirtGeometry, shirtLook, shirtMaterial } from './shirt3d';
 import { BAG_H, createStickerBag, createStickerFan, disposeStickerGroup, loadStickerCutout, type StickerCutout } from './sticker3d';
@@ -24,6 +27,8 @@ export type HaulViewer = {
 	reach(): number;
 	/** Inches on the table per CSS pixel of the canvas, at the view centre. */
 	scale(): number;
+	/** Whether trifold brochures open out and fold back up on their own (off for reduced motion). */
+	folding: boolean;
 	/** Updates what's on the table in place, reusing loaded art and sticker cutouts. */
 	setTable(table: HaulLayout): void;
 	/** What's under a point on the canvas (-1…1 each way): "100 × Mini-Magazine · 4 in tall", or null. */
@@ -61,6 +66,8 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 	let contents = new THREE.Group();
 	group.add(contents);
 	let disposers: (() => void)[] = [];
+	let brochures: Trifold[] = []; // the top brochure of each trifold pile, which opens and folds back up
+	let unfolded = 0; // where they are in the fold (fold.ts positions)
 
 	// Per-viewer caches so changing quantities or adding items reuses already-cut stickers and textures.
 	const texCache = new Map<string, THREE.Texture | null | ((tex: THREE.Texture | null) => void)[]>();
@@ -106,6 +113,7 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 		group.remove(contents);
 		for (const fn of disposers) fn();
 		disposers = [];
+		brochures = [];
 		contents = new THREE.Group();
 		group.add(contents);
 	}
@@ -179,6 +187,29 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 				}
 				doneOne();
 			});
+			return;
+		}
+
+		if (p.fold) {
+			// The rest lie folded underneath; the top one is a real brochure that opens out flat on its own.
+			const n = Math.max(1, p.count ?? 1);
+			const each = p.height / n;
+			let left = n > 1 ? 2 : 1;
+			const done = () => --left === 0 && doneOne();
+			if (n > 1) buildPile({ ...p, fold: undefined, w: p.fold.w, count: n - 1, height: each * (n - 1) }, index, gen, done);
+			const brochure = createTrifold(
+				{ outside: p.fold.outside, inside: p.fold.inside, widthIn: p.fold.w * 3, heightIn: p.d, thicknessIn: p.fold.sheet, finish: p.finish ?? '' },
+				getArt,
+				() => gen === generation && done()
+			);
+			// Lying on its back, inside up (folded, that's the cover), the top of the art away from the camera.
+			brochure.group.rotation.x = -Math.PI / 2;
+			brochure.group.position.set(p.x, n > 1 ? each * (n - 1) : 0, p.z + p.d / 2);
+			brochure.setPosition(unfolded);
+			for (const m of brochure.meshes) m.userData.label = `${p.label} · ${tall(p.height)}`;
+			contents.add(brochure.group);
+			brochures.push(brochure);
+			disposers.push(() => brochure.dispose());
 			return;
 		}
 
@@ -338,7 +369,9 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 	let last = performance.now();
 	let dist = 1;
 
+	const started = performance.now();
 	const viewer: HaulViewer = {
+		folding: true,
 		angle: 0,
 		elevation: ELEVATION,
 		zoom: 1,
@@ -366,6 +399,13 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 			shown.depth += (table.depth - shown.depth) * ease;
 			shown.tallest += (tallest - shown.tallest) * ease;
 			shown.room += (wantRoom - shown.room) * ease;
+			if (brochures.length) {
+				// Open the cover, then the flap, hold it open to read, fold it back up; at an even pace, like a hand.
+				const goal = viewer.folding ? foldCycle(now - started) : 0;
+				const d = goal - unfolded;
+				unfolded += Math.sign(d) * Math.min(Math.abs(d), dt * 1.1);
+				for (const b of brochures) b.setPosition(unfolded);
+			}
 
 			group.rotation.y = viewer.angle;
 			dist = stage.frameTable(shown.width, shown.depth, shown.tallest, viewer.zoom, {

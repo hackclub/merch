@@ -45,26 +45,36 @@ function panelGeometry(pw: number, h: number, t: number, panel: Panel): THREE.Bo
 	return geo;
 }
 
-export function createFoldViewer(canvas: HTMLCanvasElement, opts: FoldOptions, onReady: () => void): FoldViewer {
+/** Loads a texture for art at an aspect ratio (loadArt, or a viewer's cache of it). */
+export type ArtLoader = (url: string, aspect: number, done: (tex: THREE.Texture | null) => void) => void;
+
+export type Trifold = {
+	/** Upright, the back panel standing on y = 0 centred on x = 0, the inside facing +z. */
+	group: THREE.Group;
+	/** 0 = folded on the cover, 1 = cover open, 2 = open flat. */
+	setPosition(position: number): void;
+	/** Every panel mesh, e.g. to label them for picking. */
+	meshes: THREE.Mesh[];
+	/** Frees its geometry and materials; the art belongs to whoever loaded it. */
+	dispose(): void;
+};
+
+/**
+ * The brochure itself: three panels with real thickness and the paper's
+ * surface, hinged at the creases. load gets the outside and inside art; onReady
+ * runs once both are in.
+ */
+export function createTrifold(opts: Omit<FoldOptions, 'phone'>, load: ArtLoader, onReady: () => void): Trifold {
 	const { widthIn: w, heightIn: h } = opts;
 	const t = Math.max(opts.thicknessIn, 0.003);
 	const pw = w / 3;
-	const withPhone = opts.phone !== false;
-	// Laid out open flat, then the phone; centered on x = 0.
-	const sceneW = withPhone ? w + GAP_IN + PHONE.w : w;
-	const sceneH = withPhone ? Math.max(h, PHONE.h) : h;
-	const stage = createStage(canvas, sceneW, sceneH);
-	const { scene, renderer } = stage;
-	const left = -sceneW / 2;
-	const middle = left + w / 2; // the back panel, which stays put
-
 	const info = finishInfo(opts.finish);
 	const surface = paperSurface(info);
 	surface.normal.repeat.set(w / surface.tileIn, h / surface.tileIn);
 	let pending = 2;
 	const art = (url: string) => {
 		const m = paperMaterial(info, surface.normal);
-		loadArt(renderer, url, w / h, (tex) => {
+		load(url, w / h, (tex) => {
 			if (tex) {
 				m.map = tex;
 				m.needsUpdate = true;
@@ -76,10 +86,12 @@ export function createFoldViewer(canvas: HTMLCanvasElement, opts: FoldOptions, o
 	const inside = art(opts.inside);
 	const outside = art(opts.outside);
 	const edge = paperEdge();
+	const meshes: THREE.Mesh[] = [];
 	const panel = (which: Panel) => {
 		// BoxGeometry face order: +x, -x, +y, -y, +z (inside), -z (outside).
 		const mesh = new THREE.Mesh(panelGeometry(pw, h, t, which), [edge, edge, edge, edge, inside, outside]);
 		mesh.castShadow = true;
+		meshes.push(mesh);
 		return mesh;
 	};
 
@@ -100,10 +112,41 @@ export function createFoldViewer(canvas: HTMLCanvasElement, opts: FoldOptions, o
 	const cover = panel('cover');
 	cover.position.set(-pw / 2, h / 2, -((3 * t) / 2 + gap));
 	coverHinge.add(cover);
+	const group = new THREE.Group();
+	group.add(back, flapHinge, coverHinge);
 
+	return {
+		group,
+		meshes,
+		setPosition(position) {
+			const a = foldAngles(position);
+			flapHinge.rotation.y = -a.flap;
+			coverHinge.rotation.y = a.cover;
+		},
+		dispose() {
+			for (const m of meshes) m.geometry.dispose();
+			for (const m of [inside, outside, edge]) m.dispose();
+			surface.normal.dispose();
+		}
+	};
+}
+
+export function createFoldViewer(canvas: HTMLCanvasElement, opts: FoldOptions, onReady: () => void): FoldViewer {
+	const { widthIn: w, heightIn: h } = opts;
+	const pw = w / 3;
+	const withPhone = opts.phone !== false;
+	// Laid out open flat, then the phone; centered on x = 0.
+	const sceneW = withPhone ? w + GAP_IN + PHONE.w : w;
+	const sceneH = withPhone ? Math.max(h, PHONE.h) : h;
+	const stage = createStage(canvas, sceneW, sceneH);
+	const { scene, renderer } = stage;
+	const left = -sceneW / 2;
+	const middle = left + w / 2; // the back panel, which stays put
+
+	const brochure = createTrifold(opts, (url, aspect, done) => loadArt(renderer, url, aspect, done), onReady);
 	const lean = new THREE.Group();
 	lean.rotation.x = LEAN;
-	lean.add(back, flapHinge, coverHinge);
+	lean.add(brochure.group);
 	const pivot = new THREE.Group();
 	pivot.position.x = middle;
 	pivot.add(lean);
@@ -124,8 +167,7 @@ export function createFoldViewer(canvas: HTMLCanvasElement, opts: FoldOptions, o
 		resize: stage.resize,
 		render() {
 			const a = foldAngles(viewer.position);
-			flapHinge.rotation.y = -a.flap;
-			coverHinge.rotation.y = a.cover;
+			brochure.setPosition(viewer.position);
 			pivot.rotation.y = viewer.angle;
 
 			// Frame what's there: folded, it's a third as wide, so the camera
@@ -143,7 +185,7 @@ export function createFoldViewer(canvas: HTMLCanvasElement, opts: FoldOptions, o
 			stage.render();
 		},
 		dispose() {
-			stage.dispose();
+			stage.dispose(); // frees the brochure and its art with the rest of the scene
 		}
 	};
 	return viewer;

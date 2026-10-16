@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bookletStack, LAPTOP, layoutHaul, LOFT, piles, pickedLines, TABLE, tableCover, tall } from './haul';
+import { PHONE } from './scale';
 import type { Item } from './types';
 
 const base: Item = {
@@ -197,7 +198,7 @@ describe('trifold brochures', () => {
 
 	it('lie folded, cover up: a third as wide, three sheets thick each, a little puffed at the creases', () => {
 		const [p] = piles([{ item: brochure, quantity: 10 }]);
-		expect(p.w).toBeCloseTo(11 / 3);
+		expect(p.fold).toEqual({ outside: 'out.jpg', inside: 'in.jpg', w: 11 / 3, sheet: 0.005 });
 		expect(p.d).toBe(8.5);
 		expect(LOFT.trifold).toBeGreaterThan(1);
 		expect(p.height).toBeCloseTo(10 * 0.015 * LOFT.trifold);
@@ -206,9 +207,17 @@ describe('trifold brochures', () => {
 		expect(p.artPart).toEqual({ from: 2 / 3, to: 1, aspect: 11 / 8.5 });
 	});
 
+	it('leave room on the table for the top one to open out flat', () => {
+		const [p] = piles([{ item: brochure, quantity: 10 }]);
+		expect(p.w).toBe(11);
+		const { piles: placed, phone } = layoutHaul([p]);
+		expect(Math.abs(placed[0].x - phone.x)).toBeGreaterThanOrEqual(11 / 2 + PHONE.w / 2);
+	});
+
 	it('is a flat sheet without its inside art', () => {
 		const [p] = piles([{ item: { ...brochure, images: ['out.jpg'] }, quantity: 1 }]);
 		expect(p.w).toBe(11);
 		expect(p.artPart).toBeUndefined();
+		expect(p.fold).toBeUndefined();
 	});
 });
