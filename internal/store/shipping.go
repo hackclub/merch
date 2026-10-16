@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -38,18 +39,29 @@ func (s *Store) ReplaceShippingHistory(ctx context.Context, ships []importer.Shi
 	return tx.Commit(ctx)
 }
 
-// ShippingHistory returns every past shipment, for estimates.
+// ShippingHistory returns every past shipment, for estimates, with handling
+// and transit in business days.
 func (s *Store) ShippingHistory(ctx context.Context) ([]swag.PastShipment, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT country, class, coalesce(weight_oz, 0), coalesce(postage_cents, 0),
-			(shipped_on - ordered_on)::float8, (delivered_on - shipped_on)::float8
+			ordered_on, shipped_on, delivered_on
 		FROM shipping_history`)
 	if err != nil {
 		return nil, err
 	}
+	between := func(from, to *time.Time) *float64 {
+		if from == nil || to == nil {
+			return nil
+		}
+		d := float64(swag.BusinessDays(*from, *to))
+		return &d
+	}
 	return collect(rows, func(r pgx.Rows) (swag.PastShipment, error) {
 		var p swag.PastShipment
-		err := r.Scan(&p.Country, &p.Class, &p.WeightOz, &p.PostageCents, &p.HandlingDays, &p.TransitDays)
+		var ordered, delivered *time.Time
+		var shipped time.Time
+		err := r.Scan(&p.Country, &p.Class, &p.WeightOz, &p.PostageCents, &ordered, &shipped, &delivered)
+		p.HandlingDays, p.TransitDays = between(ordered, &shipped), between(&shipped, delivered)
 		return p, err
 	})
 }

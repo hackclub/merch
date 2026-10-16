@@ -121,7 +121,8 @@ func TestShippingSummary(t *testing.T) {
 	if code := h.do(h.client(""), "GET", "/api/shipping", nil, &out); code != 200 {
 		t.Fatalf("summary = %d", code)
 	}
-	if out.International.TransitDays[0] < 10 || out.US.ArriveBy != "" {
+	// Wed 09-02 to Sat 09-12 at the quickest: 7 business days.
+	if out.International.TransitDays[0] != 7 || out.US.ArriveBy != "" {
 		t.Fatalf("got %+v", out)
 	}
 }

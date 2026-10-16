@@ -42,13 +42,14 @@ zenventory,CA,parcel,12,1010,2026-09-12,2026-09-14,,
 		byCountry[p.Country] = p
 	}
 	gb := byCountry["GB"]
-	if gb.Class != swag.ClassParcel || gb.WeightOz != 9.1 || gb.PostageCents != 630 || *gb.HandlingDays != 3 || *gb.TransitDays != 12 {
+	// Days are business days: Fri 09-11 -> Mon 09-14 -> Sat 09-26.
+	if gb.Class != swag.ClassParcel || gb.WeightOz != 9.1 || gb.PostageCents != 630 || *gb.HandlingDays != 1 || *gb.TransitDays != 9 {
 		t.Fatalf("GB = %+v", gb)
 	}
 	if ca := byCountry["CA"]; ca.TransitDays != nil {
 		t.Fatalf("CA has no delivery date: %+v", ca)
 	}
-	if us := byCountry["US"]; us.HandlingDays != nil || *us.TransitDays != 5 {
+	if us := byCountry["US"]; us.HandlingDays != nil || *us.TransitDays != 4 {
 		t.Fatalf("US letter = %+v", us)
 	}
 }

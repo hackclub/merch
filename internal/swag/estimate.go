@@ -14,14 +14,37 @@ type PastShipment struct {
 	Class        string
 	WeightOz     float64  // 0 = unknown
 	PostageCents int      // 0 = unknown
-	HandlingDays *float64 // ordered -> mailed
-	TransitDays  *float64 // mailed -> delivered
+	HandlingDays *float64 // ordered -> mailed, in business days
+	TransitDays  *float64 // mailed -> delivered, in business days
+}
+
+// BusinessDays counts the weekdays after from, up to and including to.
+func BusinessDays(from, to time.Time) int {
+	n := 0
+	for d := from.AddDate(0, 0, 1); !d.After(to); d = d.AddDate(0, 0, 1) {
+		if wd := d.Weekday(); wd != time.Saturday && wd != time.Sunday {
+			n++
+		}
+	}
+	return n
+}
+
+// AddBusinessDays is the nth weekday after t (t itself when n is 0).
+func AddBusinessDays(t time.Time, n int) time.Time {
+	for n > 0 {
+		t = t.AddDate(0, 0, 1)
+		if wd := t.Weekday(); wd != time.Saturday && wd != time.Sunday {
+			n--
+		}
+	}
+	return t
 }
 
 // Estimate is when a package should arrive and what its postage should cost,
-// read off how similar packages went before. Ranges run from the 20th to the
-// 80th percentile, so most packages land inside them. Zero values mean there
-// was no history to go on.
+// read off how similar packages went before. Days are business days (Mon–Fri):
+// the warehouse doesn't ship on weekends. Ranges run from the 20th to the 80th
+// percentile, so most packages land inside them. Zero values mean there was no
+// history to go on.
 type Estimate struct {
 	Package      string  `json:"package"`
 	WeightOz     float64 `json:"weight_oz"` // packed
@@ -207,8 +230,8 @@ func (h *History) Estimate(country string, p Packing, now time.Time) Estimate {
 
 	if transit != nil {
 		start := now.In(shipZone)
-		e.ArriveFrom = start.AddDate(0, 0, e.HandlingDays[0]+e.TransitDays[0]).Format(time.DateOnly)
-		e.ArriveBy = start.AddDate(0, 0, e.HandlingDays[1]+e.TransitDays[1]).Format(time.DateOnly)
+		e.ArriveFrom = AddBusinessDays(start, e.HandlingDays[0]+e.TransitDays[0]).Format(time.DateOnly)
+		e.ArriveBy = AddBusinessDays(start, e.HandlingDays[1]+e.TransitDays[1]).Format(time.DateOnly)
 	}
 	return e
 }
@@ -218,8 +241,8 @@ func (e Estimate) From(mailed time.Time) Estimate {
 	e.HandlingDays = [2]int{}
 	if e.TransitSamples > 0 {
 		m := mailed.In(shipZone)
-		e.ArriveFrom = m.AddDate(0, 0, e.TransitDays[0]).Format(time.DateOnly)
-		e.ArriveBy = m.AddDate(0, 0, e.TransitDays[1]).Format(time.DateOnly)
+		e.ArriveFrom = AddBusinessDays(m, e.TransitDays[0]).Format(time.DateOnly)
+		e.ArriveBy = AddBusinessDays(m, e.TransitDays[1]).Format(time.DateOnly)
 	}
 	return e
 }

@@ -45,19 +45,19 @@ export function arrivalText(e: ShippingEstimate | null | undefined): string {
 	return `Arrives about ${dateRange(e.arrive_from, e.arrive_by)}`;
 }
 
-// Order to doorstep, in days: handling plus transit.
+// Order to doorstep, in business days: handling plus transit.
 export const totalDays = (e: ShippingEstimate): [number, number] => [
 	e.handling_days[0] + e.transit_days[0],
 	e.handling_days[1] + e.transit_days[1]
 ];
 
-// "3–6 days", or "2–4 weeks" past two weeks.
+// Business days in words: "3–6 business days", or "2–5 weeks" past two weeks.
 export function spanText([lo, hi]: [number, number]): string {
-	if (hi > 14) {
-		const w = (n: number) => Math.max(1, Math.round(n / 7));
+	if (hi > 10) {
+		const w = (n: number) => Math.max(1, Math.round(n / 5));
 		return w(lo) === w(hi) ? `${w(hi)} weeks` : `${w(lo)}–${w(hi)} weeks`;
 	}
-	return lo === hi ? `${hi} day${hi === 1 ? '' : 's'}` : `${lo}–${hi} days`;
+	return lo === hi ? `${hi} business day${hi === 1 ? '' : 's'}` : `${lo}–${hi} business days`;
 }
 
 // The shop intro's delivery line, or '' without history.

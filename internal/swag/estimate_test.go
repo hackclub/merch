@@ -39,8 +39,8 @@ func TestEstimateUsesTheCountry(t *testing.T) {
 	if e.HandlingDays != [2]int{1, 1} {
 		t.Fatalf("handling = %v", e.HandlingDays)
 	}
-	// now is 2026-09-29: + 1 handling + 6..10 transit.
-	if e.ArriveFrom != "2026-10-06" || e.ArriveBy != "2026-10-10" {
+	// now is Tuesday 2026-09-29: + 1 handling + 6..10 transit, in business days.
+	if e.ArriveFrom != "2026-10-08" || e.ArriveBy != "2026-10-14" {
 		t.Fatalf("arrive %s..%s", e.ArriveFrom, e.ArriveBy)
 	}
 	if e.PostageCents[0] < 600 || e.PostageCents[1] > 700 || e.PostageTypicalCents != 650 {
@@ -95,6 +95,38 @@ func TestEstimateWithoutHistory(t *testing.T) {
 	e := EstimateShipping(nil, "US", parcel, now)
 	if e.ArriveBy != "" || e.PostageCents != [2]int{} {
 		t.Fatalf("no history should mean no estimate, got %+v", e)
+	}
+}
+
+func TestBusinessDays(t *testing.T) {
+	d := func(s string) time.Time { t, _ := time.Parse(time.DateOnly, s); return t }
+	for _, c := range []struct {
+		from, to string
+		want     int
+	}{
+		{"2026-09-11", "2026-09-11", 0}, // Fri, same day
+		{"2026-09-11", "2026-09-14", 1}, // Fri -> Mon
+		{"2026-09-14", "2026-09-26", 9}, // Mon -> Sat
+		{"2026-08-03", "2026-08-08", 4}, // Mon -> Sat
+		{"2026-09-12", "2026-09-13", 0}, // Sat -> Sun
+	} {
+		if got := BusinessDays(d(c.from), d(c.to)); got != c.want {
+			t.Errorf("BusinessDays(%s, %s) = %d, want %d", c.from, c.to, got, c.want)
+		}
+	}
+	for _, c := range []struct {
+		from string
+		n    int
+		want string
+	}{
+		{"2026-09-29", 0, "2026-09-29"},
+		{"2026-09-29", 7, "2026-10-08"}, // Tue + 7 -> Thu next week
+		{"2026-09-25", 1, "2026-09-28"}, // Fri + 1 -> Mon
+		{"2026-09-26", 1, "2026-09-28"}, // Sat + 1 -> Mon
+	} {
+		if got := AddBusinessDays(d(c.from), c.n).Format(time.DateOnly); got != c.want {
+			t.Errorf("AddBusinessDays(%s, %d) = %s, want %s", c.from, c.n, got, c.want)
+		}
 	}
 }
 

@@ -78,8 +78,8 @@ func scanEstimate(history []PastShipment, country string, p Packing, now time.Ti
 	}
 	if transit != nil {
 		start := now.In(shipZone)
-		e.ArriveFrom = start.AddDate(0, 0, e.HandlingDays[0]+e.TransitDays[0]).Format(time.DateOnly)
-		e.ArriveBy = start.AddDate(0, 0, e.HandlingDays[1]+e.TransitDays[1]).Format(time.DateOnly)
+		e.ArriveFrom = AddBusinessDays(start, e.HandlingDays[0]+e.TransitDays[0]).Format(time.DateOnly)
+		e.ArriveBy = AddBusinessDays(start, e.HandlingDays[1]+e.TransitDays[1]).Format(time.DateOnly)
 	}
 	return e
 }

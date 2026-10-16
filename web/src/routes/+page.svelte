@@ -172,7 +172,7 @@
 		<p>Teenager and want to spread <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a> in your community?</p>
 		<p>Get some awesome hand-designed swag made by your fellow Hack Clubbers!</p>
 		<p>Free shipping in the US.{#if fee > 0}{' '}Globally you cover the postage, usually <span class="fee" title={feeTooltip}>{roughFee(summary?.international.fee_cents || fee)}</span>.{/if}</p>
-		<p>Shipped next day Mon–Fri. {summaryText(summary) || '2–5 day delivery in US. 2–4 week delivery globally.'}</p>
+		<p>Shipped next day Mon–Fri. {summaryText(summary) || 'Usually arrives in 2–5 business days in the US, 2–5 weeks globally.'}</p>
 	</div>
 
 	{#if rows && rows[0].length}

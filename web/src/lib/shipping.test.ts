@@ -34,17 +34,17 @@ describe('shipping', () => {
 		expect(arrivalText(null)).toBe('');
 	});
 
-	it('speaks in days, then weeks', () => {
-		expect(spanText([4, 7])).toBe('4–7 days');
-		expect(spanText([1, 1])).toBe('1 day');
-		expect(spanText([9, 25])).toBe('1–4 weeks');
-		expect(spanText([14, 15])).toBe('2 weeks');
+	it('speaks in business days, then weeks', () => {
+		expect(spanText([4, 8])).toBe('4–8 business days');
+		expect(spanText([1, 1])).toBe('1 business day');
+		expect(spanText([9, 25])).toBe('2–5 weeks');
+		expect(spanText([10, 11])).toBe('2 weeks');
 	});
 
 	it('summarizes the US and abroad', () => {
-		const us = est({ handling_days: [0, 2], transit_days: [4, 7] });
-		const intl = est({ handling_days: [1, 2], transit_days: [11, 26] });
-		expect(summaryText({ us, international: intl })).toBe('Usually arrives in 4–9 days in the US, 2–4 weeks globally.');
+		const us = est({ handling_days: [0, 1], transit_days: [4, 7] });
+		const intl = est({ handling_days: [0, 2], transit_days: [9, 23] });
+		expect(summaryText({ us, international: intl })).toBe('Usually arrives in 4–8 business days in the US, 2–5 weeks globally.');
 		expect(summaryText({ us: est({ arrive_by: '' }), international: intl })).toBe('');
 	});
 
