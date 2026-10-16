@@ -17,26 +17,25 @@ import (
 const historyTTL = time.Hour
 
 type historyCache struct {
-	mu   sync.Mutex
-	rows []swag.PastShipment
-	at   time.Time
+	mu sync.Mutex
+	h  *swag.History
+	at time.Time
 }
 
-func (s *server) shippingHistory(ctx context.Context) ([]swag.PastShipment, error) {
+// shippingHistory is past shipments, indexed once per load so each estimate
+// is a lookup, not a scan of every row (the pod has a tenth of a CPU).
+func (s *server) shippingHistory(ctx context.Context) (*swag.History, error) {
 	s.history.mu.Lock()
 	defer s.history.mu.Unlock()
-	if s.history.rows != nil && s.Now().Sub(s.history.at) < historyTTL {
-		return s.history.rows, nil
+	if s.history.h != nil && s.Now().Sub(s.history.at) < historyTTL {
+		return s.history.h, nil
 	}
 	rows, err := s.Store.ShippingHistory(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if rows == nil {
-		rows = []swag.PastShipment{}
-	}
-	s.history.rows, s.history.at = rows, s.Now()
-	return rows, nil
+	s.history.h, s.history.at = swag.NewHistory(rows), s.Now()
+	return s.history.h, nil
 }
 
 // forViewer hides the postage figures from everyone but admins; requesters see
@@ -60,7 +59,7 @@ func (s *server) quote(ctx context.Context, st swag.Settings, country string, li
 	if err != nil {
 		return p, swag.Estimate{}, err
 	}
-	e := swag.EstimateShipping(h, country, p, s.Now())
+	e := h.Estimate(country, p, s.Now())
 	_, e.FeeCents = swag.InitialStatus(st, country, e)
 	return p, e, nil
 }
@@ -194,8 +193,8 @@ func (s *server) shippingSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parcel := swag.Packing{Package: swag.Package{Name: "Bubble mailer", Class: swag.ClassParcel}, ContentsOz: 8, WeightOz: 9}
-	us := swag.EstimateShipping(h, "US", parcel, s.Now())
-	intl := swag.EstimateShipping(h, "", parcel, s.Now())
+	us := h.Estimate("US", parcel, s.Now())
+	intl := h.Estimate("", parcel, s.Now())
 	_, intl.FeeCents = swag.InitialStatus(st, "", intl)
 	admin := s.isAdmin(r)
 	writeJSON(w, http.StatusOK, map[string]any{"us": forViewer(us, admin), "international": forViewer(intl, admin)})
@@ -204,7 +203,7 @@ func (s *server) shippingSummary(w http.ResponseWriter, r *http.Request) {
 // withEstimates adds delivery estimates to requests still waiting to ship.
 func (s *server) withEstimates(ctx context.Context, views []requestView, admin bool) error {
 	var cat map[int64]swag.Item
-	var h []swag.PastShipment
+	var h *swag.History
 	for i, v := range views {
 		if v.Source != "app" || (v.Status != swag.StatusPending && v.Status != swag.StatusAwaitingPayment) {
 			continue
@@ -231,7 +230,7 @@ func (s *server) withEstimates(ctx context.Context, views []requestView, admin b
 		if err != nil {
 			continue
 		}
-		e := forViewer(swag.EstimateShipping(h, v.Address.Country, p, s.Now()), admin)
+		e := forViewer(h.Estimate(v.Address.Country, p, s.Now()), admin)
 		views[i].Estimate = &e
 	}
 	return nil
