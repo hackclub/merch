@@ -150,7 +150,7 @@
 				purpose,
 				address: { ...address, country: address.country.trim().toUpperCase() },
 				lines: cartLines(cart, catalog.items, sizes),
-				note
+				note: needsReason(purpose) ? note : ''
 			});
 			setCart(emptyCart());
 			setSizes({});
@@ -332,8 +332,6 @@
 				{#if needsReason(purpose)}
 					<label><span class="reason">{purposeInfo?.reason}</span>
 						<textarea bind:value={note} rows="3" required placeholder={purposeInfo?.example}></textarea></label>
-				{:else}
-					<label>Anything we should know? (optional) <textarea bind:value={note} rows="2"></textarea></label>
 				{/if}
 				{#if intl && quote?.estimate.fee_cents}
 					<p>
