@@ -164,7 +164,7 @@
 	}
 </script>
 
-<svelte:head><title>Hack Club Mail Room</title></svelte:head>
+<svelte:head><title>Hack Club Merch Request</title></svelte:head>
 
 <!-- One simple column, top to bottom, like the old Fillout request forms: intro, gallery, questions, shipping, submit. -->
 <div class="sheet">

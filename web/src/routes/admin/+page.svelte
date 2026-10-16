@@ -134,7 +134,7 @@
 		}, `Saved submission #${s.id}`);
 </script>
 
-<svelte:head><title>Admin · Hack Club Mail Room</title></svelte:head>
+<svelte:head><title>Admin · Hack Club Merch Request</title></svelte:head>
 
 <h1>Admin</h1>
 {#if !session.me?.roles.admin}

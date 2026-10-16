@@ -29,7 +29,7 @@
 	}
 </script>
 
-<svelte:head><title>My requests · Hack Club Mail Room</title></svelte:head>
+<svelte:head><title>My requests · Hack Club Merch Request</title></svelte:head>
 
 <h1>My requests</h1>
 {#if !session.me?.user}

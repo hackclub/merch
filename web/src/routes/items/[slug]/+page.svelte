@@ -70,7 +70,7 @@
 	});
 </script>
 
-<svelte:head><title>{item ? `${item.name} · ` : ''}Hack Club Mail Room</title></svelte:head>
+<svelte:head><title>{item ? `${item.name} · ` : ''}Hack Club Merch Request</title></svelte:head>
 
 <p class="back label"><a href="/">← All swag</a></p>
 
