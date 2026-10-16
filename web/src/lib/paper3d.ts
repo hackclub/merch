@@ -113,7 +113,8 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 	renderer.toneMapping = THREE.NeutralToneMapping;
 	renderer.toneMappingExposure = 1;
 	renderer.shadowMap.enabled = true;
-	renderer.shadowMap.type = THREE.VSMShadowMap;
+	// PCF, not VSM: VSM drew stair-step teeth along thin things lying on the floor (a postcard, a phone).
+	renderer.shadowMap.type = THREE.PCFShadowMap;
 
 	const scene = new THREE.Scene();
 	const pmrem = new THREE.PMREMGenerator(renderer);
