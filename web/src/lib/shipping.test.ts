@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrivalText, costRows, costToYou, worthText, dateRange, ozText, spanText, summaryText, type Costs, type ShippingEstimate } from './shipping';
+import { arrivalText, costBreakdown, costRows, costToYou, worthText, dateRange, ozText, spanText, summaryText, type Costs, type ShippingEstimate } from './shipping';
 
 const est = (over: Partial<ShippingEstimate>): ShippingEstimate => ({
 	package: 'Mailer',
@@ -98,5 +98,26 @@ describe('costToYou', () => {
 		expect(costToYou(false, 2149)).toBe('$0');
 		expect(costToYou(true, 2200)).toBe('$22.00 for shipping');
 		expect(costToYou(true, 0)).toBe('$0');
+	});
+});
+
+describe('costBreakdown', () => {
+	const c = (over: Partial<Costs>): Costs => ({
+		items_cents: 945, labor_cents: 260, packing_cents: 50, postage_cents: 512, total_cents: 1767, unpriced_skus: [], ...over
+	});
+	it('lists materials, labor, packing, postage and the total for one request', () => {
+		expect(costBreakdown(c({}))).toEqual([
+			['Materials', '$9.45'],
+			['Labor', '$2.60'],
+			['Packing', '$0.50'],
+			['Postage (est.)', '$5.12'],
+			['Total', '$17.67']
+		]);
+	});
+	it('marks what it has no figure for', () => {
+		const rows = costBreakdown(c({ postage_cents: 0, unpriced_skus: ['Sti/New/1st'] }));
+		expect(rows[0]).toEqual(['Materials', '$9.45 + Sti/New/1st unpriced']);
+		expect(rows[3]).toEqual(['Postage (est.)', 'no history']);
+		expect(rows[4]).toEqual(['Total', '$17.67+']);
 	});
 });

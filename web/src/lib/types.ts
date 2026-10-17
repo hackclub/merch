@@ -1,5 +1,5 @@
 // Mirrors the Go JSON types in internal/swag and internal/store.
-import type { ShippingEstimate } from './shipping';
+import type { Costs, ShippingEstimate } from './shipping';
 
 export type Item = {
 	id: number;
@@ -89,6 +89,7 @@ export type SwagRequest = {
 	payment_url?: string; // HCB
 	stripe_key?: string; // pay by card on the page
 	estimate?: ShippingEstimate; // while it waits to ship; postage only for admins
+	costs?: Costs; // admins: what it costs Hack Club to send, while it waits to ship
 };
 
 export type SubmissionStatus = 'submitted' | 'approved' | 'printing' | 'stocked' | 'rejected';

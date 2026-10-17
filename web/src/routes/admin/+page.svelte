@@ -6,7 +6,7 @@
 	import { byFilename, itemPath, moveImage } from '$lib/items';
 	import InternalNote from '$lib/InternalNote.svelte';
 	import { session } from '$lib/session.svelte';
-	import { arrivalText, ozText } from '$lib/shipping';
+	import { arrivalText, costBreakdown, ozText } from '$lib/shipping';
 	import { lineText, shipBody } from '$lib/ship';
 	import type { Item, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
 
@@ -210,6 +210,13 @@
 									{#if r.estimate.postage_cents[1]}· postage {formatCents(r.estimate.postage_cents[0])}–{formatCents(r.estimate.postage_cents[1])}{/if}
 									{#if arrivalText(r.estimate)}<br />{arrivalText(r.estimate)}{/if}
 								</div>
+							{/if}
+							{#if r.costs}
+								<table class="cost" data-track="request_costs" title="What it costs Hack Club: warehouse unit costs, AGH labor ($1.80 + $0.20 a SKU), the package, and typical postage of past packages like it">
+									<tbody>
+										{#each costBreakdown(r.costs) as [label, amount]}<tr><td>{label}</td><td>{amount}</td></tr>{/each}
+									</tbody>
+								</table>
 							{/if}
 						</td>
 						<td class="row">
@@ -419,6 +426,10 @@
 {/if}
 
 <style>
+	.cost { width: auto; margin-top: 0.4rem; font-size: 0.85em; }
+	.cost td { padding: 0.1rem 0.6rem 0.1rem 0; border: 0; color: var(--muted); }
+	.cost td:last-child { text-align: right; white-space: nowrap; color: var(--dark); }
+	.cost tr:last-child td { font-weight: 700; color: var(--dark); border-top: 1px solid var(--smoke); }
 	.gallery { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.5rem; }
 	.gallery figure { margin: 0; width: 5rem; }
 	.gallery img { width: 5rem; height: 5rem; object-fit: contain; background: var(--snow); border: 1px solid var(--smoke); border-radius: 6px; }

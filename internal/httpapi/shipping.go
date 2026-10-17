@@ -146,28 +146,8 @@ func (s *server) shippingEstimate(w http.ResponseWriter, r *http.Request) {
 // if it's abroad, else anywhere abroad), for admins. A side that can't ship
 // as one package (over 3 lb abroad) is nil.
 func (s *server) costs(ctx context.Context, st swag.Settings, country string, lines []swag.Line, cat map[int64]swag.Item) (map[string]*swag.Costs, error) {
-	var shipped []swag.Shipped
-	shipsWith := map[int64][]string{}
-	for _, l := range lines {
-		sku := l.SKU
-		if sku == "" {
-			sku = cat[l.ItemID].SKU
-		}
-		shipped = append(shipped, swag.Shipped{ItemID: l.ItemID, SKU: sku, Quantity: l.Quantity})
-		shipsWith[l.ItemID] = cat[l.ItemID].ShipsWith
-	}
-	contents := swag.Shipment(shipped, shipsWith)
-	// Without the warehouse, every SKU just shows as unpriced.
-	unit := map[string]float64{}
-	if skus, err := s.cachedSKUs(ctx); err != nil {
-		s.Log.Error("warehouse sku lookup failed", "err", err)
-	} else {
-		for _, k := range skus {
-			if c, err := strconv.ParseFloat(k.UnitCost, 64); err == nil {
-				unit[k.SKU] = c
-			}
-		}
-	}
+	contents := shipment(lines, cat)
+	unit := s.unitCosts(ctx)
 	abroad := country
 	if !swag.IsInternational(abroad) {
 		abroad = ""
@@ -185,6 +165,38 @@ func (s *server) costs(ctx context.Context, st swag.Settings, country string, li
 		out[key] = &c
 	}
 	return out, nil
+}
+
+// shipment is what goes in the box for lines, ships-with SKUs included.
+func shipment(lines []swag.Line, cat map[int64]swag.Item) []swag.Shipped {
+	var shipped []swag.Shipped
+	shipsWith := map[int64][]string{}
+	for _, l := range lines {
+		sku := l.SKU
+		if sku == "" {
+			sku = cat[l.ItemID].SKU
+		}
+		shipped = append(shipped, swag.Shipped{ItemID: l.ItemID, SKU: sku, Quantity: l.Quantity})
+		shipsWith[l.ItemID] = cat[l.ItemID].ShipsWith
+	}
+	return swag.Shipment(shipped, shipsWith)
+}
+
+// unitCosts is the warehouse's unit cost of each SKU, in dollars. Without the
+// warehouse it's empty, so every SKU just shows as unpriced.
+func (s *server) unitCosts(ctx context.Context) map[string]float64 {
+	unit := map[string]float64{}
+	skus, err := s.cachedSKUs(ctx)
+	if err != nil {
+		s.Log.Error("warehouse sku lookup failed", "err", err)
+		return unit
+	}
+	for _, k := range skus {
+		if c, err := strconv.ParseFloat(k.UnitCost, 64); err == nil {
+			unit[k.SKU] = c
+		}
+	}
+	return unit
 }
 
 // shippingSummary is the typical delivery time in the US and abroad, and the
@@ -209,10 +221,12 @@ func (s *server) shippingSummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"us": forViewer(us, admin), "international": forViewer(intl, admin)})
 }
 
-// withEstimates adds delivery estimates to requests still waiting to ship.
+// withEstimates adds delivery estimates to requests still waiting to ship, and
+// for admins what each costs Hack Club to send.
 func (s *server) withEstimates(ctx context.Context, views []requestView, admin bool) error {
 	var cat map[int64]swag.Item
 	var h *swag.History
+	var unit map[string]float64
 	for i, v := range views {
 		if v.Source != "app" || (v.Status != swag.StatusPending && v.Status != swag.StatusAwaitingPayment) {
 			continue
@@ -239,8 +253,16 @@ func (s *server) withEstimates(ctx context.Context, views []requestView, admin b
 		if err != nil {
 			continue
 		}
-		e := forViewer(h.Estimate(v.Address.Country, p, s.Now()), admin)
+		full := h.Estimate(v.Address.Country, p, s.Now())
+		e := forViewer(full, admin)
 		views[i].Estimate = &e
+		if admin {
+			if unit == nil {
+				unit = s.unitCosts(ctx)
+			}
+			c := swag.CostToShip(shipment(lines, cat), unit, p, full)
+			views[i].Costs = &c
+		}
 	}
 	return nil
 }

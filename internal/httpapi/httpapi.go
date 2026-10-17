@@ -446,6 +446,7 @@ type requestView struct {
 	PaymentURL string         `json:"payment_url,omitempty"`
 	StripeKey  string         `json:"stripe_key,omitempty"` // pay by card on the page, with this publishable key
 	Estimate   *swag.Estimate `json:"estimate,omitempty"`   // when it should arrive, while it waits to ship
+	Costs      *swag.Costs    `json:"costs,omitempty"`      // admins: what it costs Hack Club to send
 }
 
 func (s *server) view(r *store.Request) requestView {

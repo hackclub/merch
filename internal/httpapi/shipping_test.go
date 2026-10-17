@@ -189,3 +189,29 @@ func TestWarmLoadsShippingHistory(t *testing.T) {
 		t.Fatalf("estimates reloaded the history instead of using the warm copy (err %v)", err)
 	}
 }
+
+// Admins reviewing a request see what it costs Hack Club to send: items at the
+// warehouse's unit costs, AGH's labor, the package and typical postage.
+func TestAdminRequestListShowsCosts(t *testing.T) {
+	h := newHarness(t)
+	it := h.mkItem("Sti/A", true)
+	user := h.client(userEmail)
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 3}}}, nil); code != 201 {
+		t.Fatalf("create = %d", code)
+	}
+	var all struct{ Requests []struct{ Costs *swag.Costs } }
+	h.do(h.client(adminEmail), "GET", "/api/admin/requests", nil, &all)
+	c := all.Requests[0].Costs
+	if c == nil {
+		t.Fatal("admin list has no costs")
+	}
+	if c.ItemsCents != 75 || c.LaborCents != swag.OrderLaborCents+swag.SKULaborCents ||
+		c.TotalCents != c.ItemsCents+c.LaborCents+c.PackingCents+c.PostageCents {
+		t.Errorf("costs = %+v", c)
+	}
+	var mine struct{ Requests []map[string]any }
+	h.do(user, "GET", "/api/requests", nil, &mine)
+	if _, ok := mine.Requests[0]["costs"]; ok {
+		t.Errorf("requester sees costs: %v", mine.Requests[0])
+	}
+}

@@ -95,6 +95,19 @@ export function costRows(c: CostSides): [string, string, string][] {
 	];
 }
 
+// One request's costs, for admins reviewing it: [label, amount]. A total
+// missing an item's cost or the postage is a floor.
+export function costBreakdown(x: Costs): [string, string][] {
+	const unpriced = x.unpriced_skus.length ? ` + ${x.unpriced_skus.join(', ')} unpriced` : '';
+	return [
+		['Materials', formatCents(x.items_cents) + unpriced],
+		['Labor', formatCents(x.labor_cents)],
+		['Packing', formatCents(x.packing_cents)],
+		['Postage (est.)', x.postage_cents ? formatCents(x.postage_cents) : 'no history'],
+		['Total', formatCents(x.total_cents) + (unpriced || !x.postage_cents ? '+' : '')]
+	];
+}
+
 // Hack Club's marketing goal: spend at most $50 per new teenager who joins and ships a weighted
 // project (10 approved hours, so $5 an hour) in one of our programs.
 export const CENTS_PER_NEW_TEEN = 5000;
