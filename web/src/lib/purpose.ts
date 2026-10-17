@@ -29,8 +29,8 @@ export const offered = (item: Item, purpose: Purpose | ''): boolean => purpose !
 /** The items to show for a purpose; everything until one is picked. */
 export const itemsFor = (items: Item[], purpose: Purpose | ''): Item[] => items.filter((i) => offered(i, purpose));
 
-/** Reads a purpose saved to localStorage; anything else is "not picked yet". */
-export const parsePurpose = (raw: string | null): Purpose | '' => PURPOSES.find((p) => p.value === raw)?.value ?? '';
+/** Reads a purpose saved to localStorage; with none saved, "To share with friends" is picked. */
+export const parsePurpose = (raw: string | null): Purpose | '' => PURPOSES.find((p) => p.value === raw)?.value ?? 'personal';
 
 /** "Hack Club" for 'club'; '' for imported requests, which have no purpose. */
 export const purposeLabel = (p: string): string => PURPOSES.find((x) => x.value === p)?.short ?? '';

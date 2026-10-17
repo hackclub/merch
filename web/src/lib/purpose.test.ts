@@ -29,10 +29,10 @@ describe('purpose', () => {
 		expect(itemsFor([base, shirt], '')).toEqual([base, shirt]);
 	});
 
-	it('reads a saved purpose, dropping anything else', () => {
+	it('reads a saved purpose, defaulting to sharing with friends', () => {
 		expect(parsePurpose('club')).toBe('club');
-		expect(parsePurpose('resale')).toBe('');
-		expect(parsePurpose(null)).toBe('');
+		expect(parsePurpose('resale')).toBe('personal');
+		expect(parsePurpose(null)).toBe('personal');
 	});
 
 	it('labels past requests, including imported ones with no purpose', () => {
