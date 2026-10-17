@@ -255,11 +255,11 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   `merch` (`44052a13-2fe2-4f4c-94aa-5ec7102b4fd5`), Postgres `merch-db`
   (`4c2c324f-8b8f-4afe-94a5-3c9d1ba4a6f5`, PG 17, daily backup 03:00 UTC). DNS is a CNAME to
   `merch-merch-1aa3b1.k.hackclub.dev` in `hackclub/dns` (`hackclub.com.yaml`).
-- Sign-in is invite-only for now. Since 2026-10-17 the `merch.hackclub.com` ingress has no
-  Orchard login (protection `none`), so anyone can browse the shop, but `ALLOWED_EMAILS` (two
-  addresses) refuses every other Hack Club Auth sign-in. To open it to everyone, remove
-  `ALLOWED_EMAILS` from the deployment. (The auto-generated `*.k.hackclub.dev` host still has
-  Orchard login.)
+- Production is public since 2026-10-17: the `merch.hackclub.com` ingress has no Orchard login
+  (protection `none`), and `ALLOWED_EMAILS` is unset, so anyone with Hack Club Auth can sign in
+  and request swag. Every request is still reviewed before it ships. To close sign-in again, set
+  `ALLOWED_EMAILS` (comma-separated) on the deployment with `add_env_vars`. (The auto-generated
+  `*.k.hackclub.dev` host still has Orchard login.)
 - **Every push to `main` builds and deploys to production** (Orchard auto-deploy, about 3
   minutes). Landing on `main` is shipping. Check a rollout with `list_pods` (the image tag) and
   `get_image_history`, not `get_deployment`.
