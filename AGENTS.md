@@ -340,7 +340,7 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
 - **Backorders:** the mail API gives each SKU's `in_stock` (below zero when orders wait on it) and
   `inbound` (units on order) but no arrival date. When stock can't cover a line and more is
   inbound (`swag.Backordered`), the shop's item list says "15k are inbound to Hack Club HQ. Your
-  package will ship when they arrive." (`$lib/backorder`, from `/api/catalog`'s
+  package will ship on arrival." (`$lib/backorder`, from `/api/catalog`'s
   `stock`), and the estimate counts from the restock (`Estimate.AfterRestock`: no dates, 1–2
   extra business days for the warehouse to receive it). The date is in Zenventory purchase
   orders (`required_by_date`), which Theseus fetches but doesn't return yet.

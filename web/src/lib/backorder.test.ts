@@ -20,7 +20,7 @@ describe('backorders', () => {
 	});
 
 	it('says what is inbound when the warehouse is short', () => {
-		const note = '15k are inbound to Hack Club HQ. Your package will ship when they arrive.';
+		const note = '15k are inbound to Hack Club HQ. Your package will ship on arrival.';
 		expect(backorderNote(item(), stock, {}, {})).toBe(note);
 		expect(backorderNote(item(), stock, { 1: 25 }, {})).toBe(note);
 		expect(backorderNote(item({ sku: 'Pri/Wel/4x6/1st' }), stock, { 1: 25 }, {})).toBe('');
@@ -35,7 +35,7 @@ describe('backorders', () => {
 		expect(backorderNote(shirt, stock, {}, {})).toBe('');
 		expect(backorderNote(shirt, stock, { 1: 1 }, { 1: { 'Swa/Shirt/HC/M': 1 } })).toBe('');
 		expect(backorderNote(shirt, stock, { 1: 2 }, { 1: { 'Swa/Shirt/HC/S': 1, 'Swa/Shirt/HC/M': 1 } })).toBe(
-			'500 size S are inbound to Hack Club HQ. Your package will ship when they arrive.'
+			'500 size S are inbound to Hack Club HQ. Your package will ship on arrival.'
 		);
 	});
 });
