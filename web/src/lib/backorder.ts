@@ -18,7 +18,7 @@ export function backorderNote(item: Item, stock: Record<string, SkuStock> | unde
 		const st = stock[l.sku ?? item.sku];
 		if (!short(st, l.quantity)) continue;
 		const size = item.variants.find((v) => v.sku === l.sku)?.label;
-		return `We have ${countText(st.inbound)}${size ? ` size ${size}` : ''} inbound to the Hack Club warehouse. Yours ship as soon as they arrive.`;
+		return `${countText(st.inbound)}${size ? ` size ${size}` : ''} are inbound to Hack Club HQ. Your package will ship when they arrive.`;
 	}
 	return '';
 }
