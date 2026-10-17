@@ -175,7 +175,7 @@ func TestShippingEstimateIsLogged(t *testing.T) {
 	}
 	p := props(t, ok)
 	lines := p["lines"].([]any)
-	if p["country"] != "DE" || p["service"] != "Asendia" || p["package"] != "Bubble mailer" || p["fee_cents"].(float64) <= 0 ||
+	if p["country"] != "DE" || p["service"] != "Asendia" || p["package"] != "Bubble mailer" || p["fee_cents"].(float64) <= 0 || p["postage_basis"] == nil ||
 		p["arrive_by"] == "" || len(lines) != 1 || lines[0].(map[string]any)["item_id"].(float64) != float64(magazine.ID) {
 		t.Errorf("estimate props = %v", p)
 	}

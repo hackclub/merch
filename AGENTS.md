@@ -454,7 +454,7 @@ blocks landing):
   `fee_cents`, `refund_cents`, `country`, `by` = `admin` or `requester`, `partial` when shipping
   less made postage cheaper), `email_sent` and `email_failed` (a request email: `kind` = `received`, `dispatched` or `rejected`,
   `request_id`, and Loops' `error`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
-  postage, sample counts, or `error` when it won't pack), `request_created`, `request_refused` (the
+  postage, `postage_basis` (the country's rate card, or `international` without one), sample counts, or `error` when it won't pack), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `submission_created`. They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
 - Admin events (`internal/httpapi/insights.go`). Request events belong to the requester's

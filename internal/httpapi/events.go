@@ -241,7 +241,7 @@ func estimateProps(country string, lines []swag.Line, p swag.Packing, e swag.Est
 		"class": e.Class, "service": e.Service, "handling_days": e.HandlingDays, "transit_days": e.TransitDays,
 		"arrive_from": e.ArriveFrom, "arrive_by": e.ArriveBy, "fee_cents": e.FeeCents,
 		"postage_cents": e.PostageCents, "postage_typical_cents": e.PostageTypicalCents,
-		"transit_basis": e.TransitBasis, "transit_samples": e.TransitSamples, "postage_samples": e.PostageSamples,
+		"transit_basis": e.TransitBasis, "transit_samples": e.TransitSamples, "postage_basis": e.PostageBasis, "postage_samples": e.PostageSamples,
 	}
 }
 
