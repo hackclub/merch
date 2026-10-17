@@ -3,7 +3,6 @@
 // is used and improve it. Page views and time on page, clicks, form fields
 // (never what's typed), cart changes, hovers over items, and errors.
 // Text inside [data-private] (addresses) is never sent.
-import { version } from '$app/environment';
 import type { Cart, Sizes } from './cart';
 
 type Props = Record<string, unknown>;
@@ -289,7 +288,7 @@ function closePage(final: boolean) {
 /** Starts tracking (once). Call from the root layout. */
 export function startTracking() {
 	if (tracker || typeof window === 'undefined') return;
-	tracker = new Tracker({ send, now: Date.now, visit: () => visit?.id ?? currentVisit(), path: () => location.pathname, release: version });
+	tracker = new Tracker({ send, now: Date.now, visit: () => visit?.id ?? currentVisit(), path: () => location.pathname, release: __MERCH_RELEASE__ });
 	currentVisit();
 
 	const input = () => page?.clock.input(Date.now());

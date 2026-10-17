@@ -134,21 +134,21 @@ func TestEventsCarryTheRelease(t *testing.T) {
 	h := newHarness(t, func(d *Deps) {
 		d.Static = fstest.MapFS{
 			"index.html":           {Data: []byte("<html></html>")},
-			"_app/version.json":    {Data: []byte(`{"version":"2026-10-17T14:16:45Z"}`)},
+			"_app/version.json":    {Data: []byte(`{"version":"20261017T141645Z"}`)},
 			"manifest.webmanifest": {Data: []byte(`{}`)},
 		}
 	})
 	c := h.visitorClient(userEmail, "s1", "/")
 	h.do(c, "GET", "/api/me", nil, nil)
-	body := map[string]any{"visit": "s1", "release": "2026-10-16T09:00:00Z", "events": []map[string]any{{"name": "page_view", "path": "/"}}}
+	body := map[string]any{"visit": "s1", "release": "20261016T090000Z", "events": []map[string]any{{"name": "page_view", "path": "/"}}}
 	if code := h.do(c, "POST", "/api/events", body, nil); code != 204 {
 		t.Fatalf("events = %d", code)
 	}
-	if evs := h.events("api"); len(evs) == 0 || evs[0].Release != "2026-10-17T14:16:45Z" {
+	if evs := h.events("api"); len(evs) == 0 || evs[0].Release != "20261017T141645Z" {
 		t.Errorf("server event release = %+v", evs)
 	}
 	// The page reports the build it's running (an open tab can be older than the server).
-	if evs := h.events("page_view"); len(evs) != 1 || evs[0].Release != "2026-10-16T09:00:00Z" {
+	if evs := h.events("page_view"); len(evs) != 1 || evs[0].Release != "20261016T090000Z" {
 		t.Errorf("client event release = %+v", evs)
 	}
 	body["release"] = "<script>"

@@ -12,7 +12,7 @@ func TestRecordEvents(t *testing.T) {
 	u := mkUser(t, s, "ident!1", "orpheus@hackclub.com")
 	at := time.Now().Add(-time.Minute).Truncate(time.Millisecond)
 	err := s.RecordEvents(ctx, []Event{
-		{At: at, Source: "client", Name: "page_view", Visitor: "v1", Visit: "s1", Path: "/", Props: json.RawMessage(`{"from":""}`), Release: "2026-10-17T14:16:45Z"},
+		{At: at, Source: "client", Name: "page_view", Visitor: "v1", Visit: "s1", Path: "/", Props: json.RawMessage(`{"from":""}`), Release: "20261017T141645Z"},
 		{Source: "server", Name: "shipping_estimate", Visitor: "v1", Visit: "s1", UserID: &u.ID, Path: "/", Props: json.RawMessage(`{"country":"DE"}`)},
 		{Source: "client", Name: "click", Visitor: "v2"},
 	})
@@ -28,7 +28,7 @@ func TestRecordEvents(t *testing.T) {
 	}
 	// Newest first; a zero At means now.
 	pv := evs[2]
-	if pv.Name != "page_view" || !pv.At.Equal(at) || pv.Visit != "s1" || string(pv.Props) != `{"from": ""}` || pv.UserID != nil || pv.Release != "2026-10-17T14:16:45Z" {
+	if pv.Name != "page_view" || !pv.At.Equal(at) || pv.Visit != "s1" || string(pv.Props) != `{"from": ""}` || pv.UserID != nil || pv.Release != "20261017T141645Z" {
 		t.Errorf("page_view = %+v (%s)", pv, pv.Props)
 	}
 	est := evs[1]

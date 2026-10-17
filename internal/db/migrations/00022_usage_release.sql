@@ -1,6 +1,6 @@
 -- +goose Up
 -- Which build of the site each event came from (the web build's time, e.g.
--- 2026-10-17T14:16:45Z), so changes can be compared before and after they
+-- 20261017T141645Z), so changes can be compared before and after they
 -- shipped. Server events carry the server's build, browser events the tab's.
 ALTER TABLE usage_events ADD COLUMN release TEXT NOT NULL DEFAULT '';
 

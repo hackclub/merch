@@ -409,7 +409,7 @@ blocks landing):
 - Columns: `at`, `source` (`client` from the browser, `server` from handlers), `name`, `visitor`
   (random id per browser, cookie `zmr_visitor`), `visit` (per tab; renewed after 30 idle minutes),
   `user_id` (when signed in), `path` (the page), `props` (jsonb), `release` (the web build's time,
-  e.g. `2026-10-17T14:16:45Z`: the server's build on server events, the open tab's on browser
+  e.g. `20261017T141645Z`: the server's build on server events, the open tab's on browser
   events; `''` before 2026-10-17). Group by `release` to compare before and after a change;
   Orchard's `get_image_history` maps a build time to its commit.
 - `visitor` links what someone did before they signed in to who they are (`sign_in` has both).

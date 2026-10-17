@@ -5,6 +5,10 @@ import { defineConfig } from 'vitest/config';
 // The Go server (cmd/server) serves the API and, in production, this app's
 // static build. In dev, Vite proxies API/auth calls to it.
 const backend = process.env.BACKEND_URL ?? 'http://localhost:8080';
+// The build's time names the release: usage events carry it, so changes can be
+// compared before and after they shipped (the server reads it from version.json).
+// Compact ISO 8601 (20261017T143818Z): SvelteKit breaks on a version name with colons.
+const release = new Date().toISOString().replace(/[-:]|\.\d+/g, '');
 
 export default defineConfig({
 	plugins: [
@@ -16,11 +20,10 @@ export default defineConfig({
 			// Single-page app: every unknown path falls back to index.html, which the
 			// Go server mirrors in production.
 			adapter: adapter({ fallback: 'index.html' }),
-			// The build's time names the release: usage events carry it, so changes can
-			// be compared before and after they shipped.
-			version: { name: new Date().toISOString().slice(0, 19) + 'Z' }
+			version: { name: release }
 		})
 	],
+	define: { __MERCH_RELEASE__: JSON.stringify(release) },
 	server: {
 		port: 5173,
 		strictPort: true,
