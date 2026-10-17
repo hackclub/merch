@@ -460,3 +460,21 @@ func TestDispatchWithChanges(t *testing.T) {
 			return nil
 		})
 }
+
+func TestCloseRequestRecordsRefund(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "ident!1", "a@x.com")
+	it := mkItem(t, s, "Sti/A", true)
+	r, _ := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: it.ID, Quantity: 1}}, Status: swag.StatusPending, ShippingFeeCents: 1200}, noCheck)
+	got, err := s.CloseRequest(ctx, r.ID, swag.StatusRejected, "Out of stock.", true)
+	if err != nil || got.Status != swag.StatusRejected || got.AdminNote != "Out of stock." || got.RefundedAt == nil || got.RefundedCents != 1200 {
+		t.Fatalf("CloseRequest = %+v, %v", got, err)
+	}
+	r2, _ := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: it.ID, Quantity: 1}}, Status: swag.StatusPending}, noCheck)
+	if got, _ := s.CloseRequest(ctx, r2.ID, swag.StatusCancelled, "", false); got.RefundedAt != nil {
+		t.Fatalf("unrefunded = %+v", got)
+	}
+	if got, err := s.RecordRefund(ctx, r2.ID, 300); err != nil || got.RefundedCents != 300 || got.RefundedAt == nil {
+		t.Fatalf("RecordRefund = %+v, %v", got, err)
+	}
+}

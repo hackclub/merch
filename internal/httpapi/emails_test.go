@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/hackclub/merch/internal/importer"
 	"github.com/hackclub/merch/internal/loops"
 	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/swag"
@@ -220,5 +221,149 @@ func TestShipWithChanges(t *testing.T) {
 	mustContain(t, "shipped", e.Body, "- 2 × Sti/A", "Sti/A: you asked for 3, we sent 2", "Sti/B: you asked for 1, we couldn't send it", "We're out of B.")
 	if strings.Contains(e.Body, "× Sti/B") {
 		t.Errorf("removed line listed as shipped:\n%s", e.Body)
+	}
+}
+
+// paidIntlRequest is an international request paid by card, now pending.
+func paidIntlRequest(t *testing.T, h *harness, fs *fakeStripe, email string) viewed {
+	t.Helper()
+	r := h.intlRequest(email)
+	var pay payResponse
+	h.do(h.client(email), "POST", fmt.Sprintf("/api/requests/%d/pay", r.ID), map[string]any{}, &pay)
+	fs.set(pay.ClientSecret[:strings.Index(pay.ClientSecret, "_secret")], "succeeded", r.ShippingFeeCents)
+	h.do(h.client(email), "GET", "/api/requests", nil, nil)
+	return r
+}
+
+func newRefundHarness(t *testing.T) (*harness, *fakeStripe, *fakeMailer) {
+	fs := &fakeStripe{}
+	h, m := newMailHarness(t, func(d *Deps) { d.Payments = fs; d.Config.StripePublishableKey = "pk_test_x" })
+	return h, fs, m
+}
+
+func TestRejectRefundsCardPayment(t *testing.T) {
+	h, fs, m := newRefundHarness(t)
+	r := paidIntlRequest(t, h, fs, userEmail)
+	var got store.Request
+	if code := h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/requests/%d/reject", r.ID), map[string]any{"note": "Can't ship there."}, &got); code != 200 {
+		t.Fatalf("reject = %d", code)
+	}
+	if len(fs.refunds) != 1 || fs.refunds[0] != (fakeRefund{"pi_1", 0}) || got.RefundedAt == nil || got.Status != swag.StatusRejected {
+		t.Fatalf("refunds %v, request %+v", fs.refunds, got)
+	}
+	e := m.emails()
+	mustContain(t, "rejected", e[len(e)-1].Body, "refunded", dollarsText(r.ShippingFeeCents), "Can't ship there.")
+	if ev := h.events("payment_refunded"); len(ev) != 1 || props(t, ev[0])["by"] != "admin" || props(t, ev[0])["fee_cents"] != float64(r.ShippingFeeCents) {
+		t.Fatalf("payment_refunded = %+v", ev)
+	}
+}
+
+func dollarsText(cents int) string { return fmt.Sprintf("$%d.%02d", cents/100, cents%100) }
+
+// If Stripe won't refund, the request stays as it was, so the admin can try again.
+func TestRejectWaitsForRefund(t *testing.T) {
+	h, fs, m := newRefundHarness(t)
+	r := paidIntlRequest(t, h, fs, userEmail)
+	fs.refundErr = fmt.Errorf("stripe down")
+	if code := h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/requests/%d/reject", r.ID), map[string]any{}, nil); code != 502 {
+		t.Fatalf("reject = %d, want 502", code)
+	}
+	got, _ := h.store.GetRequest(context.Background(), r.ID)
+	if got.Status != swag.StatusPending || len(m.emails()) != 1 {
+		t.Fatalf("status %s, emails %d", got.Status, len(m.emails()))
+	}
+}
+
+// Rejecting an unpaid request closes its payment, so it can't be paid afterwards.
+func TestRejectClosesUnpaidPayment(t *testing.T) {
+	h, fs, m := newRefundHarness(t)
+	r := h.intlRequest(userEmail)
+	h.do(h.client(userEmail), "POST", fmt.Sprintf("/api/requests/%d/pay", r.ID), map[string]any{}, nil)
+	var got store.Request
+	h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/requests/%d/reject", r.ID), map[string]any{}, &got)
+	if got.Status != swag.StatusRejected || len(fs.cancelled) != 1 || len(fs.refunds) != 0 || got.RefundedAt != nil {
+		t.Fatalf("request %+v, cancelled %v, refunded %v", got, fs.cancelled, fs.refunds)
+	}
+	if e := m.emails(); len(e) != 1 || strings.Contains(e[0].Body, "refund") {
+		t.Fatalf("emails = %+v", e)
+	}
+}
+
+func TestCancelRefundsCardPayment(t *testing.T) {
+	h, fs, _ := newRefundHarness(t)
+	r := paidIntlRequest(t, h, fs, userEmail)
+	var got store.Request
+	if code := h.do(h.client(userEmail), "POST", fmt.Sprintf("/api/requests/%d/cancel", r.ID), map[string]any{}, &got); code != 200 {
+		t.Fatalf("cancel = %d", code)
+	}
+	if got.Status != swag.StatusCancelled || got.RefundedAt == nil || len(fs.refunds) != 1 {
+		t.Fatalf("request %+v, refunds %v", got, fs.refunds)
+	}
+	if ev := h.events("payment_refunded"); len(ev) != 1 || props(t, ev[0])["by"] != "requester" {
+		t.Fatalf("payment_refunded = %+v", ev)
+	}
+}
+
+// Paid outside Stripe (marked paid by hand): the email says we'll refund it.
+func TestRejectManuallyPaidRequest(t *testing.T) {
+	h, m := newMailHarness(t)
+	it := h.mkItem("Sti/A", true)
+	var r store.Request
+	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "customs_ok": true, "address": deAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
+	admin := h.client(adminEmail)
+	h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/mark-paid", r.ID), map[string]any{}, nil)
+	var got store.Request
+	h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/reject", r.ID), map[string]any{}, &got)
+	if got.Status != swag.StatusRejected || got.RefundedAt != nil {
+		t.Fatalf("request = %+v", got)
+	}
+	e := m.emails()
+	mustContain(t, "rejected", e[len(e)-1].Body, "We'll refund", dollarsText(r.ShippingFeeCents))
+}
+
+// Shipping less than a paid international request asked for refunds the
+// postage it no longer needs.
+func TestShipLessRefundsPostageDifference(t *testing.T) {
+	h, fs, m := newRefundHarness(t)
+	_, _, magazine := shippingFixture(t, h)
+	var csv strings.Builder
+	for i := range 12 {
+		csv.WriteString(fmt.Sprintf("zenventory,DE,parcel,13,900,2026-09-01,2026-09-02,2026-09-1%d,\n", 2+i%5))
+		csv.WriteString(fmt.Sprintf("zenventory,DE,parcel,34,2400,2026-09-01,2026-09-02,2026-09-1%d,\n", 2+i%5))
+	}
+	ships, err := importer.ParseShipments(strings.NewReader(csv.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.ReplaceShippingHistory(context.Background(), ships); err != nil {
+		t.Fatal(err)
+	}
+	user := h.client(userEmail)
+	var r viewed
+	h.do(user, "POST", "/api/requests", map[string]any{"purpose": "club", "note": "for our club", "customs_ok": true, "address": deAddr,
+		"lines": []swag.Line{{ItemID: magazine.ID, Quantity: 3}}}, &r)
+	var one struct{ Estimate swag.Estimate }
+	h.do(user, "POST", "/api/shipping/estimate", map[string]any{"country": "DE", "lines": []swag.Line{{ItemID: magazine.ID, Quantity: 1}}}, &one)
+	if one.Estimate.FeeCents >= r.ShippingFeeCents {
+		t.Fatalf("fixture: 1 magazine costs %d, 3 cost %d", one.Estimate.FeeCents, r.ShippingFeeCents)
+	}
+	var pay payResponse
+	h.do(user, "POST", fmt.Sprintf("/api/requests/%d/pay", r.ID), map[string]any{}, &pay)
+	fs.set("pi_1", "succeeded", r.ShippingFeeCents)
+	h.do(user, "GET", "/api/requests", nil, nil)
+
+	var got store.Request
+	if code := h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/requests/%d/dispatch", r.ID),
+		map[string]any{"lines": []map[string]any{{"sku": magazine.SKU, "quantity": 1}}}, &got); code != 200 {
+		t.Fatalf("dispatch = %d", code)
+	}
+	diff := r.ShippingFeeCents - one.Estimate.FeeCents
+	if len(fs.refunds) != 1 || fs.refunds[0] != (fakeRefund{"pi_1", diff}) || got.RefundedCents != diff || got.RefundedAt == nil {
+		t.Fatalf("refunds %+v, request refunded %d at %v, want %d", fs.refunds, got.RefundedCents, got.RefundedAt, diff)
+	}
+	e := m.emails()
+	mustContain(t, "shipped", e[len(e)-1].Body, "refunded "+dollarsText(diff))
+	if ev := h.events("payment_refunded"); len(ev) != 1 || props(t, ev[0])["refund_cents"] != float64(diff) {
+		t.Fatalf("payment_refunded = %+v", ev)
 	}
 }

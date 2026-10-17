@@ -85,3 +85,30 @@ func TestGetCancelAndErrors(t *testing.T) {
 		t.Fatal("bad id must be refused before the call")
 	}
 }
+
+func TestRefund(t *testing.T) {
+	var form, key, amount string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/v1/refunds" {
+			t.Errorf("%s %s", r.Method, r.URL.Path)
+		}
+		r.ParseForm()
+		form, key, amount = r.PostForm.Get("payment_intent"), r.Header.Get("Idempotency-Key"), r.PostForm.Get("amount")
+		json.NewEncoder(w).Encode(map[string]any{"id": "re_1", "status": "succeeded"})
+	}))
+	defer srv.Close()
+	c := New(srv.URL, "sk_test_x", nil)
+	if err := c.Refund(context.Background(), "pi_paid", 0, "merch-request-7-refund"); err != nil {
+		t.Fatal(err)
+	}
+	if form != "pi_paid" || key != "merch-request-7-refund" || amount != "" {
+		t.Fatalf("payment_intent = %q, key = %q, amount = %q", form, key, amount)
+	}
+	// Part of it: just that amount.
+	if err := c.Refund(context.Background(), "pi_paid", 300, "k2"); err != nil || amount != "300" {
+		t.Fatalf("partial refund: amount = %q, err = %v", amount, err)
+	}
+	if err := c.Refund(context.Background(), "bogus", 0, ""); err == nil {
+		t.Fatal("bad id refunded")
+	}
+}

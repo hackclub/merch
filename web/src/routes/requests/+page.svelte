@@ -46,7 +46,8 @@
 	onMount(load);
 
 	async function cancel(id: number) {
-		if (!confirm('Cancel this request?')) return;
+		const paid = requests?.find((r) => r.id === id)?.paid_at;
+		if (!confirm(paid ? 'Cancel this request? We’ll refund your postage to your card.' : 'Cancel this request?')) return;
 		try {
 			await api.post(`/api/requests/${id}/cancel`);
 			await load();
@@ -90,6 +91,7 @@
 			{#if r.mailed_at}<p>Mailed {new Date(r.mailed_at).toLocaleDateString()}</p>{/if}
 			{#if r.tracking_number}<p>Tracking: {r.carrier} {r.tracking_number}</p>{/if}
 			{#if r.admin_note}<p class="muted">Note from Hack Club: {r.admin_note}</p>{/if}
+			{#if r.refunded_cents}<p>{formatCents(r.refunded_cents)} of your postage refunded to your card.</p>{/if}
 			{#if r.status === 'pending' || r.status === 'awaiting_payment'}
 				<button class="link" onclick={() => cancel(r.id)}>Cancel request</button>
 			{/if}

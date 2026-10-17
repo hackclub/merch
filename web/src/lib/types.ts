@@ -72,6 +72,9 @@ export type SwagRequest = {
 	address: Address;
 	shipping_fee_cents: number;
 	paid_at: string | null;
+	refunded_at?: string | null; // when shipping money went back
+	refunded_cents?: number; // how much
+	stripe_payment_intent?: string; // the card payment, if any
 	note: string;
 	admin_note: string;
 	theseus_order_id: string;

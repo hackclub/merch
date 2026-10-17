@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -16,6 +17,7 @@ type Payments interface {
 	CreatePayment(ctx context.Context, in stripe.PaymentInput) (*stripe.Payment, error)
 	GetPayment(ctx context.Context, id string) (*stripe.Payment, error)
 	CancelPayment(ctx context.Context, id string) error
+	Refund(ctx context.Context, id string, amountCents int, idempotencyKey string) error // 0 refunds all of it
 }
 
 // stripeKey is the publishable key the browser's card form uses, or "" when
@@ -126,6 +128,77 @@ func (s *server) syncPayments(r *http.Request, rs []*store.Request) {
 	for i, req := range rs {
 		rs[i] = s.syncPayment(r, req)
 	}
+}
+
+// settlePayment squares a request with its payer before it's rejected or
+// cancelled (by "admin" or "requester"): an unpaid payment is closed, and a
+// card payment that went through is refunded. An error means Stripe didn't
+// refund it, so the request should stay as it is.
+func (s *server) settlePayment(r *http.Request, req *store.Request, by string) (_ *store.Request, refunded bool, err error) {
+	if req.Status == swag.StatusAwaitingPayment {
+		if req = s.syncPayment(r, req); req.Status == swag.StatusAwaitingPayment {
+			s.closePayment(r, req)
+			return req, false, nil
+		}
+	}
+	if s.Payments == nil || req.PaidAt == nil || req.StripePaymentIntent == "" || req.RefundedAt != nil {
+		return req, false, nil
+	}
+	key := s.Config.TheseusOrderTag + "-request-" + strconv.FormatInt(req.ID, 10) + "-refund"
+	if err := s.Payments.Refund(r.Context(), req.StripePaymentIntent, 0, key); err != nil {
+		s.Log.Error("stripe: refund", "request", req.ID, "err", err)
+		return req, false, err
+	}
+	s.track(r, &store.User{ID: req.UserID}, "payment_refunded", map[string]any{"request_id": req.ID, "fee_cents": req.ShippingFeeCents, "refund_cents": req.ShippingFeeCents, "country": req.Address.Country, "by": by})
+	return req, true, nil
+}
+
+// refundUnusedPostage gives back postage a card-paid request no longer needs
+// after an admin shipped less of it: what it paid, minus the fee for what
+// actually shipped. It returns a warning for the admin if that didn't work.
+func (s *server) refundUnusedPostage(r *http.Request, req *store.Request) (*store.Request, string) {
+	if s.Payments == nil || req.PaidAt == nil || req.StripePaymentIntent == "" || req.ShippingFeeCents == 0 || req.RefundedCents > 0 {
+		return req, ""
+	}
+	ctx := r.Context()
+	var lines []swag.Line
+	for _, l := range req.Lines {
+		if l.Quantity > 0 {
+			lines = append(lines, swag.Line{ItemID: l.ItemID, SKU: l.SKU, Quantity: l.Quantity})
+		}
+	}
+	st, err := s.Store.GetSettings(ctx)
+	if err != nil {
+		return req, "shipped, but couldn't check whether postage is now cheaper: " + err.Error()
+	}
+	items, err := s.Store.ListItems(ctx, false)
+	if err != nil {
+		return req, "shipped, but couldn't check whether postage is now cheaper: " + err.Error()
+	}
+	cat := map[int64]swag.Item{}
+	for _, it := range items {
+		cat[it.ID] = it
+	}
+	_, est, err := s.quote(ctx, st, req.Address.Country, lines, cat)
+	if err != nil {
+		return req, "shipped, but couldn't estimate postage for what shipped, so nothing was refunded: " + err.Error()
+	}
+	diff := req.ShippingFeeCents - est.FeeCents
+	if diff <= 0 {
+		return req, ""
+	}
+	key := s.Config.TheseusOrderTag + "-request-" + strconv.FormatInt(req.ID, 10) + "-refund-postage"
+	if err := s.Payments.Refund(ctx, req.StripePaymentIntent, diff, key); err != nil {
+		s.Log.Error("stripe: refund postage difference", "request", req.ID, "err", err)
+		return req, fmt.Sprintf("shipped, but Stripe didn't refund the %s postage difference (%v); refund it in the Stripe dashboard", dollars(diff), err)
+	}
+	s.track(r, &store.User{ID: req.UserID}, "payment_refunded", map[string]any{"request_id": req.ID, "fee_cents": req.ShippingFeeCents, "refund_cents": diff, "country": req.Address.Country, "by": "admin", "partial": true})
+	upd, err := s.Store.RecordRefund(ctx, req.ID, diff)
+	if err != nil {
+		s.Log.Error("record refund", "request", req.ID, "err", err)
+		return req, fmt.Sprintf("refunded %s, but couldn't record it: %v", dollars(diff), err)
+	}
+	return upd, ""
 }
 
 // closePayment cancels a cancelled request's unpaid payment, so it can't be

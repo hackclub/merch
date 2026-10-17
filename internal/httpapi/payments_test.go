@@ -18,6 +18,23 @@ type fakeStripe struct {
 	payments  map[string]*stripe.Payment
 	created   []stripe.PaymentInput
 	cancelled []string
+	refunds   []fakeRefund
+	refundErr error
+}
+
+type fakeRefund struct {
+	id     string
+	amount int // 0 = all of it
+}
+
+func (f *fakeStripe) Refund(_ context.Context, id string, amountCents int, key string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.refundErr != nil {
+		return f.refundErr
+	}
+	f.refunds = append(f.refunds, fakeRefund{id, amountCents})
+	return nil
 }
 
 func (f *fakeStripe) CreatePayment(_ context.Context, in stripe.PaymentInput) (*stripe.Payment, error) {

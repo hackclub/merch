@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"mime"
@@ -586,14 +587,18 @@ func (s *server) cancelRequest(w http.ResponseWriter, r *http.Request, v viewer)
 		writeErr(w, http.StatusNotFound, "request not found")
 		return
 	}
-	// Record a payment that just went through, and close an unpaid payment page.
-	if req.Status == swag.StatusAwaitingPayment {
-		if req = s.syncPayment(r, req); req.Status == swag.StatusAwaitingPayment {
-			s.closePayment(r, req)
-		}
+	if !swag.CanTransition(req.Status, swag.StatusCancelled) {
+		s.respondRequest(w, nil, fmt.Errorf("%w (%s -> %s)", store.ErrBadTransition, req.Status, swag.StatusCancelled))
+		return
+	}
+	// Record a payment that just went through, close an unpaid one, and refund a paid one.
+	req, refunded, err := s.settlePayment(r, req, "requester")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "couldn't refund your card, so the request is still open; try again in a minute")
+		return
 	}
 	from := req.Status
-	req, err = s.Store.TransitionRequest(r.Context(), id, swag.StatusCancelled, "")
+	req, err = s.Store.CloseRequest(r.Context(), id, swag.StatusCancelled, "", refunded)
 	if err == nil {
 		req.InternalNote = ""
 		s.track(r, v.user, "request_cancelled", map[string]any{"request_id": id, "from": from})
@@ -687,7 +692,21 @@ func (s *server) adminReject(w http.ResponseWriter, r *http.Request, v viewer) {
 	if !readJSON(w, r, &body) {
 		return
 	}
-	req, err := s.Store.TransitionRequest(r.Context(), id, swag.StatusRejected, body.Note)
+	req, err := s.Store.GetRequest(r.Context(), id)
+	if err != nil {
+		s.respondRequest(w, nil, err)
+		return
+	}
+	if !swag.CanTransition(req.Status, swag.StatusRejected) {
+		writeErr(w, http.StatusConflict, "request is "+string(req.Status)+"; it can't be rejected")
+		return
+	}
+	req, refunded, err := s.settlePayment(r, req, "admin")
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "couldn't refund the card, so the request wasn't rejected: "+err.Error())
+		return
+	}
+	req, err = s.Store.CloseRequest(r.Context(), id, swag.StatusRejected, body.Note, refunded)
 	if err == nil {
 		s.emailRequest(r, req, "rejected")
 	}
@@ -791,10 +810,19 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 		return
 	}
 	req, err = s.Store.MarkDispatched(r.Context(), id, order.ID, changes)
-	if err == nil {
-		s.emailRequest(r, req, "dispatched")
+	if err != nil {
+		s.respondRequest(w, nil, err)
+		return
 	}
-	s.respondRequest(w, req, err)
+	warning := ""
+	if len(changes.Quantities) > 0 {
+		req, warning = s.refundUnusedPostage(r, req)
+	}
+	s.emailRequest(r, req, "dispatched")
+	writeJSON(w, http.StatusOK, struct {
+		requestView
+		Warning string `json:"warning,omitempty"` // for the admin: something to fix by hand
+	}{s.view(req), warning})
 }
 
 func (s *server) adminRefresh(w http.ResponseWriter, r *http.Request, v viewer) {

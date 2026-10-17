@@ -83,6 +83,10 @@ func shippedEmail(req *store.Request, baseURL string) loops.Email {
 	if len(changed) > 0 {
 		fmt.Fprintf(&b, "\n\nWe changed your request before it shipped:\n\n%s", strings.Join(changed, "\n"))
 	}
+	if req.RefundedCents > 0 {
+		fmt.Fprintf(&b, "\n\nSince we sent less, postage costs less: we refunded %s of the %s you paid to your card. It can take 5–10 business days to show up.",
+			dollars(req.RefundedCents), dollars(req.ShippingFeeCents))
+	}
 	if note := strings.TrimSpace(req.AdminNote); note != "" {
 		fmt.Fprintf(&b, "\n\nA note from Hack Club:\n\n%s", note)
 	}
@@ -100,6 +104,12 @@ func rejectedEmail(req *store.Request, baseURL string) loops.Email {
 	fmt.Fprintf(&b, "%s\n\nSorry, we can't send request #%d:\n\n%s", greeting(req), req.ID, lineList(req.Lines))
 	if note := strings.TrimSpace(req.AdminNote); note != "" {
 		fmt.Fprintf(&b, "\n\nWhy: %s", note)
+	}
+	switch {
+	case req.RefundedAt != nil:
+		fmt.Fprintf(&b, "\n\nWe refunded the %s you paid for postage to your card. It can take 5–10 business days to show up.", dollars(req.ShippingFeeCents))
+	case req.PaidAt != nil && req.ShippingFeeCents > 0:
+		fmt.Fprintf(&b, "\n\nWe'll refund the %s you paid for postage.", dollars(req.ShippingFeeCents))
 	}
 	fmt.Fprintf(&b, "\n\nSee your requests at %s/requests.\n\nHack Club", baseURL)
 	return loops.Email{

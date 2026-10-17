@@ -101,6 +101,19 @@ func (c *Client) CancelPayment(ctx context.Context, id string) error {
 	return c.call(ctx, "POST", "/v1/payment_intents/"+id+"/cancel", url.Values{}, "", nil)
 }
 
+// Refund gives a paid payment's money back to the card: amountCents of it, or
+// all of it for 0.
+func (c *Client) Refund(ctx context.Context, paymentID string, amountCents int, idempotencyKey string) error {
+	if !validID.MatchString(paymentID) {
+		return fmt.Errorf("stripe: bad payment id %q", paymentID)
+	}
+	f := url.Values{"payment_intent": {paymentID}}
+	if amountCents > 0 {
+		f.Set("amount", strconv.Itoa(amountCents))
+	}
+	return c.call(ctx, "POST", "/v1/refunds", f, idempotencyKey, nil)
+}
+
 var validID = regexp.MustCompile(`^pi_[A-Za-z0-9_]+$`)
 
 func (c *Client) call(ctx context.Context, method, path string, form url.Values, idempotencyKey string, out any) error {

@@ -427,7 +427,9 @@ blocks landing):
 - Server events (`s.track` in `internal/httpapi`): `login_start`, `sign_in`, `sign_in_refused`,
   `sign_out`, `payment_started` (the card form is about to charge: `request_id`, `fee_cents`, `country`,
   `retry`), `payment_completed` (Stripe says it's paid in full; the request moved to `pending`),
-  `email_sent` and `email_failed` (a request email: `kind` = `received`, `dispatched` or `rejected`,
+  `payment_refunded` (a rejected or cancelled request's card payment went back: `request_id`,
+  `fee_cents`, `refund_cents`, `country`, `by` = `admin` or `requester`, `partial` when shipping
+  less made postage cheaper), `email_sent` and `email_failed` (a request email: `kind` = `received`, `dispatched` or `rejected`,
   `request_id`, and Loops' `error`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
   postage, sample counts, or `error` when it won't pack), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `submission_created`. They carry the page's `visit` (the
@@ -495,8 +497,11 @@ where props ? 'error' group by 1, 2 order by 3 desc;
   My requests or the admin request list checks Stripe, and a PaymentIntent that `succeeded` for
   the full amount moves the request to `pending` (`paid_at`, `stripe_payment_intent`). Pay
   never starts a second payment while the first is processing or Stripe can't be reached.
-  Cancelling cancels the unpaid PaymentIntent. Admins can still "Mark paid" by hand; refunds
-  are done in the Stripe dashboard. Both `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` turn
+  Rejecting or cancelling cancels an unpaid PaymentIntent and refunds a paid one in full
+  (`refunded_at`); if Stripe won't refund, the request stays open so the admin can retry. A
+  request marked paid by hand (HCB) has to be refunded by hand; its rejected email says
+  we'll refund it. When an admin ships less of a card-paid request, it's re-quoted on what
+  shipped and the difference goes back to the card (`refunded_cents`; the shipped email says so). Both `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` turn
   it on (without them, HCB). Dev uses the sandbox (`sk_test_…`/`pk_test_…`, test card
   4242 4242 4242 4242); the keys live only in the shared `.env` and Orchard, never in the repo.
 - **Loops** (`internal/loops`, `internal/httpapi/emails.go`) emails the requester through one

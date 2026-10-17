@@ -70,11 +70,22 @@
 	// Before shipping, an admin can change quantities (0 = don't send) and write a note for the shipped email.
 	let shipQty = $state<Record<number, Record<string, number>>>({});
 	let shipNote = $state<Record<number, string>>({});
-	const ship = (r: SwagRequest) => act(r.id, 'dispatch', shipBody(r.lines, shipQty[r.id] ?? {}, shipNote[r.id] ?? ''));
+	const ship = (r: SwagRequest) =>
+		guard(async () => {
+			const res = await api.post<{ warning?: string }>(`/api/admin/requests/${r.id}/dispatch`, shipBody(r.lines, shipQty[r.id] ?? {}, shipNote[r.id] ?? ''));
+			await loadRequests();
+			if (res.warning) throw new Error(`Request #${r.id}: ${res.warning}`);
+		}, `Request #${r.id}: shipped`);
 
-	function reject(id: number) {
-		const note = prompt('Reason (shown to the requester):') ?? '';
-		act(id, 'reject', { note });
+	function reject(r: SwagRequest) {
+		const refund = r.paid_at && r.shipping_fee_cents
+			? r.stripe_payment_intent
+				? `\n\nTheir ${formatCents(r.shipping_fee_cents)} card payment is refunded automatically.`
+				: `\n\nThey paid ${formatCents(r.shipping_fee_cents)} outside Stripe: refund it yourself (the email says we will).`
+			: '';
+		const note = prompt(`Reason (in the email to the requester; optional):${refund}`);
+		if (note === null) return;
+		act(r.id, 'reject', { note });
 	}
 
 	// ---- items ----
@@ -189,7 +200,7 @@
 						<td>{r.address.first_name} {r.address.last_name}<br />{r.address.city}, {r.address.state} {r.address.country}</td>
 						<td>
 							<span class="badge {r.status}">{statusLabel[r.status]}</span>
-							{#if r.shipping_fee_cents}<div class="muted">fee {formatCents(r.shipping_fee_cents)}{r.paid_at ? ' (paid)' : ''}</div>{/if}
+							{#if r.shipping_fee_cents}<div class="muted">fee {formatCents(r.shipping_fee_cents)}{r.paid_at ? ' (paid)' : ''}{r.refunded_cents ? `, ${formatCents(r.refunded_cents)} refunded` : ''}</div>{/if}
 							{#if r.mailed_at}<div class="muted">mailed {new Date(r.mailed_at).toLocaleDateString()}</div>{/if}
 							{#if r.tracking_number}<div class="muted">{r.carrier} {r.tracking_number}</div>{/if}
 							{#if r.estimate}
@@ -203,7 +214,7 @@
 						<td class="row">
 							{#if r.status === 'awaiting_payment'}<button onclick={() => act(r.id, 'mark-paid')}>Mark paid</button>{/if}
 							{#if r.status === 'pending' && r.source === 'app'}<button onclick={() => ship(r)}>Ship</button>{/if}
-							{#if r.status === 'pending' || r.status === 'awaiting_payment'}<button class="secondary" onclick={() => reject(r.id)}>Reject</button>{/if}
+							{#if r.status === 'pending' || r.status === 'awaiting_payment'}<button class="secondary" onclick={() => reject(r)}>Reject</button>{/if}
 							{#if r.status === 'dispatched' && r.theseus_order_id}<button class="secondary" onclick={() => act(r.id, 'refresh')}>Refresh tracking</button>{/if}
 						</td>
 					</tr>

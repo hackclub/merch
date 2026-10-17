@@ -307,6 +307,8 @@ type Request struct {
 	Address          swag.Address  `json:"address"`
 	ShippingFeeCents int           `json:"shipping_fee_cents"`
 	PaidAt           *time.Time    `json:"paid_at"`
+	RefundedAt       *time.Time    `json:"refunded_at,omitempty"` // when shipping money went back
+	RefundedCents    int           `json:"refunded_cents"`        // how much
 	Note             string        `json:"note"`
 	AdminNote        string        `json:"admin_note"`
 	InternalNote     string        `json:"internal_note,omitempty"` // admin-only
@@ -409,7 +411,7 @@ const requestSelect = `
 	SELECT r.id, r.user_id, u.email, r.status, r.purpose, r.first_name, r.last_name, r.line_1, r.line_2, r.city, r.state,
 		r.postal_code, r.country, r.phone_number, r.shipping_fee_cents, r.paid_at, r.note, r.admin_note, r.internal_note,
 		coalesce(r.theseus_order_id, ''), r.tracking_number, r.carrier, r.mailed_at, r.source, r.airtable_record_id,
-		r.stripe_payment_intent, r.created_at
+		r.stripe_payment_intent, r.refunded_at, r.refunded_cents, r.created_at
 	FROM swag_requests r JOIN users u ON u.id = r.user_id`
 
 func scanRequest(row pgx.Row) (*Request, error) {
@@ -418,7 +420,7 @@ func scanRequest(row pgx.Row) (*Request, error) {
 	err := row.Scan(&r.ID, &r.UserID, &r.UserEmail, &r.Status, &r.Purpose, &a.FirstName, &a.LastName, &a.Line1, &a.Line2, &a.City, &a.State,
 		&a.PostalCode, &a.Country, &a.Phone, &r.ShippingFeeCents, &r.PaidAt, &r.Note, &r.AdminNote, &r.InternalNote,
 		&r.TheseusOrderID, &r.TrackingNumber, &r.Carrier, &r.MailedAt, &r.Source, &r.AirtableRecordID,
-		&r.StripePaymentIntent, &r.CreatedAt)
+		&r.StripePaymentIntent, &r.RefundedAt, &r.RefundedCents, &r.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -487,6 +489,26 @@ func (s *Store) attachLines(ctx context.Context, reqs []*Request) error {
 // TransitionRequest moves a request to status `to` if swag.CanTransition allows it.
 func (s *Store) TransitionRequest(ctx context.Context, id int64, to swag.Status, adminNote string) (*Request, error) {
 	return s.transition(ctx, id, to, `admin_note = CASE WHEN $3 = '' THEN admin_note ELSE $3 END`, adminNote)
+}
+
+// CloseRequest rejects or cancels a request, noting whether its shipping
+// payment was refunded.
+func (s *Store) CloseRequest(ctx context.Context, id int64, to swag.Status, adminNote string, refunded bool) (*Request, error) {
+	return s.transition(ctx, id, to, `admin_note = CASE WHEN $3 = '' THEN admin_note ELSE $3 END,
+		refunded_at = CASE WHEN $4 THEN now() ELSE refunded_at END,
+		refunded_cents = CASE WHEN $4 THEN shipping_fee_cents ELSE refunded_cents END`, adminNote, refunded)
+}
+
+// RecordRefund notes that cents of a request's shipping payment went back.
+func (s *Store) RecordRefund(ctx context.Context, id int64, cents int) (*Request, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE swag_requests SET refunded_at = now(), refunded_cents = refunded_cents + $2, updated_at = now() WHERE id = $1`, id, cents)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrNotFound
+	}
+	return s.GetRequest(ctx, id)
 }
 
 // MarkPaid records the HCB shipping payment and moves the request to review.
