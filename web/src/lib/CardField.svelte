@@ -89,5 +89,5 @@
 {#if loadError}<p class="error">{loadError}</p>{/if}
 
 <style>
-	.card-field { margin: 0.5rem 0 1rem; min-height: 3rem; }
+	.card-field { min-height: 3rem; }
 </style>

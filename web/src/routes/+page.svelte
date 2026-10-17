@@ -369,18 +369,8 @@
 					<label><span class="reason">{purposeInfo?.reason}</span>
 						<textarea bind:value={note} rows="3" required placeholder={purposeInfo?.example}></textarea></label>
 				{/if}
-				{#if intl && quote?.estimate.fee_cents}
-					<p>
-						Shipping is <strong>{usd(quote.estimate.fee_cents)}</strong>, what postage for this package usually costs.
-						{payWhere(payByCard)}
-					</p>
-				{/if}
-				{#if intl}
-					<label class="choice" class:on={customsOK}>
-						<input type="checkbox" name="customs_ok" required bind:checked={customsOK} />
-						<span>I understand I'm responsible for any customs fees or import taxes my country charges to receive a package from the USA.</span>
-					</label>
-				{/if}
+				{#if haul.length && !side.current}<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
+					<button type="button" class="link" onclick={clearAll}>Clear request</button>{/if}
 				<div class="understand">
 					<p>Hack Club is a charity. The most effective way we can get more teenagers into Hack Club is to help people like you spread it!</p>
 					<p>But it's wasteful when we send more than gets used. Ask for what you'll actually hand out, put up or wear. If you run out, come back and get more!</p>
@@ -403,17 +393,27 @@
 						<span>I understand, and I'll only request what I'll use.</span>
 					</label>
 				</div>
-				{#if payByCard && catalog?.settings.stripe_key && quote}
-					<CardField bind:this={card} stripeKey={catalog.settings.stripe_key} amountCents={quote.estimate.fee_cents} billing={address} />
+				{#if intl}
+					<div class="pay">
+						{#if payByCard && catalog?.settings.stripe_key && quote}
+							<CardField bind:this={card} stripeKey={catalog.settings.stripe_key} amountCents={quote.estimate.fee_cents} billing={address} />
+						{:else if quote?.estimate.fee_cents}
+							<p>{payWhere(false)}</p>
+						{/if}
+						<label class="choice" class:on={customsOK}>
+							<input type="checkbox" name="customs_ok" required bind:checked={customsOK} />
+							<span>I understand I'm responsible for any customs fees or import taxes my country charges to receive a package from the USA.</span>
+						</label>
+					</div>
 				{/if}
-				{#if haul.length && !side.current}<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
-					<button type="button" class="link" onclick={clearAll}>Clear request</button>{/if}
-				{#if quote && arrivalText(quote.estimate)}<p>{arrivalText(quote.estimate)}, by {quote.estimate.service}.</p>{/if}
-				{#each problems as p}<p class="error">{p}</p>{/each}
-				{#if quoteError}<p class="error">{quoteError}</p>{/if}
-				<button disabled={submitting || problems.length > 0 || !!quoteError || !understood || (intl && !customsOK)}>
-					{submitting ? 'Sending…' : payByCard && quote ? `Submit and pay ${usd(quote.estimate.fee_cents)}` : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
-				</button>
+				<div class="submit">
+					{#if quote && arrivalText(quote.estimate)}<p>{arrivalText(quote.estimate)}, by {quote.estimate.service}.</p>{/if}
+					{#each problems as p}<p class="error">{p}</p>{/each}
+					{#if quoteError}<p class="error">{quoteError}</p>{/if}
+					<button disabled={submitting || problems.length > 0 || !!quoteError || !understood || (intl && !customsOK)}>
+						{submitting ? 'Sending…' : payByCard && quote ? `Submit and pay ${usd(quote.estimate.fee_cents)}` : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
+					</button>
+				</div>
 			</form>
 		{/if}
 	{:else if !error}
@@ -560,7 +560,7 @@
 	.cell .add :global(.amounts button) { min-width: 2.2rem; height: 2rem; padding: 0 0.4rem; font-size: 0.85rem; }
 	.cell .add :global(.custom) { width: 100%; height: 2rem; }
 	.send { margin-top: 1.5rem; }
-	form { display: grid; gap: 1rem; }
+	form { display: grid; gap: 1.25rem; }
 	form h2 { margin-bottom: 0; }
 	.sheet :global(label:not(.choice)) { font-size: 0.95rem; font-weight: 700; color: var(--dark); }
 	.sheet :global(label :is(input, select, textarea)) { font-weight: 400; }
@@ -582,6 +582,8 @@
 	.understand { display: grid; gap: 0.6rem; padding: 1rem 1.25rem; background: var(--tile); }
 	.understand p { margin: 0; }
 	.understand .choice { background: white; }
+	.pay, .submit { display: grid; gap: 0.75rem; }
+	.pay p, .submit p { margin: 0; }
 	/* Admins only: the plain sheet's one font, no mono labels. */
 	.costs th { font: inherit; text-transform: none; letter-spacing: 0; color: var(--dark); }
 	.costs :is(th, td):not(:first-child) { text-align: right; white-space: nowrap; }
