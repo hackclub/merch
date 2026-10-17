@@ -41,7 +41,8 @@ func TestCreateOrder(t *testing.T) {
 		}
 		json.NewDecoder(r.Body).Decode(&body)
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(`{"id":"pkg!abc","status":"dispatched","tags":["merch"]}`))
+		// Theseus wraps one order in "warehouse_order" (show.json.jb), on create and on get.
+		w.Write([]byte(`{"warehouse_order":{"id":"pkg!abc","status":"dispatched","tags":["merch"]}}`))
 	}))
 	defer srv.Close()
 
@@ -89,7 +90,7 @@ func TestGetOrder(t *testing.T) {
 		if r.URL.Path != "/api/v1/warehouse_orders/pkg!abc" {
 			t.Errorf("path = %s", r.URL.Path)
 		}
-		w.Write([]byte(`{"id":"pkg!abc","status":"mailed","tracking_number":"9400","carrier":"USPS"}`))
+		w.Write([]byte(`{"warehouse_order":{"id":"pkg!abc","status":"mailed","tracking_number":"9400","carrier":"USPS"}}`))
 	}))
 	defer srv.Close()
 	o, err := New(srv.URL, "k", nil).GetOrder(context.Background(), "pkg!abc")

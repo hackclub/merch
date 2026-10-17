@@ -102,19 +102,32 @@ func (c *Client) CreateOrder(ctx context.Context, in OrderInput) (*Order, error)
 		"address":  in.Address,
 		"contents": in.Contents,
 	}
-	var o Order
-	if err := c.do(ctx, http.MethodPost, "/api/v1/warehouse_orders", body, &o); err != nil {
+	var out orderResponse
+	if err := c.do(ctx, http.MethodPost, "/api/v1/warehouse_orders", body, &out); err != nil {
 		return nil, err
 	}
-	return &o, nil
+	return out.order()
 }
 
 func (c *Client) GetOrder(ctx context.Context, id string) (*Order, error) {
-	var o Order
-	if err := c.do(ctx, http.MethodGet, "/api/v1/warehouse_orders/"+url.PathEscape(id), nil, &o); err != nil {
+	var out orderResponse
+	if err := c.do(ctx, http.MethodGet, "/api/v1/warehouse_orders/"+url.PathEscape(id), nil, &out); err != nil {
 		return nil, err
 	}
-	return &o, nil
+	return out.order()
+}
+
+// orderResponse is how Theseus returns one order: wrapped in "warehouse_order"
+// (app/views/api/v1/warehouse_orders/show.json.jb), on create and on get.
+type orderResponse struct {
+	WarehouseOrder *Order `json:"warehouse_order"`
+}
+
+func (r orderResponse) order() (*Order, error) {
+	if r.WarehouseOrder == nil || r.WarehouseOrder.ID == "" {
+		return nil, fmt.Errorf("theseus: response has no warehouse_order id")
+	}
+	return r.WarehouseOrder, nil
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
