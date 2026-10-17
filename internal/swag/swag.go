@@ -317,6 +317,14 @@ func (a Address) Validate() error {
 			return fmt.Errorf("%w: %s is required", ErrBadAddress, k)
 		}
 	}
+	for k, v := range map[string]string{
+		"first_name": a.FirstName, "last_name": a.LastName, "line_1": a.Line1, "line_2": a.Line2,
+		"city": a.City, "state": a.State, "postal_code": a.PostalCode, "phone_number": a.Phone,
+	} {
+		if len(v) > 200 {
+			return fmt.Errorf("%w: %s is too long", ErrBadAddress, k)
+		}
+	}
 	if !alpha2.MatchString(a.Country) {
 		return fmt.Errorf("%w: country must be a 2-letter ISO code", ErrBadAddress)
 	}

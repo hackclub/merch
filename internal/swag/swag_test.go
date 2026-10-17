@@ -176,6 +176,11 @@ func TestValidAddress(t *testing.T) {
 	if err := intl.Validate(); err != nil {
 		t.Errorf("international with phone: %v", err)
 	}
+	long := good
+	long.Line2 = strings.Repeat("x", 201)
+	if err := long.Validate(); err == nil {
+		t.Error("a 201-character address line should fail")
+	}
 }
 
 func TestCanTransition(t *testing.T) {

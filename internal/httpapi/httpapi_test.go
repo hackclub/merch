@@ -11,6 +11,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -880,6 +881,16 @@ func TestAuthorSubmissionFlow(t *testing.T) {
 	}
 	if code := h.do(author, "POST", "/api/author/submissions", map[string]any{"title": "x", "file_url": "javascript:alert(1)", "quantity": 1, "program": "p"}, nil); code != 422 {
 		t.Fatalf("bad url submit = %d", code)
+	}
+	for k, n := range map[string]int{"title": 201, "program": 201, "kind": 41, "description": 5001, "file_url": 2001} {
+		long := maps.Clone(body)
+		long[k] = strings.Repeat("x", n)
+		if k == "file_url" {
+			long[k] = "https://x.test/" + strings.Repeat("x", n)
+		}
+		if code := h.do(author, "POST", "/api/author/submissions", long, nil); code != 422 {
+			t.Errorf("%d-character %s = %d", n, k, code)
+		}
 	}
 
 	var upd store.Submission
