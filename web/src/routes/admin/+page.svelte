@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api, ApiError, fileToBase64, formatCents, statusLabel } from '$lib/api';
 	import { parseQuickPicks } from '$lib/cart';
+	import { linkify } from '$lib/markdown';
 	import { purposeLabel } from '$lib/purpose';
 	import { byFilename, itemPath, moveImage } from '$lib/items';
 	import InternalNote from '$lib/InternalNote.svelte';
@@ -212,9 +213,10 @@
 					<tr>
 						<td>{r.id}<div class="muted">{new Date(r.created_at).toLocaleDateString()}</div>
 							{#if r.source !== 'app'}<span class="badge" title={r.airtable_record_id}>imported · {r.source}</span>{/if}</td>
-						<td>{r.user_email}{#if r.purpose}<div><span class="badge">{purposeLabel(r.purpose)}</span></div>{/if}{#if r.note}<div class="muted">“{r.note}”</div>{/if}
+						<td>{r.user_email}{#if r.purpose}<div><span class="badge">{purposeLabel(r.purpose)}</span></div>{/if}
 							<InternalNote request={r} /></td>
 						<td>
+							{#if r.note}<blockquote class="wrote" data-private><span class="label">They wrote</span>{@html linkify(r.note)}</blockquote>{/if}
 							{#if r.status === 'pending' && r.source === 'app'}
 								{#each r.lines as l}
 									<div class="row">
@@ -508,6 +510,8 @@
 {/if}
 
 <style>
+	.wrote { margin: 0 0 0.6rem; padding: 0.4rem 0.6rem; border-left: 3px solid var(--red); background: var(--snow); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 32rem; }
+	.wrote .label { display: block; color: var(--muted); }
 	.cost { width: auto; margin-top: 0.4rem; font-size: 0.85em; }
 	.cost td { padding: 0.1rem 0.6rem 0.1rem 0; border: 0; color: var(--muted); }
 	.cost td:last-child { text-align: right; white-space: nowrap; color: var(--dark); }

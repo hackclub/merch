@@ -26,7 +26,8 @@ Lists requests, newest first (at most 500). `status` is one of `awaiting_payment
 `cancelled`; leave it out to list all of them. Each request has:
 
 - `id`, `status`, `created_at`, `user_id`, `user_email`, `purpose` (`personal`, `club` or `event`)
-  and `note` (the requester's own reason).
+  and `note`: what the requester wrote, word for word (how they'll use it; club and event
+  requests must write one, personal ones have none). Read it before you judge the quantities.
 - `address` (name, street, city, state, postal code, country and phone).
 - `lines`: `{item_id, sku, name, variant, quantity}`. `variant` is the size, for sized items.
 - `shipping_fee_cents` and `paid_at`: what the requester paid for postage abroad. The US is free.

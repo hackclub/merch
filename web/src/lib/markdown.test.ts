@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderMarkdown } from './markdown';
+import { linkify, renderMarkdown } from './markdown';
 
 describe('renderMarkdown', () => {
 	it('renders GitHub-flavored Markdown', () => {
@@ -30,5 +30,20 @@ describe('renderMarkdown', () => {
 
 	it('is empty for an empty note', () => {
 		expect(renderMarkdown('  ')).toBe('');
+	});
+});
+
+describe('linkify', () => {
+	it('escapes what the requester typed and links their URLs', () => {
+		expect(linkify('Running https://example-hacks.dev/about?x=1&y=2, about <b>120</b> hackers.')).toBe(
+			'Running <a href="https://example-hacks.dev/about?x=1&amp;y=2" target="_blank" rel="noopener noreferrer">https://example-hacks.dev/about?x=1&amp;y=2</a>, about &lt;b&gt;120&lt;/b&gt; hackers.'
+		);
+	});
+	it('leaves plain text and javascript: alone', () => {
+		expect(linkify('javascript:alert(1) "hi"\nbye')).toBe('javascript:alert(1) &quot;hi&quot;\nbye');
+		expect(linkify('')).toBe('');
+	});
+	it('keeps closing punctuation out of the link', () => {
+		expect(linkify('(see http://a.io/x).')).toBe('(see <a href="http://a.io/x" target="_blank" rel="noopener noreferrer">http://a.io/x</a>).');
 	});
 });

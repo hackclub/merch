@@ -119,20 +119,25 @@ func TestAgentReviewsRequests(t *testing.T) {
 	h := newHarness(t)
 	it := h.mkItem("Sti/A", true)
 	agent := h.keyClient(h.mkKey("Review agent").Token)
-	mk := func(email string, n int) store.Request {
+	mk := func(email string, n int, purpose, note string) store.Request {
 		t.Helper()
 		var r store.Request
-		if code := h.do(h.client(email), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: n}}}, &r); code != 201 {
+		if code := h.do(h.client(email), "POST", "/api/requests", map[string]any{"purpose": purpose, "note": note, "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: n}}}, &r); code != 201 {
 			t.Fatalf("create = %d", code)
 		}
 		return r
 	}
-	first := mk(userEmail, 3)
-	twin := mk("twin@example.com", 1) // another account, same house
+	first := mk(userEmail, 3, "personal", "")
+	reason := "Club fair on Sept 12.\nAbout 40 people."
+	twin := mk("twin@example.com", 1, "event", reason) // another account, same house
 
 	var list struct{ Requests []requestView }
 	if code := h.do(agent, "GET", "/api/agent/requests?status=pending", nil, &list); code != 200 || len(list.Requests) != 2 || list.Requests[0].Costs == nil {
 		t.Fatalf("list = %d %+v", code, list)
+	}
+	// What the requester wrote reaches the agent word for word.
+	if list.Requests[0].ID != twin.ID || list.Requests[0].Note != reason || list.Requests[1].Note != "" {
+		t.Errorf("notes = %q %q", list.Requests[0].Note, list.Requests[1].Note)
 	}
 
 	var got agentRequest
@@ -142,7 +147,7 @@ func TestAgentReviewsRequests(t *testing.T) {
 	if got.ID != first.ID || got.Requester.Email != userEmail || got.Requester.CreatedAt.IsZero() || got.Costs == nil {
 		t.Errorf("request = %+v", got)
 	}
-	if len(got.History) != 0 || len(got.SameAddress) != 1 || got.SameAddress[0].ID != twin.ID || got.SameAddress[0].UserEmail != "twin@example.com" {
+	if len(got.History) != 0 || len(got.SameAddress) != 1 || got.SameAddress[0].ID != twin.ID || got.SameAddress[0].UserEmail != "twin@example.com" || got.SameAddress[0].Note != reason {
 		t.Errorf("history %+v same address %+v", got.History, got.SameAddress)
 	}
 	if code := h.do(agent, "GET", "/api/agent/requests/99999", nil, nil); code != 404 {
@@ -182,7 +187,7 @@ func TestAgentReviewsRequests(t *testing.T) {
 	}
 
 	// The requester's history shows up on their next request.
-	again := mk(userEmail, 1)
+	again := mk(userEmail, 1, "personal", "")
 	h.do(agent, "GET", fmt.Sprintf("/api/agent/requests/%d", again.ID), nil, &got)
 	if len(got.History) != 1 || got.History[0].ID != first.ID || got.History[0].Lines[0].Quantity != 2 {
 		t.Errorf("history = %+v", got.History)
