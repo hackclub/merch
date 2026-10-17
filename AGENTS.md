@@ -450,7 +450,8 @@ blocks landing):
   made), `since_paid_h` and `refunded_cents`: `request_paid` (marked paid by hand, `by`),
   `request_dispatched` (`changed` when quantities changed, `has_note`, `warning`),
   `request_rejected` (`from`, `has_note`, `refunded`), `tracking_updated` (`carrier`,
-  `has_tracking`). Catalog and limits, with the admin's `user_id`: `item_created` (`item_id`,
+  `has_tracking`), `internal_note_updated` (admins' Markdown note on a request: `has_note`, `chars`,
+  `from_chars`; never the text). Catalog and limits, with the admin's `user_id`: `item_created` (`item_id`,
   `sku`, `visible`), `item_updated` (`changed`: `{field: {from, to}}`, lists as their lengths),
   `item_media_added` (`kind` = `image`, `page` or `photo`), `settings_updated` (`changed`),
   `submission_updated` (`from`, `to`, `kind`, `has_sku`). Notes are never logged, only `has_note`.

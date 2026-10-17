@@ -175,3 +175,49 @@ func TestServerErrorsAreLogged(t *testing.T) {
 		t.Errorf("api props = %v", p)
 	}
 }
+
+// Admins keep Markdown notes on a request for each other. Only admins can
+// write or read them, and the event says a note changed, never what it says.
+func TestAdminInternalNote(t *testing.T) {
+	h := newHarness(t)
+	it := h.mkItem("Sti/A", true)
+	user, admin := h.client(userEmail), h.client(adminEmail)
+	var r store.Request
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r); code != 201 {
+		t.Fatalf("create = %d", code)
+	}
+	path := fmt.Sprintf("/api/admin/requests/%d/internal-note", r.ID)
+	note := "**Asked on Slack** for a second pack; see [thread](https://example.com/t)"
+	if code := h.do(user, "PUT", path, map[string]any{"internal_note": note}, nil); code != 403 {
+		t.Errorf("requester set internal note: %d", code)
+	}
+	var got map[string]any
+	if code := h.do(admin, "PUT", path, map[string]any{"internal_note": note + "\n"}, &got); code != 200 || got["internal_note"] != note {
+		t.Fatalf("set internal note = %d %v", code, got)
+	}
+	var all struct{ Requests []map[string]any }
+	h.do(admin, "GET", "/api/admin/requests", nil, &all)
+	if all.Requests[0]["internal_note"] != note {
+		t.Errorf("admin list internal_note = %v", all.Requests[0]["internal_note"])
+	}
+	var mine struct{ Requests []map[string]any }
+	h.do(user, "GET", "/api/requests", nil, &mine)
+	if _, ok := mine.Requests[0]["internal_note"]; ok {
+		t.Errorf("requester can see internal_note: %v", mine.Requests[0])
+	}
+	if code := h.do(admin, "PUT", "/api/admin/requests/999999/internal-note", map[string]any{"internal_note": "x"}, nil); code != 404 {
+		t.Errorf("missing request = %d", code)
+	}
+
+	evs := h.events("internal_note_updated")
+	if len(evs) != 1 {
+		t.Fatalf("internal_note_updated events = %d", len(evs))
+	}
+	p := props(t, evs[0])
+	if p["request_id"] != float64(r.ID) || p["has_note"] != true || p["chars"] != float64(len(note)) || p["from_chars"] != float64(0) {
+		t.Errorf("internal_note_updated props = %v", p)
+	}
+	if strings.Contains(string(evs[0].Props), "Slack") {
+		t.Errorf("internal_note_updated logged the note: %s", evs[0].Props)
+	}
+}

@@ -124,6 +124,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/admin/requests/{id}/dispatch", s.requireAdmin(s.adminDispatch))
 	mux.Handle("POST /api/admin/requests/{id}/reject", s.requireAdmin(s.adminReject))
 	mux.Handle("POST /api/admin/requests/{id}/refresh", s.requireAdmin(s.adminRefresh))
+	mux.Handle("PUT /api/admin/requests/{id}/internal-note", s.requireAdmin(s.adminInternalNote))
 	mux.Handle("GET /api/admin/items", s.requireAdmin(s.adminItems))
 	mux.Handle("POST /api/admin/items", s.requireAdmin(s.adminCreateItem))
 	mux.Handle("PUT /api/admin/items/{id}", s.requireAdmin(s.adminUpdateItem))
@@ -830,6 +831,31 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 		requestView
 		Warning string `json:"warning,omitempty"` // for the admin: something to fix by hand
 	}{s.view(req), warning})
+}
+
+// adminInternalNote saves the admins' Markdown note on a request.
+func (s *server) adminInternalNote(w http.ResponseWriter, r *http.Request, v viewer) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		InternalNote string `json:"internal_note"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	before, err := s.Store.GetRequest(r.Context(), id)
+	if err != nil {
+		s.respondRequest(w, nil, err)
+		return
+	}
+	note := strings.TrimSpace(body.InternalNote)
+	req, err := s.Store.SetInternalNote(r.Context(), id, note)
+	if err == nil {
+		s.trackRequest(r, v, "internal_note_updated", req, map[string]any{"has_note": note != "", "chars": len(note), "from_chars": len(before.InternalNote)})
+	}
+	s.respondRequest(w, req, err)
 }
 
 func (s *server) adminRefresh(w http.ResponseWriter, r *http.Request, v viewer) {

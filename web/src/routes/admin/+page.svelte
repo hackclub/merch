@@ -4,6 +4,7 @@
 	import { parseQuickPicks } from '$lib/cart';
 	import { purposeLabel } from '$lib/purpose';
 	import { byFilename, itemPath, moveImage } from '$lib/items';
+	import InternalNote from '$lib/InternalNote.svelte';
 	import { session } from '$lib/session.svelte';
 	import { arrivalText, ozText } from '$lib/shipping';
 	import { lineText, shipBody } from '$lib/ship';
@@ -182,7 +183,7 @@
 						<td>{r.id}<div class="muted">{new Date(r.created_at).toLocaleDateString()}</div>
 							{#if r.source !== 'app'}<span class="badge" title={r.airtable_record_id}>imported · {r.source}</span>{/if}</td>
 						<td>{r.user_email}{#if r.purpose}<div><span class="badge">{purposeLabel(r.purpose)}</span></div>{/if}{#if r.note}<div class="muted">“{r.note}”</div>{/if}
-							{#if r.internal_note}<details><summary class="muted">internal note</summary><pre style="white-space: pre-wrap">{r.internal_note}</pre></details>{/if}</td>
+							<InternalNote request={r} /></td>
 						<td>
 							{#if r.status === 'pending' && r.source === 'app'}
 								{#each r.lines as l}

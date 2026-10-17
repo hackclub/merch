@@ -516,6 +516,18 @@ func (s *Store) MarkPaid(ctx context.Context, id int64) (*Request, error) {
 	return s.transition(ctx, id, swag.StatusPending, `paid_at = now(), admin_note = admin_note || $3`, "")
 }
 
+// SetInternalNote replaces the admins' own note on a request (Markdown; the requester never sees it).
+func (s *Store) SetInternalNote(ctx context.Context, id int64, note string) (*Request, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE swag_requests SET internal_note = $2, updated_at = now() WHERE id = $1`, id, note)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrNotFound
+	}
+	return s.GetRequest(ctx, id)
+}
+
 // SetStripePayment remembers the card payment started for a request.
 func (s *Store) SetStripePayment(ctx context.Context, id int64, paymentIntent string) error {
 	tag, err := s.pool.Exec(ctx, `UPDATE swag_requests SET stripe_payment_intent = $2, updated_at = now() WHERE id = $1`, id, paymentIntent)
