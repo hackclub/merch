@@ -29,18 +29,25 @@ describe('postcardLabel', () => {
 });
 
 describe('cardFlip', () => {
-	it('turns the top card over about its long edge, front up at 0 and back up at 1', () => {
+	it('turns the loose stack over about its long axis, front up at 0 and back up at 1', () => {
 		expect(cardFlip(0, 4)).toEqual({ rotX: 0, lift: 0 });
 		const over = cardFlip(1, 4);
 		expect(over.rotX).toBeCloseTo(Math.PI);
 		expect(over.lift).toBeCloseTo(0);
-	});
-
-	it('lifts the card clear of the stack while it turns', () => {
-		const mid = cardFlip(0.5, 4);
-		expect(mid.rotX).toBeCloseTo(Math.PI / 2);
-		expect(mid.lift).toBeCloseTo(2); // half its depth, so its edge doesn't sink into the stack
 		expect(cardFlip(-1, 4)).toEqual(cardFlip(0, 4));
 		expect(cardFlip(2, 4).rotX).toBeCloseTo(Math.PI);
+	});
+
+	it('lifts the stack off the table while it turns, so no edge drags along it', () => {
+		for (const h of [0.016, 0.08, 0.8]) {
+			for (let p = 0.1; p < 0.95; p += 0.05) {
+				const { rotX, lift } = cardFlip(p, 4);
+				// The turned box's lowest point, measured from where its bottom rested.
+				const lowest = h / 2 + lift - ((4 / 2) * Math.abs(Math.sin(rotX)) + (h / 2) * Math.abs(Math.cos(rotX)));
+				expect(lowest).toBeGreaterThan(0.1);
+			}
+			const mid = cardFlip(0.5, 4);
+			expect(mid.lift - 2).toBeGreaterThanOrEqual(0.5); // held up off the table, half an inch at least
+		}
 	});
 });

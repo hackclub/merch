@@ -1,8 +1,8 @@
 <script lang="ts">
 	// Interactive 3D view of a printed item (see paper3d.ts), a sticker request
 	// (sticker3d.ts) or a T-shirt (shirt3d.ts): slowly spins like a store's 3D product view; drag or arrow
-	// keys turn it, + / − zoom in to see the paper. Postcards lie in a stack whose
-	// top card turns over to show its back. Booklets (book3d.ts) also
+	// keys turn it, + / − zoom in to see the paper. Postcards lie in stacks, and the
+	// last one turns over to show the back. Booklets (book3d.ts) also
 	// open: drag, arrow keys or the slider turn their pages. A trifold brochure
 	// (fold3d.ts) opens and folds itself back up on a loop until you touch it;
 	// then tap, drag or the arrows fold it. Falls back to the flat front image
@@ -70,7 +70,7 @@
 	let resumeAt = 0;
 	let lastX = 0;
 	let cycleFrom = 0; // when a trifold's open-and-fold loop started
-	let cardGoal = $state(0); // postcards: 1 = the top card turned over to its back
+	let cardGoal = $state(0); // postcards: 1 = the last stack turned over to its back
 
 	const finish = $derived('sheet' in preview ? finishInfo(preview.sheet.finish).label : 'postcards' in preview ? finishInfo(preview.postcards.finish).label : '');
 	const label = $derived(
@@ -150,7 +150,7 @@
 					viewer.zoom += (wantZoom - viewer.zoom) * Math.min(1, dt * 6);
 					if (Math.abs(wantZoom - viewer.zoom) < 0.0005) viewer.zoom = wantZoom;
 					if (postcards) {
-						// The top card turns over at an even pace, about half a second.
+						// The stack turns over at an even pace, about half a second.
 						const pv = viewer as PostcardViewer;
 						const d = cardGoal - pv.flipped;
 						pv.flipped = Math.abs(d) < 0.001 ? cardGoal : pv.flipped + Math.sign(d) * Math.min(Math.abs(d), dt * 2);

@@ -41,13 +41,20 @@ export function postcardLabel(q: number): string {
 	return `${cards} · ${bundles === 1 ? 'a bundle' : `${bundles} bundles`} of ${PER_BUNDLE}`;
 }
 
+/** How high the loose stack is held off the table as it turns over, in inches. */
+const FLIP_CLEAR = 0.75;
+
 /**
- * The top card turning over (p = 0 front up, 1 back up): its turn about its
- * long axis, and how far it rises so its edge clears the stack under it.
+ * The loose stack turning over as one (p = 0 front up, 1 back up), so no other
+ * card shows up from under it: its turn about its long axis, easing in and out,
+ * and how far it rises so it turns in the air instead of dragging an edge
+ * across the table.
  */
 export function cardFlip(p: number, depth: number): { rotX: number; lift: number } {
 	const k = Math.min(1, Math.max(0, p));
 	if (k === 0) return { rotX: 0, lift: 0 };
-	const rotX = k * Math.PI;
-	return { rotX, lift: (depth / 2) * Math.sin(rotX) };
+	const rotX = k * k * (3 - 2 * k) * Math.PI;
+	// Half its depth keeps the turned stack's lower edge level; FLIP_CLEAR holds it up.
+	const lift = (depth / 2) * Math.sin(rotX) + FLIP_CLEAR * Math.sin(k * Math.PI);
+	return { rotX, lift: k === 1 ? 0 : lift };
 }
