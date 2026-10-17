@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bookletStack, LAPTOP, layoutHaul, LOFT, piles, pickedLines, TABLE, tableCover, tall } from './haul';
+import { bookletStack, LAPTOP, layoutHaul, LOFT, piles, pickedLines, requestHaul, TABLE, tableCover, tall } from './haul';
 import { PHONE } from './scale';
 import type { Item } from './types';
 
@@ -219,5 +219,20 @@ describe('trifold brochures', () => {
 		expect(p.w).toBe(11);
 		expect(p.artPart).toBeUndefined();
 		expect(p.fold).toBeUndefined();
+	});
+});
+
+describe('requestHaul', () => {
+	it('pairs each line with its item and size, leaving out unsent lines and unknown items', () => {
+		const lines = [
+			{ item_id: 2, sku: 'Pri/Mag', name: 'Mini-Magazine', quantity: 5 },
+			{ item_id: 3, sku: 'T/M', name: 'T-Shirt', variant: 'M', quantity: 1 },
+			{ item_id: 1, sku: 'Pri/A', name: 'Poster', quantity: 0, requested_quantity: 2 },
+			{ item_id: 99, sku: 'Gone', name: 'Gone', quantity: 1 }
+		];
+		expect(requestHaul(lines, [base, mag, shirt])).toEqual([
+			{ item: mag, quantity: 5 },
+			{ item: shirt, quantity: 1, size: 'M' }
+		]);
 	});
 });

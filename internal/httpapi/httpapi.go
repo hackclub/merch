@@ -498,7 +498,45 @@ func (s *server) myRequests(w http.ResponseWriter, r *http.Request, v viewer) {
 		s.serverErr(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"requests": out})
+	items, err := s.requestItems(r.Context(), rs)
+	if err != nil {
+		s.serverErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"requests": out, "items": items})
+}
+
+// requestItems is every item in the requests' lines, hidden ones too, and what
+// they ship with, so My requests can show each request in 3D.
+func (s *server) requestItems(ctx context.Context, rs []*store.Request) ([]swag.Item, error) {
+	out := []swag.Item{}
+	ids := map[int64]bool{}
+	for _, r := range rs {
+		for _, l := range r.Lines {
+			ids[l.ItemID] = true
+		}
+	}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	all, err := s.Store.ListItems(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	with := map[string]bool{}
+	for _, it := range all {
+		if ids[it.ID] {
+			for _, sku := range it.ShipsWith {
+				with[sku] = true
+			}
+		}
+	}
+	for _, it := range all {
+		if ids[it.ID] || with[it.SKU] {
+			out = append(out, it)
+		}
+	}
+	return out, nil
 }
 
 func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer) {

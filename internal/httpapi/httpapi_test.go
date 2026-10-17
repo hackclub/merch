@@ -1211,3 +1211,43 @@ func TestAdminUploadsItemPages(t *testing.T) {
 		t.Fatalf("non-admin page upload = %d", code)
 	}
 }
+
+// My requests shows each request in 3D, so it gets every item in the requester's
+// lines (even ones hidden since) and what they ship with, and nothing else.
+func TestMyRequestsIncludeTheirItems(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	mag := h.mkItem("Pri/Bok/Mini25/1st", true)
+	card := h.mkItem("Pri/M25/4x6/1st", false)
+	other := h.mkItem("Sti/Other", true)
+	mag.ShipsWith = []string{card.SKU}
+	if _, err := h.store.UpdateItem(ctx, mag); err != nil {
+		t.Fatal(err)
+	}
+	user := h.client(userEmail)
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: mag.ID, Quantity: 2}}}, nil); code != 201 {
+		t.Fatalf("create = %d", code)
+	}
+	mag.Visible = false
+	if _, err := h.store.UpdateItem(ctx, mag); err != nil {
+		t.Fatal(err)
+	}
+	var mine struct {
+		Requests []store.Request
+		Items    []swag.Item
+	}
+	h.do(user, "GET", "/api/requests", nil, &mine)
+	ids := map[int64]bool{}
+	for _, it := range mine.Items {
+		ids[it.ID] = true
+	}
+	if len(mine.Items) != 2 || !ids[mag.ID] || !ids[card.ID] || ids[other.ID] {
+		t.Fatalf("items = %+v", mine.Items)
+	}
+
+	var none struct{ Items []swag.Item }
+	h.do(h.client("a@x.com"), "GET", "/api/requests", nil, &none)
+	if none.Items == nil || len(none.Items) != 0 {
+		t.Fatalf("no requests: items = %+v", none.Items)
+	}
+}

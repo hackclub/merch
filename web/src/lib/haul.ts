@@ -8,7 +8,7 @@ import { sheetThickness } from './paper';
 import { CARD_IN, PER_BUNDLE } from './postcards';
 import { PHONE } from './scale';
 import { PER_BAG, STICKER_THICKNESS_IN } from './stickers';
-import type { Item } from './types';
+import type { Item, RequestLine } from './types';
 
 export type HaulLine = { item: Item; quantity: number; size?: string };
 
@@ -310,4 +310,13 @@ export function tableCover(layout: HaulLayout): number {
 	if (!layout.tables.length) return 0;
 	const tables = layout.tables.reduce((a, t) => a + t.w * t.d, 0);
 	return layout.piles.reduce((a, p) => a + p.w * p.d, 0) / tables;
+}
+
+/** A request's lines as haul lines (what shipped, or what's asked for until then), skipping items we don't have. */
+export function requestHaul(lines: RequestLine[], items: Item[]): HaulLine[] {
+	const byId = new Map(items.map((i) => [i.id, i]));
+	return lines.flatMap((l) => {
+		const item = byId.get(l.item_id);
+		return item && l.quantity > 0 ? [{ item, quantity: l.quantity, ...(l.variant ? { size: l.variant } : {}) }] : [];
+	});
 }
