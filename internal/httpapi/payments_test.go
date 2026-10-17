@@ -168,6 +168,9 @@ func TestCardPaymentForInternationalShipping(t *testing.T) {
 	if in.RequestID != r.ID || in.AmountCents != 1500 || in.Email != userEmail || in.IdempotencyKey != fmt.Sprintf("merch-request-%d-pay", r.ID) {
 		t.Fatalf("payment input = %+v", in)
 	}
+	if !strings.Contains(in.Description, "Items requested:\n- ") || !strings.Contains(in.Description, "Total postage paid: $15.00 USD") {
+		t.Fatalf("receipt description = %q", in.Description)
+	}
 	if ev := h.events("payment_started"); len(ev) != 1 || props(t, ev[0])["fee_cents"] != 1500.0 || props(t, ev[0])["country"] != "DE" {
 		t.Fatalf("payment_started = %+v", ev)
 	}
@@ -283,5 +286,39 @@ func TestUSRequestHasNothingToPay(t *testing.T) {
 	}
 	if code, _ := h.pay(userEmail, r.ID); code != 409 {
 		t.Fatalf("pay US request = %d", code)
+	}
+}
+
+func TestPaymentDescription(t *testing.T) {
+	req := &store.Request{ID: 7, ShippingFeeCents: 1925,
+		Address: swag.Address{City: "Toronto", State: "ON", Country: "CA", Line1: "1 Secret St"},
+		Lines: []store.RequestLine{
+			{Name: "Mini-Magazine", Quantity: 100},
+			{Name: "Hack Club T-shirt", Variant: "M", Quantity: 1},
+		}}
+	want := "Postage for Hack Club swag request #7\n" +
+		"Ships to: Toronto, ON, CA\n" +
+		"Items requested:\n" +
+		"- 100 × Mini-Magazine\n" +
+		"- 1 × Hack Club T-shirt (M)\n" +
+		"Total postage paid: $19.25 USD\n" +
+		"The swag is free; this pays the postage to send it outside the US.\n" +
+		"See your request: https://merch.example/requests"
+	if got := paymentDescription(req, "https://merch.example"); got != want {
+		t.Fatalf("description =\n%s\nwant\n%s", got, want)
+	}
+
+	// Stripe refuses descriptions over 1000 characters: a long request lists
+	// what fits and counts the rest.
+	req.Lines = nil
+	for i := 0; i < 60; i++ {
+		req.Lines = append(req.Lines, store.RequestLine{Name: fmt.Sprintf("Sticker number %d with a long name", i), Quantity: 2})
+	}
+	got := paymentDescription(req, "https://merch.example")
+	if n := len([]rune(got)); n > 1000 {
+		t.Fatalf("description is %d characters", n)
+	}
+	if !strings.Contains(got, "more items\nTotal postage paid: $19.25 USD") || !strings.HasPrefix(got, "Postage for Hack Club swag request #7\n") {
+		t.Fatalf("long description =\n%s", got)
 	}
 }

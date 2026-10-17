@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/stripe"
@@ -66,7 +68,7 @@ func (s *server) payRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 	}
 	p, err := s.Payments.CreatePayment(r.Context(), stripe.PaymentInput{
 		RequestID: id, AmountCents: req.ShippingFeeCents, Email: v.user.Email, IdempotencyKey: key,
-		Description: "Shipping for Hack Club swag request #" + strconv.FormatInt(id, 10),
+		Description: paymentDescription(req, s.Config.BaseURL),
 	})
 	if err != nil {
 		s.Log.Error("stripe: create payment", "request", id, "err", err)
@@ -79,6 +81,43 @@ func (s *server) payRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 	}
 	s.track(r, v.user, "payment_started", map[string]any{"request_id": id, "fee_cents": req.ShippingFeeCents, "country": req.Address.Country, "retry": prev != ""})
 	writeJSON(w, http.StatusOK, map[string]any{"client_secret": p.ClientSecret, "amount_cents": p.Amount})
+}
+
+// paymentDescription is the payment's description, which Stripe prints as the
+// line on the requester's receipt: what they asked for, where it goes and what
+// they paid, one fact per line. Stripe takes at most 1000 characters, so a long
+// request lists the items that fit and counts the rest.
+func paymentDescription(req *store.Request, baseURL string) string {
+	const max = 1000
+	head := fmt.Sprintf("Postage for Hack Club swag request #%d\n", req.ID)
+	if p := place(req.Address); p != "" {
+		head += "Ships to: " + p + "\n"
+	}
+	head += "Items requested:\n"
+	tail := fmt.Sprintf("Total postage paid: %s USD\n", dollars(req.ShippingFeeCents)) +
+		"The swag is free; this pays the postage to send it outside the US.\n" +
+		"See your request: " + baseURL + "/requests"
+	var items []string
+	for i, l := range req.Lines {
+		items = append(items, fmt.Sprintf("- %d × %s\n", l.Quantity, lineName(l)))
+		more := ""
+		if left := len(req.Lines) - i - 1; left > 0 {
+			more = andMore(left)
+		}
+		if utf8.RuneCountInString(head+strings.Join(items, "")+more+tail) > max {
+			items = items[:len(items)-1]
+			items = append(items, andMore(len(req.Lines)-i))
+			break
+		}
+	}
+	return head + strings.Join(items, "") + tail
+}
+
+func andMore(n int) string {
+	if n == 1 {
+		return "- and 1 more item\n"
+	}
+	return fmt.Sprintf("- and %d more items\n", n)
 }
 
 // syncPayment checks Stripe for a request still waiting on its shipping

@@ -602,6 +602,10 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   (HCB links and "Mark paid" were removed 2026-10-17); the server won't start without
   `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY`. Dev uses the sandbox (`sk_test_…`/`pk_test_…`, test card
   4242 4242 4242 4242); the keys live only in the shared `.env` and Orchard, never in the repo.
+  Stripe emails the requester a receipt whose only line is the PaymentIntent's `description`
+  (newlines show as separate lines), so `paymentDescription` puts the detail there: request
+  number, city/state/country, every item and quantity, total postage paid, and the requests
+  link. Stripe caps it at 1000 characters; long requests end with "and N more items".
 - **Loops** (`internal/loops`, `internal/httpapi/emails.go`) emails the requester through one
   transactional template (`LOOPS_TRANSACTIONAL_ID`) whose variables are `subject_line`,
   `preview_text` and `body_text` (plain text; the wording is in `emails.go`). Three emails:
