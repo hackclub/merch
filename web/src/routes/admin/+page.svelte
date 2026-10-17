@@ -262,11 +262,13 @@
 									<div class="row size-row">
 										<input bind:value={v.label} placeholder="label (M)" style="width: 5rem" />
 										<input bind:value={v.sku} placeholder="warehouse SKU" />
+										<input type="number" min="0" step="0.01" title="This size's weight in oz (empty = the item's)" placeholder="oz" style="width: 4.5rem" value={v.weight_oz ?? ''}
+											oninput={(e) => (v.weight_oz = e.currentTarget.value === '' ? null : +e.currentTarget.value)} />
 										<button class="link" title="Remove size" onclick={() => (it.variants = it.variants.filter((_, j) => j !== i))}>✕</button>
 									</div>
 								{/each}
 								<button class="link" onclick={() => (it.variants = [...it.variants, { label: '', sku: '' }])}>+ Size</button>
-								<div class="muted">Each size ships its own SKU; limits count all sizes together. Saving folds items listed under these SKUs into this one.</div>
+								<div class="muted">Each size ships its own SKU and can have its own weight (oz, without the mailer); limits count all sizes together. Saving folds items listed under these SKUs into this one.</div>
 							</details>
 							<details class="photos-edit" open={it.pages.length > 0}>
 								<summary>Booklet pages ({it.pages.length})</summary>

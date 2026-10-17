@@ -641,9 +641,11 @@ func TestAdminManagesItemsAndSettings(t *testing.T) {
 func TestSizedItemFlow(t *testing.T) {
 	h := newHarness(t)
 	admin, user := h.client(adminEmail), h.client(userEmail)
-	sizes := []swag.Variant{{Label: "S", SKU: "Swa/Shirt/HC/S"}, {Label: "M", SKU: "Swa/Shirt/HC/M"}}
+	mOz, noOz := 5.0, 0.0
+	sizes := []swag.Variant{{Label: "S", SKU: "Swa/Shirt/HC/S"}, {Label: "M", SKU: "Swa/Shirt/HC/M", WeightOz: &mOz}}
 
 	for i, bad := range [][]swag.Variant{
+		{{Label: "S", SKU: "a", WeightOz: &noOz}},
 		{{Label: "", SKU: "Swa/Shirt/HC/S"}},
 		{{Label: "S", SKU: ""}},
 		{{Label: "S", SKU: "a"}, {Label: "S", SKU: "b"}},
@@ -666,6 +668,9 @@ func TestSizedItemFlow(t *testing.T) {
 	h.do(user, "GET", "/api/catalog", nil, &cat)
 	if len(cat.Items) != 1 || len(cat.Items[0].Variants) != 2 {
 		t.Fatalf("catalog = %+v", cat)
+	}
+	if w := cat.Items[0].Variants[1].WeightOz; w == nil || *w != 5 {
+		t.Fatalf("size weight = %v, want 5 oz", w)
 	}
 
 	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: shirt.ID, Quantity: 1}}}, &errBody); code != 422 || !strings.Contains(errBody["error"], "size") {

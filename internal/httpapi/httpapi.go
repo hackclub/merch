@@ -942,6 +942,8 @@ func validItem(it swag.Item) string {
 			return "every size needs a label and a warehouse SKU"
 		case labels[v.Label] || skus[v.SKU]:
 			return "sizes must have different labels and SKUs"
+		case v.WeightOz != nil && !(*v.WeightOz > 0 && *v.WeightOz <= 800):
+			return "a size's weight must be between 0 and 800 ounces"
 		}
 		labels[v.Label], skus[v.SKU] = true, true
 	}

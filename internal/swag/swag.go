@@ -100,6 +100,9 @@ type Item struct {
 type Variant struct {
 	Label string `json:"label"`
 	SKU   string `json:"sku"`
+	// WeightOz is one unit of this size; nil = the item's WeightOz. Shirts
+	// differ by size: the warehouse logs a small at 5.5 oz and an XL at 6.9.
+	WeightOz *float64 `json:"weight_oz,omitempty"`
 }
 
 // Variant returns the item's variant with the given SKU.

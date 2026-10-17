@@ -134,6 +134,10 @@ func shapeOf(it Item, qty int) shape {
 		s.w, s.h, s.t = stickerSize[0], stickerSize[1], stickerSize[2]
 	case it.Packs == "postcard":
 		s.w, s.h, s.t = postcardSize[0], postcardSize[1], postcardSize[2]
+	case len(it.Variants) > 0:
+		// Clothing comes in sizes, and folded in its bag a shirt is about
+		// half an inch thick: AGH mails up to three in one mailer.
+		s.w, s.h, s.t = bulkySize[0], bulkySize[1], 0.5
 	default:
 		s.w, s.h, s.t = bulkySize[0], bulkySize[1], bulkySize[2]
 	}
@@ -214,6 +218,9 @@ func Pack(lines []Line, catalog map[int64]Item, international bool) (Packing, er
 	}
 	for _, l := range lines {
 		it := catalog[l.ItemID]
+		if v, ok := it.Variant(l.SKU); ok && v.WeightOz != nil {
+			it.WeightOz = v.WeightOz
+		}
 		add(it, l.Quantity)
 		for _, sku := range it.ShipsWith {
 			extra, ok := bySKU[sku]

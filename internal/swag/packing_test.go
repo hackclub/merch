@@ -59,6 +59,7 @@ func TestPack(t *testing.T) {
 		{"five magazines are fine in the US", []Line{{ItemID: 4, Quantity: 5}}, false, "Bubble mailer", nil},
 		{"45 mini-magazines make 3 lb", []Line{{ItemID: 5, Quantity: 45}}, true, "Bubble mailer", nil},
 		{"a few prints go in a StayFlat", []Line{{ItemID: 2, Quantity: 10}, {ItemID: 3, Quantity: 3}, {ItemID: 5, Quantity: 1}}, false, "9x12 StayFlat", nil},
+		{"three shirts share a mailer, like AGH sends them", []Line{{ItemID: 6, Quantity: 3, SKU: "Swa/Shirt/HC/M"}, {ItemID: 3, Quantity: 50}}, true, "Bubble mailer", nil},
 		{"a poster and a shirt share a box", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 6, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}, false, "18x12x6 box", nil},
 		{"a club kit with posters ships abroad in a box", []Line{{ItemID: 1, Quantity: 2}, {ItemID: 5, Quantity: 25}, {ItemID: 3, Quantity: 50}}, true, "18x12x6 box", nil},
 		{"50 mini-magazines don't", []Line{{ItemID: 5, Quantity: 50}}, true, "", ErrTooHeavy},
@@ -120,6 +121,25 @@ func TestPackWeight(t *testing.T) {
 	p, err = Pack([]Line{{ItemID: 9, Quantity: 1}}, cat, false)
 	if err != nil || !p.UnknownWeight {
 		t.Fatalf("got %+v, %v", p, err)
+	}
+}
+
+// Each size of a shirt has its own weight: the warehouse logs a small 5.5 oz
+// and a large 6.6 oz, mailer included.
+func TestPackUsesASizesWeight(t *testing.T) {
+	cat := shopCatalog()
+	shirt := cat[6]
+	shirt.Variants = []Variant{{Label: "S", SKU: "Swa/Shirt/HC/S", WeightOz: f(4.5)},
+		{Label: "L", SKU: "Swa/Shirt/HC/L", WeightOz: f(5.6)}, {Label: "XXL", SKU: "Swa/Shirt/HC/XXL"}}
+	cat[6] = shirt
+	for sku, want := range map[string]float64{"Swa/Shirt/HC/S": 5.5, "Swa/Shirt/HC/L": 6.6, "Swa/Shirt/HC/XXL": 7.5} {
+		p, err := Pack([]Line{{ItemID: 6, Quantity: 1, SKU: sku}}, cat, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if math.Abs(p.WeightOz-want) > 0.01 {
+			t.Errorf("%s: %.2f oz packed, want %.2f", sku, p.WeightOz, want)
+		}
 	}
 }
 

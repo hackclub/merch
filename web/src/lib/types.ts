@@ -28,7 +28,7 @@ export type Item = {
 	clip: string; // looping video, GIF or photo of the real thing, shown on its shop tile; '' = none
 };
 
-export type Variant = { label: string; sku: string };
+export type Variant = { label: string; sku: string; weight_oz?: number | null }; // weight_oz: one unit of this size; null = the item's
 export type Photo = { url: string; caption: string; credit: string };
 
 export type Settings = {

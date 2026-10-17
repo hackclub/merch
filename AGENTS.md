@@ -311,11 +311,13 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   counts as a bulky 10x8x1) and `items.weight_oz`. With no weight set, it works one out from
   the paper size (0.625 oz/in³). `Validate` refuses requests that don't fit in one package and
   international requests over 3 lb packed.
-- **Warehouse weights include the packaging** (except shirts). Zenventory has no per-SKU
-  weights; AGH weighs packages and buys labels at that weight. One poster logs 7.2 oz (1.2 oz
-  of paper in a 6 oz StayFlat), n Mini-Magazines about n × 0.96 + 1 oz; only single shirts log
-  a flat 6.0 oz. So `items.weight_oz` is the item alone, `Pack` adds the mailer's `TareOz`, and
-  postage estimates match history on that packed weight.
+- **Warehouse weights include the packaging.** AGH logs each package at its packaging plus a
+  fixed weight per SKU (a fit over 767 orders since 2025-06 leaves a median 0.04 oz unexplained),
+  and buys labels at that weight. One poster logs 7.2 oz (1.2 oz of paper in a 6 oz StayFlat),
+  n Mini-Magazines n × 0.96 + 1 oz, and a shirt in a mailer 5.5 (S), 6.0 (M), 6.6 (L) or
+  6.9 oz (XL); two or three shirts share one mailer. So `items.weight_oz` is the item alone
+  (a size's own `weight_oz` in `variants` when sizes differ), `Pack` adds the mailer's `TareOz`,
+  and postage estimates match history on that packed weight.
 - **Estimates** (`internal/swag/estimate.go`): arrival window = handling + transit, in business
   days (Mon–Fri; the shop intro gives transit only, after "Shipped next day Mon–Fri"), from the 20th to the 80th percentile of past shipments to the same country and class. With fewer than
   10 samples, it uses all US or all international shipments instead. US postage compares packages
