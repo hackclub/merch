@@ -73,7 +73,7 @@ type Estimate struct {
 // fewer, the estimate widens to all of the US or all international shipments.
 const MinSamples = 10
 
-// RecentPostageDays is how far back postage looks first, counted from the
+// RecentPostageDays is how far back US postage looks first, counted from the
 // newest shipment in the history. Rates go up every year (a US parcel of 5-9 oz
 // cost $4.71 in early 2025 and $7.27 in mid-2026), so older prices come in only
 // when there are too few recent ones.
@@ -114,7 +114,8 @@ func EstimateShipping(history []PastShipment, country string, p Packing, now tim
 // same side of the border and class, or that side of the border).
 type History struct {
 	transit, handling map[group][]float64
-	postage           map[group][]weighed // sorted by weight
+	postage           map[group][]weighed // sorted by weight; US only
+	cards             *rateCards          // postage abroad
 }
 
 type group struct {
@@ -180,6 +181,7 @@ func NewHistory(ships []PastShipment) *History {
 	for _, ws := range h.postage {
 		slices.SortFunc(ws, func(a, b weighed) int { return cmp.Compare(a.oz, b.oz) })
 	}
+	h.cards = newRateCards(ships)
 	return h
 }
 
@@ -212,12 +214,42 @@ func (h *History) Estimate(country string, p Packing, now time.Time) Estimate {
 		e.TransitBasis, e.TransitSamples = basis, len(transit)
 	}
 
-	// Postage depends on weight, so compare with packages of about the same
-	// weight. The warehouse weighs packages with their packaging (one poster
-	// logs 7.2 oz: 1.2 oz of paper in a 6 oz StayFlat) and buys labels at that
+	if intl {
+		// Abroad, postage comes off the country's rate card (ratecard.go).
+		if p, basis, n := h.cards.estimate(country, class, p.WeightOz); n > 0 {
+			e.PostageCents = [2]int{int(math.Round(p[0])), int(math.Round(p[2]))}
+			e.PostageTypicalCents = int(math.Round(p[1]))
+			e.PostageBasis, e.PostageSamples = basis, n
+		}
+	} else {
+		e.estimateUSPostage(h, country, p, class)
+	}
+
+	// How long the warehouse takes to mail an order.
+	handling, _ := first(h.handling, []group{scopeGroup(intl, class), anyClassGroup(intl)}, []string{scope, scope})
+	if handling != nil {
+		e.HandlingDays = window(handling)
+		e.HandlingSamples = len(handling)
+	}
+
+	if transit != nil {
+		start := now.In(shipZone)
+		e.ArriveFrom = AddBusinessDays(start, e.HandlingDays[0]+e.TransitDays[0]).Format(time.DateOnly)
+		e.ArriveBy = AddBusinessDays(start, e.HandlingDays[1]+e.TransitDays[1]).Format(time.DateOnly)
+	}
+	return e
+}
+
+// estimateUSPostage sets US postage from packages of about the same packed
+// weight. US parcels are priced by zone (how far the ZIP is) as well as
+// weight, and the zone isn't known, so this takes the middle of what packages
+// like it cost.
+func (e *Estimate) estimateUSPostage(h *History, country string, p Packing, class string) {
+	intl, scope := false, "US"
+	// The warehouse weighs packages with their packaging (one poster logs
+	// 7.2 oz: 1.2 oz of paper in a 6 oz StayFlat) and buys labels at that
 	// weight, so match on the packed weight. Recent prices come first (see
-	// RecentPostageDays); the country matters more than the date, since
-	// Asendia's rates differ a lot by country.
+	// RecentPostageDays).
 	near := func(ws []weighed) []float64 {
 		d := max(2, 0.25*p.WeightOz)
 		i, _ := slices.BinarySearchFunc(ws, p.WeightOz-d-1e-6, func(w weighed, oz float64) int { return cmp.Compare(w.oz, oz) })
@@ -244,20 +276,6 @@ func (h *History) Estimate(country string, p Packing, now time.Time) Estimate {
 		e.PostageBasis, e.PostageSamples = l.basis, len(postage)
 		break
 	}
-
-	// How long the warehouse takes to mail an order.
-	handling, _ := first(h.handling, []group{scopeGroup(intl, class), anyClassGroup(intl)}, []string{scope, scope})
-	if handling != nil {
-		e.HandlingDays = window(handling)
-		e.HandlingSamples = len(handling)
-	}
-
-	if transit != nil {
-		start := now.In(shipZone)
-		e.ArriveFrom = AddBusinessDays(start, e.HandlingDays[0]+e.TransitDays[0]).Format(time.DateOnly)
-		e.ArriveBy = AddBusinessDays(start, e.HandlingDays[1]+e.TransitDays[1]).Format(time.DateOnly)
-	}
-	return e
 }
 
 // From re-dates an estimate for a package already mailed at mailed.

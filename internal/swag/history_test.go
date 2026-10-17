@@ -54,26 +54,34 @@ func scanEstimate(history []PastShipment, country string, p Packing, now time.Ti
 		e.TransitDays = window(transit)
 		e.TransitBasis, e.TransitSamples = basis, len(transit)
 	}
-	near := func(s PastShipment) bool {
-		return s.WeightOz > 0 && math.Abs(s.WeightOz-p.WeightOz) <= max(2, 0.25*p.WeightOz)
-	}
-	var newest time.Time
-	for _, s := range history {
-		if s.ShippedOn.After(newest) {
-			newest = s.ShippedOn
+	if intl {
+		if p, basis, n := newRateCards(history).estimate(country, class, p.WeightOz); n > 0 {
+			e.PostageCents = [2]int{int(math.Round(p[0])), int(math.Round(p[2]))}
+			e.PostageTypicalCents = int(math.Round(p[1]))
+			e.PostageBasis, e.PostageSamples = basis, n
 		}
-	}
-	recent := func(s PastShipment) bool { return !s.ShippedOn.Before(newest.AddDate(0, 0, -RecentPostageDays)) }
-	postage, basis := pick(func(s PastShipment) (float64, bool) {
-		return float64(s.PostageCents), s.PostageCents > 0
-	}, level{country, func(s PastShipment) bool { return sameCountry(s) && near(s) && recent(s) }},
-		level{country, func(s PastShipment) bool { return sameCountry(s) && near(s) }},
-		level{scope, func(s PastShipment) bool { return sameScope(s) && near(s) && recent(s) }},
-		level{scope, func(s PastShipment) bool { return sameScope(s) && near(s) }})
-	if postage != nil {
-		e.PostageCents = [2]int{int(math.Round(percentile(postage, 0.2))), int(math.Round(percentile(postage, 0.8)))}
-		e.PostageTypicalCents = int(math.Round(percentile(postage, 0.5)))
-		e.PostageBasis, e.PostageSamples = basis, len(postage)
+	} else {
+		near := func(s PastShipment) bool {
+			return s.WeightOz > 0 && math.Abs(s.WeightOz-p.WeightOz) <= max(2, 0.25*p.WeightOz)
+		}
+		var newest time.Time
+		for _, s := range history {
+			if s.ShippedOn.After(newest) {
+				newest = s.ShippedOn
+			}
+		}
+		recent := func(s PastShipment) bool { return !s.ShippedOn.Before(newest.AddDate(0, 0, -RecentPostageDays)) }
+		postage, basis := pick(func(s PastShipment) (float64, bool) {
+			return float64(s.PostageCents), s.PostageCents > 0
+		}, level{country, func(s PastShipment) bool { return sameCountry(s) && near(s) && recent(s) }},
+			level{country, func(s PastShipment) bool { return sameCountry(s) && near(s) }},
+			level{scope, func(s PastShipment) bool { return sameScope(s) && near(s) && recent(s) }},
+			level{scope, func(s PastShipment) bool { return sameScope(s) && near(s) }})
+		if postage != nil {
+			e.PostageCents = [2]int{int(math.Round(percentile(postage, 0.2))), int(math.Round(percentile(postage, 0.8)))}
+			e.PostageTypicalCents = int(math.Round(percentile(postage, 0.5)))
+			e.PostageBasis, e.PostageSamples = basis, len(postage)
+		}
 	}
 	handling, _ := pick(func(s PastShipment) (float64, bool) {
 		if s.HandlingDays == nil {

@@ -318,14 +318,23 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   postage estimates match history on that packed weight.
 - **Estimates** (`internal/swag/estimate.go`): arrival window = handling + transit, in business
   days (Mon–Fri; the shop intro gives transit only, after "Shipped next day Mon–Fri"), from the 20th to the 80th percentile of past shipments to the same country and class. With fewer than
-  10 samples, it uses all US or all international shipments instead. Postage compares packages
-  of about the same packed weight, from the last 180 days of history first (postage rises every
-  year: a 5-9 oz US parcel went from $4.71 in early 2025 to $7.27 in mid-2026), then the same
-  country's older history, then all US or all international; its range is shown only to admins (everyone sees the typical
+  10 samples, it uses all US or all international shipments instead. US postage compares packages
+  of about the same packed weight (US parcels are also priced by ZIP zone, which isn't known), from
+  the last 180 days of history first (postage rises every
+  year: a 5-9 oz US parcel went from $4.71 in early 2025 to $7.27 in mid-2026), then older history.
+  **Abroad, postage comes off rate cards** (`internal/swag/ratecard.go`): Asendia and USPS price
+  each country by the whole ounce, base + per ounce, to the cent (Canada 2026: $8.90 + $0.414/oz;
+  India $6.51 + $0.508/oz; letters $1.93 up to 1 oz, $3.85 up to 2 oz). A price index chained
+  month to month brings old prices to today's rates (Asendia rose 5.3% in January 2025 and 15%
+  in January 2026, France 28%), each country's card is read at the packed weight rounded up to
+  the ounce, in-between weights read off the line, and countries with fewer than 3 packages use
+  all international ones of that weight. Backtested on 2025-26 parcels: 87-93% within 25¢ of
+  the label (median-by-weight, used before 2026-10-17: 2-29%, undercharging about $2 on
+  average). Ranges are shown only to admins (everyone sees the typical
   postage in the cost table). The shop intro, the request form, My requests and the admin
   request list show these estimates (`POST /api/shipping/estimate`, `GET /api/shipping`).
-- **International fee:** an international request pays the median postage of past shipments like
-  it (same country, about the same packed weight, recent first), to the cent, the same
+- **International fee:** an international request pays its typical postage off the rate card,
+  to the cent, the same
   number as the cost table's postage (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback
   when there's no postage history; 0 still makes international shipping free.
 - **Cost to Hack Club** (`internal/swag/costs.go`, shown to everyone above the request form's
@@ -369,6 +378,9 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
       zenventory.csv letters.csv > history.csv
   DATABASE_URL=… go run ./cmd/shiphistory load history.csv orders.csv   # replaces those sources
   ```
+  Asendia postage from 2026-10-01 on is left out (`zenventory.sql`): since then every label is
+  logged at its country's 5 oz price whatever the weight, which isn't the rate card. Ask AGH
+  what it really bills before bringing it back.
   Loaded 2026-10-15 into dev and production: 47,167 shipments since 2025-01. That's 499 Asendia
   deliveries since 2026-04-20, 5,027 US letter scans and 1,833 mail.hackclub.com orders. The
   warehouse's `theseus.*` tables are a snapshot from before 2026-09-14.
