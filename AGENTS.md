@@ -539,7 +539,8 @@ When Zach asks you to improve the shop from evidence, run this loop end to end:
 ## Agent API
 
 A scheduled agent (about every 3 hours) reviews pending requests through `/api/agent/*`
-(`internal/httpapi/agent.go`). Its docs are `internal/httpapi/agent_api.md`, served at
+(`internal/httpapi/agent.go`). Its runbook, run notes and state live in the private repo
+`zachlatta/merch-ops` (`~/dev/hackclub/merch-ops` on porygon). Its docs are `internal/httpapi/agent_api.md`, served at
 `GET /api/agent`; keep them in step with the code, because they're all the agent reads.
 - Admins make and revoke keys on the Admin page's API keys tab (`/api/admin/api-keys`). The
   token (`merch_…`) is shown once; only its SHA-256 is stored (`api_keys`).
