@@ -61,19 +61,32 @@ describe('costRows', () => {
 	const c = (over: Partial<Costs>): Costs => ({
 		items_cents: 945, labor_cents: 260, packing_cents: 50, postage_cents: 512, total_cents: 1767, unpriced_skus: [], ...over
 	});
-	it('lines up the US and abroad, labor and packing together', () => {
-		expect(costRows({ us: c({}), international: c({ postage_cents: 1400, total_cents: 2655 }) })).toEqual([
-			['Items', '$9.45', '$9.45'],
-			['Labor + packing', '$3.10', '$3.10'],
-			['Postage (estimated)', '$5.12', '$14.00'],
-			['Total', '$17.67', '$26.55']
+	const both = { us: c({}), international: c({ postage_cents: 1400, total_cents: 2655 }) };
+	it('shows only the side the request ships to, labor and packing together', () => {
+		expect(costRows(both, false)).toEqual([
+			['Items', '$9.45'],
+			['Labor + packing', '$3.10'],
+			['Postage (estimated)', '$5.12'],
+			['Total', '$17.67']
+		]);
+		expect(costRows(both, true)).toEqual([
+			['Items', '$9.45'],
+			['Labor + packing', '$3.10'],
+			['Postage (estimated)', '$14.00'],
+			['Total', '$26.55']
 		]);
 	});
 	it('marks what it has no figure for', () => {
-		const rows = costRows({ us: c({ postage_cents: 0, unpriced_skus: ['Sti/New/1st'] }), international: null });
-		expect(rows[0]).toEqual(['Items', '$9.45 + 1 unpriced', '—']);
-		expect(rows[2]).toEqual(['Postage (estimated)', 'no history', '—']);
-		expect(rows[3]).toEqual(['Total', '$17.67+', 'over 3 lb']);
+		const rows = costRows({ us: c({ postage_cents: 0, unpriced_skus: ['Sti/New/1st'] }), international: null }, false);
+		expect(rows[0]).toEqual(['Items', '$9.45 + 1 unpriced']);
+		expect(rows[2]).toEqual(['Postage (estimated)', 'no history']);
+		expect(rows[3]).toEqual(['Total', '$17.67+']);
+		expect(costRows({ us: c({}), international: null }, true)).toEqual([
+			['Items', '—'],
+			['Labor + packing', '—'],
+			['Postage (estimated)', '—'],
+			['Total', 'over 3 lb']
+		]);
 	});
 });
 

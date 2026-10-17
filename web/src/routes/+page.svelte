@@ -395,9 +395,9 @@
 					<p>{(quote?.costs && worthText(intl ? quote.costs.international : quote.costs.us)) || 'If you get 1 teen to join Hack Club and ship a weighted project, then this is worth it!'}</p>
 					{#if quote?.costs}
 						<table class="costs">
-							<thead><tr><th>Cost to Hack Club</th><th>US</th><th>{intl ? address.country.trim().toUpperCase() : 'Global'}</th></tr></thead>
+							<thead><tr><th>Cost to Hack Club</th><th>{intl ? address.country.trim().toUpperCase() : 'US'}</th></tr></thead>
 							<tbody>
-								{#each costRows(quote.costs) as [label, us, abroad]}<tr><td>{label}</td><td>{us}</td><td>{abroad}</td></tr>{/each}
+								{#each costRows(quote.costs, intl) as [label, amount]}<tr><td>{label}</td><td>{amount}</td></tr>{/each}
 							</tbody>
 						</table>
 						<p><strong>Cost to you: {costToYou(intl, quote.estimate.fee_cents)}</strong></p>

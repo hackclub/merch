@@ -333,8 +333,8 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   "I understand" checkbox, with "Cost to you": $0 in the US, the shipping fee abroad):
   items at the warehouse's unit costs (mail.hackclub.com `unit_cost`, ships-with SKUs included),
   AGH labor ($1.80 an order + $0.20 for each different SKU, from its invoices; the warehouse's
-  `agh_fulfillment_zenventory.invoices`), the package's `CostCents`, and the typical postage, for
-  the US and abroad. Out-of-stock SKUs have no unit cost and show as unpriced.
+  `agh_fulfillment_zenventory.invoices`), the package's `CostCents`, and the typical postage. The table
+  has one column, for the address's country (the US until one is entered). Out-of-stock SKUs have no unit cost and show as unpriced.
   - **What's worth it:** Hack Club is financially transparent (its live ledger is public at
     https://hcb.hackclub.com/hq). The marketing goal is to spend at most **$50 per new teenager
     who joins Hack Club and ships one weighted project** (10 approved hours) in one of our
