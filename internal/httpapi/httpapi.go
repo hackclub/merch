@@ -57,6 +57,7 @@ type Deps struct {
 	Images    ImageStore    // nil disables image uploads
 	Places    AddressFinder // nil disables address autocomplete
 	Payments  Payments      // nil: international shipping is paid on HCB
+	Mailer    Mailer        // nil sends no emails
 	Static    fs.FS         // built PWA (web/build); nil disables static serving
 	Now       func() time.Time
 	Log       *slog.Logger
@@ -498,6 +499,8 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 		Address swag.Address `json:"address"`
 		Lines   []swag.Line  `json:"lines"`
 		Note    string       `json:"note"`
+		// Outside the US: they'll pay their country's customs fees.
+		CustomsOK bool `json:"customs_ok"`
 	}
 	if !readJSON(w, r, &body) {
 		return
@@ -536,7 +539,7 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 		UserID: v.user.ID, Address: body.Address, Purpose: body.Purpose, Lines: body.Lines, Status: status, ShippingFeeCents: fee, Note: body.Note,
 	}, func(prior map[int64]int, last *time.Time) error {
 		return swag.Validate(swag.ValidateInput{
-			Settings: st, Catalog: cat, Purpose: body.Purpose, Reason: body.Note, Lines: body.Lines, Country: body.Address.Country, PriorQuantities: prior, LastRequestAt: last, Now: s.Now(),
+			Settings: st, Catalog: cat, Purpose: body.Purpose, Reason: body.Note, Lines: body.Lines, Country: body.Address.Country, CustomsOK: body.CustomsOK, PriorQuantities: prior, LastRequestAt: last, Now: s.Now(),
 		})
 	})
 	if err != nil {
@@ -555,12 +558,15 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 		"lines": body.Lines, "items": itemCount(body.Lines), "fee_cents": fee, "note_chars": len(body.Note),
 		"package": est.Package, "arrive_from": est.ArriveFrom, "arrive_by": est.ArriveBy,
 	})
+	if req.Status == swag.StatusPending {
+		s.emailRequest(r, req, "received")
+	}
 	writeJSON(w, http.StatusCreated, s.userView(req))
 }
 
 func isRuleErr(err error) bool {
 	for _, e := range []error{swag.ErrRequestsClosed, swag.ErrNoItems, swag.ErrBadQuantity, swag.ErrUnknownItem,
-		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrTooManyItems, swag.ErrCooldown, swag.ErrBadAddress, swag.ErrBadPurpose, swag.ErrNoReason,
+		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrTooManyItems, swag.ErrCooldown, swag.ErrBadAddress, swag.ErrBadPurpose, swag.ErrNoReason, swag.ErrNoCustoms,
 		swag.ErrWontPack, swag.ErrTooHeavy} {
 		if errors.Is(err, e) {
 			return true
@@ -662,7 +668,11 @@ func (s *server) adminMarkPaid(w http.ResponseWriter, r *http.Request, v viewer)
 	if !ok {
 		return
 	}
-	s.respond(w)(s.Store.MarkPaid(r.Context(), id))
+	req, err := s.Store.MarkPaid(r.Context(), id)
+	if err == nil {
+		s.emailRequest(r, req, "received")
+	}
+	s.respondRequest(w, req, err)
 }
 
 func (s *server) adminReject(w http.ResponseWriter, r *http.Request, v viewer) {
@@ -676,7 +686,11 @@ func (s *server) adminReject(w http.ResponseWriter, r *http.Request, v viewer) {
 	if !readJSON(w, r, &body) {
 		return
 	}
-	s.respond(w)(s.Store.TransitionRequest(r.Context(), id, swag.StatusRejected, body.Note))
+	req, err := s.Store.TransitionRequest(r.Context(), id, swag.StatusRejected, body.Note)
+	if err == nil {
+		s.emailRequest(r, req, "rejected")
+	}
+	s.respondRequest(w, req, err)
 }
 
 // adminDispatch creates the warehouse order in mail.hackclub.com. The
@@ -739,7 +753,11 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 		writeErr(w, http.StatusBadGateway, "mail.hackclub.com refused the order: "+err.Error())
 		return
 	}
-	s.respond(w)(s.Store.MarkDispatched(r.Context(), id, order.ID))
+	req, err = s.Store.MarkDispatched(r.Context(), id, order.ID)
+	if err == nil {
+		s.emailRequest(r, req, "dispatched")
+	}
+	s.respondRequest(w, req, err)
 }
 
 func (s *server) adminRefresh(w http.ResponseWriter, r *http.Request, v viewer) {

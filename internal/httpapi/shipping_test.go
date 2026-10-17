@@ -93,13 +93,13 @@ func TestRequestsOver3lbAbroadAreRefused(t *testing.T) {
 	_, _, magazine := shippingFixture(t, h)
 	user := h.client(userEmail)
 	var errBody map[string]string
-	code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "club", "note": "for our club", "address": deAddr,
+	code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "club", "note": "for our club", "customs_ok": true, "address": deAddr,
 		"lines": []swag.Line{{ItemID: magazine.ID, Quantity: 5}}}, &errBody)
 	if code != 422 || !strings.Contains(errBody["error"], "3 lb") {
 		t.Fatalf("5 magazines to Germany = %d %v", code, errBody)
 	}
 	var r store.Request
-	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "club", "note": "for our club", "address": deAddr,
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "club", "note": "for our club", "customs_ok": true, "address": deAddr,
 		"lines": []swag.Line{{ItemID: magazine.ID, Quantity: 2}}}, &r); code != 201 {
 		t.Fatalf("2 magazines to Germany = %d", code)
 	}
@@ -136,7 +136,7 @@ func TestInternationalFeeIsEstimatedPostage(t *testing.T) {
 		store.Request
 		PaymentURL string `json:"payment_url"`
 	}
-	code := h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "club", "note": "for our club", "address": deAddr,
+	code := h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "club", "note": "for our club", "customs_ok": true, "address": deAddr,
 		"lines": []swag.Line{{ItemID: magazine.ID, Quantity: 1}}}, &r)
 	if code != 201 || r.Status != swag.StatusAwaitingPayment || r.ShippingFeeCents != 900 || !strings.Contains(r.PaymentURL, "amount=900") {
 		t.Fatalf("create = %d %+v", code, r)

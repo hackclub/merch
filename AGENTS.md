@@ -51,6 +51,7 @@ internal/auth/       Hack Club Auth OAuth client (auth.hackclub.com, GET /api/v1
 internal/authors/    YSWS author lookup (Airtable REST, 10 min cache)
 internal/theseus/    mail.hackclub.com warehouse client (SKUs, warehouse_orders)
 internal/stripe/     Stripe PaymentIntents client (international shipping payments)
+internal/loops/      Loops transactional email client (request emails)
 internal/asendia/    Asendia tracking lookups (delivery dates for shipping history)
 cmd/shiphistory/     loads past shipments for estimates (see "Shipping estimates and packing")
 internal/cdn/        cdn.hackclub.com upload client (item images)
@@ -281,8 +282,8 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, `THESEUS_API_KEY`, `ADMIN_EMAILS`. Also needed:
   `AIRTABLE_API_KEY` for authors, `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` for international payments (or
   `HCB_SHIPPING_PAYMENT_URL` without Stripe),
-  `HACKCLUB_CDN_API_KEY` for item image uploads, and `GOOGLE_PLACES_API_KEY` for address
-  autocomplete.
+  `HACKCLUB_CDN_API_KEY` for item image uploads, `GOOGLE_PLACES_API_KEY` for address
+  autocomplete, and `LOOPS_API_KEY` for request emails.
 - `$BASE_URL/auth/callback` must be registered as a redirect URI on the Hack Club Auth app.
 - Read the `orchard-ops` skill before touching Orchard (`pdw call hack_club_orchard_k8s__…`).
 
@@ -423,7 +424,9 @@ blocks landing):
   slow routes, and for admin actions (the URL has the id).
 - Server events (`s.track` in `internal/httpapi`): `login_start`, `sign_in`, `sign_in_refused`,
   `sign_out`, `payment_started` (the card form is about to charge: `request_id`, `fee_cents`, `country`,
-  `retry`), `payment_completed` (Stripe says it's paid in full; the request moved to `pending`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
+  `retry`), `payment_completed` (Stripe says it's paid in full; the request moved to `pending`),
+  `email_sent` and `email_failed` (a request email: `kind` = `received`, `dispatched` or `rejected`,
+  `request_id`, and Loops' `error`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
   postage, sample counts, or `error` when it won't pack), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `submission_created`. They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
@@ -494,6 +497,14 @@ where props ? 'error' group by 1, 2 order by 3 desc;
   are done in the Stripe dashboard. Both `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` turn
   it on (without them, HCB). Dev uses the sandbox (`sk_test_…`/`pk_test_…`, test card
   4242 4242 4242 4242); the keys live only in the shared `.env` and Orchard, never in the repo.
+- **Loops** (`internal/loops`, `internal/httpapi/emails.go`) emails the requester through one
+  transactional template (`LOOPS_TRANSACTIONAL_ID`) whose variables are `subject_line`,
+  `preview_text` and `body_text` (plain text; the wording is in `emails.go`). Three emails:
+  `received` when the request reaches `pending` (on submit in the US; abroad, once the postage is
+  paid), `dispatched` when an admin ships it, and `rejected` with the admin's reason. The
+  idempotency key `<THESEUS_ORDER_TAG>-request-<id>-<kind>` sends each one once. A failed send is
+  logged (`email_failed`) and never blocks the action. Without `LOOPS_API_KEY`, no emails. The
+  key lives only in the shared `.env` and Orchard.
 - **cdn.hackclub.com** hosts item images. Admins upload them on the admin Items tab; the
   server re-encodes them as ≤1600px JPEGs (print PNGs are ~9 MB) and stores the CDN URLs in
   `items.images` (ordered; the first is the thumbnail). Each item has a product page at

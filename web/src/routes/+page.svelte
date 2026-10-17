@@ -33,6 +33,7 @@
 	let manual = $state(!!prefilled.line_1.trim());
 	let note = $state('');
 	let understood = $state(false);
+	let customsOK = $state(false); // outside the US: they'll pay their country's customs fees
 	let error = $state('');
 	let submitting = $state(false);
 	let card = $state<CardForm | null>(null);
@@ -161,7 +162,8 @@
 				purpose,
 				address: { ...address, country: address.country.trim().toUpperCase() },
 				lines: cartLines(cart, catalog.items, sizes),
-				note: needsReason(purpose) ? note : ''
+				note: needsReason(purpose) ? note : '',
+				customs_ok: intl && customsOK
 			});
 			// Charge the card before emptying the bag: the card field goes away with it.
 			const failed = r.stripe_key && card ? await payShipping(card, r.id, (path) => api.post(path), window.location.origin) : null;
@@ -358,6 +360,12 @@
 						<CardField bind:this={card} stripeKey={catalog.settings.stripe_key} amountCents={quote.estimate.fee_cents} billing={address} />
 					{/if}
 				{/if}
+				{#if intl}
+					<label class="choice" class:on={customsOK}>
+						<input type="checkbox" name="customs_ok" required bind:checked={customsOK} />
+						<span>I understand I'm responsible for any customs fees or import taxes my country charges to receive a package from the USA.</span>
+					</label>
+				{/if}
 				<div class="understand">
 					<p>Hack Club is a charity. The most effective way we can get more teenagers into Hack Club is to help people like you spread it!</p>
 					<p>But it's wasteful when we send more than gets used. Ask for what you'll actually hand out, put up or wear. If you run out, come back and get more!</p>
@@ -385,7 +393,7 @@
 				{#if quote && arrivalText(quote.estimate)}<p>{arrivalText(quote.estimate)}, by {quote.estimate.service}.</p>{/if}
 				{#each problems as p}<p class="error">{p}</p>{/each}
 				{#if quoteError}<p class="error">{quoteError}</p>{/if}
-				<button disabled={submitting || problems.length > 0 || !!quoteError || !understood}>
+				<button disabled={submitting || problems.length > 0 || !!quoteError || !understood || (intl && !customsOK)}>
 					{submitting ? 'Sending…' : payByCard && quote ? `Submit and pay ${formatCents(quote.estimate.fee_cents)}` : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
 				</button>
 			</form>

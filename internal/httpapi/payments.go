@@ -118,6 +118,7 @@ func (s *server) syncPayment(r *http.Request, req *store.Request) *store.Request
 		return req
 	}
 	s.track(r, &store.User{ID: req.UserID}, "payment_completed", map[string]any{"request_id": req.ID, "fee_cents": req.ShippingFeeCents, "country": req.Address.Country})
+	s.emailRequest(r, paid, "received")
 	return paid
 }
 

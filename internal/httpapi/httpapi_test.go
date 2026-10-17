@@ -549,7 +549,7 @@ func TestInternationalRequestNeedsPayment(t *testing.T) {
 		store.Request
 		PaymentURL string `json:"payment_url"`
 	}
-	code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": deAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
+	code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "customs_ok": true, "address": deAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
 	if code != 201 || r.Status != swag.StatusAwaitingPayment || r.ShippingFeeCents != 1500 {
 		t.Fatalf("create = %d %+v", code, r)
 	}

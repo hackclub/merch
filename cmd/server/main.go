@@ -20,6 +20,7 @@ import (
 	"github.com/hackclub/merch/internal/config"
 	"github.com/hackclub/merch/internal/db"
 	"github.com/hackclub/merch/internal/httpapi"
+	"github.com/hackclub/merch/internal/loops"
 	"github.com/hackclub/merch/internal/places"
 	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/stripe"
@@ -86,6 +87,13 @@ func run(log *slog.Logger) error {
 		log.Warn("STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY not both set: international shipping is paid on HCB (HCB_SHIPPING_PAYMENT_URL)")
 	}
 
+	var mailer httpapi.Mailer
+	if cfg.LoopsAPIKey != "" {
+		mailer = loops.New(cfg.LoopsBaseURL, cfg.LoopsAPIKey, cfg.LoopsTransactionalID, nil)
+	} else {
+		log.Warn("LOOPS_API_KEY not set: requesters get no emails")
+	}
+
 	var static fs.FS
 	if cfg.StaticDir != "" {
 		if st, err := os.Stat(cfg.StaticDir); err == nil && st.IsDir() {
@@ -107,6 +115,7 @@ func run(log *slog.Logger) error {
 		Images:    images,
 		Places:    finder,
 		Payments:  payments,
+		Mailer:    mailer,
 		Static:    static,
 		Log:       log,
 		Warm:      true,

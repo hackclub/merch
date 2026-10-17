@@ -373,3 +373,19 @@ func TestValidateMinimum(t *testing.T) {
 		t.Fatalf("one shirt with a minimum of 2: err = %v", err)
 	}
 }
+
+// Abroad, the requester agrees to pay their country's customs fees.
+func TestValidateCustoms(t *testing.T) {
+	in := ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposePersonal, Lines: []Line{{ItemID: 1, Quantity: 1}}, Country: "DE", Now: now}
+	if err := Validate(in); !errors.Is(err, ErrNoCustoms) {
+		t.Fatalf("DE without customs = %v, want ErrNoCustoms", err)
+	}
+	in.CustomsOK = true
+	if err := Validate(in); err != nil {
+		t.Fatalf("DE with customs = %v", err)
+	}
+	in.Country, in.CustomsOK = "US", false
+	if err := Validate(in); err != nil {
+		t.Fatalf("US = %v", err)
+	}
+}

@@ -51,6 +51,11 @@ type Config struct {
 	StripeSecretKey      string
 	StripePublishableKey string // the browser's card form
 
+	// Loops sends request emails (received, shipped, rejected); off without a key
+	LoopsBaseURL         string
+	LoopsAPIKey          string
+	LoopsTransactionalID string // the template; its variables are subject_line, preview_text, body_text
+
 	AdminEmails []string
 	// When set, only these emails may sign in (ALLOWED_EMAILS). Empty lets
 	// anyone with a Hack Club Auth account in.
@@ -90,6 +95,9 @@ func Load(getenv func(string) string) (*Config, error) {
 		StripeBaseURL:           strings.TrimRight(get("STRIPE_BASE_URL", "https://api.stripe.com"), "/"),
 		StripeSecretKey:         get("STRIPE_SECRET_KEY", ""),
 		StripePublishableKey:    get("STRIPE_PUBLISHABLE_KEY", ""),
+		LoopsBaseURL:            strings.TrimRight(get("LOOPS_BASE_URL", "https://app.loops.so"), "/"),
+		LoopsAPIKey:             get("LOOPS_API_KEY", ""),
+		LoopsTransactionalID:    get("LOOPS_TRANSACTIONAL_ID", "cmvch3fqh12h20jud66w4v1pq"),
 		GooglePlacesBaseURL:     strings.TrimRight(get("GOOGLE_PLACES_BASE_URL", "https://places.googleapis.com"), "/"),
 		GooglePlacesAPIKey:      get("GOOGLE_PLACES_API_KEY", ""),
 		StaticDir:               get("STATIC_DIR", "web/build"),

@@ -160,6 +160,7 @@ var (
 	ErrBadAddress     = errors.New("invalid address")
 	ErrBadPurpose     = errors.New("say what the request is for")
 	ErrNoReason       = errors.New("tell us in a sentence or two how you'll use it")
+	ErrNoCustoms      = errors.New("confirm you'll pay any customs fees your country charges")
 )
 
 type ValidateInput struct {
@@ -173,6 +174,9 @@ type ValidateInput struct {
 	// Country is where it ships (alpha-2); outside the US, packages are capped
 	// at 3 lb.
 	Country string
+	// CustomsOK: outside the US, the requester agreed to pay any customs fees
+	// their country charges.
+	CustomsOK bool
 	// PriorQuantities is how many of each item the user has already received
 	// or has in flight (non-rejected, non-cancelled requests).
 	PriorQuantities map[int64]int
@@ -256,6 +260,9 @@ func Validate(in ValidateInput) error {
 	}
 	if in.Settings.MaxItemsPerRequest > 0 && total > in.Settings.MaxItemsPerRequest {
 		return fmt.Errorf("%w (max %d)", ErrTooManyItems, in.Settings.MaxItemsPerRequest)
+	}
+	if in.Country != "" && IsInternational(in.Country) && !in.CustomsOK {
+		return ErrNoCustoms
 	}
 	return nil
 }
