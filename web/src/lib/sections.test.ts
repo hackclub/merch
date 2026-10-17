@@ -8,7 +8,7 @@ const item = (id: number, sku: string, sort_order = id): Item => ({ ...base, id,
 const mag = { ...item(1, 'Pri/Bok/M25/1st'), binding: 'perfect' };
 const mini = item(2, 'Pri/Bok/Mini25/1st');
 const shirt = item(3, 'Swa/Shirt/HC');
-const poster = item(4, 'Pri/HPd/11x/1st');
+const poster = { ...item(4, 'Pri/HPd/11x/1st'), width_in: 11, height_in: 17 };
 const card = { ...item(5, 'Pri/HPd/4x6/1st'), packs: 'postcard' };
 const welcome = { ...item(6, 'Pri/Wel/4x6/1st', 9), packs: 'postcard' };
 const flag = { ...item(7, 'Sti/Sti/Fla/Top'), packs: 'sticker' };
@@ -16,15 +16,16 @@ const laptops = { ...item(8, 'Sti/Bra/O&H/Lap'), packs: 'sticker' };
 const mystery = item(9, 'Toy/Plush/Orph');
 const haven = { ...item(10, 'Pri/Hav/4x6/1st', 1), packs: 'postcard' };
 const brochure = { ...item(11, 'Pri/Hac/Tea/T26'), binding: 'trifold' };
-const flyer = item(12, 'Pri/Spr/8.5/Kri');
+const flyer = { ...item(12, 'Pri/Spr/8.5/Kri', 0), width_in: 8.5, height_in: 11 };
+const collage = { ...item(13, 'Pri/Let/Abo/Tee'), packs: 'postcard' };
 
 describe('sectionize', () => {
-	const all = [mag, mini, shirt, poster, card, welcome, flag, laptops, mystery, haven, brochure, flyer];
+	const all = [mag, mini, shirt, poster, card, welcome, flag, laptops, mystery, haven, brochure, flyer, collage];
 	const got = sectionize(all);
 	const ids = (key: string) => got.find((s) => s.section.key === key)!.tiles.map((t) => t.item.id);
 
 	it('starts with the Mini-Magazine and the two postcards, then the extras, stickers last', () => {
-		expect(got.map((s) => s.section.key)).toEqual(['start', 'posters', 'cards', 'booklets', 'wear', 'more', 'stickers']);
+		expect(got.map((s) => s.section.key)).toEqual(['start', 'cards', 'posters', 'booklets', 'wear', 'more', 'stickers']);
 		expect(got.map((s) => !!s.section.extra)).toEqual([false, true, true, true, true, true, true]);
 	});
 
@@ -33,8 +34,9 @@ describe('sectionize', () => {
 	});
 
 	it('groups the extras by what they are', () => {
-		expect(ids('posters')).toEqual([4, 12]);
-		expect(ids('cards')).toEqual([5]);
+		// Cards hand out better than posters, so they come first, with flyers after them.
+		expect(ids('cards')).toEqual([5, 13, 12]);
+		expect(ids('posters')).toEqual([4]);
 		expect(ids('booklets')).toEqual([1, 11]);
 		expect(ids('wear')).toEqual([3]);
 		expect(ids('more')).toEqual([9]);

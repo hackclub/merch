@@ -15,12 +15,16 @@ export type Section = {
 	match?: (i: Item) => boolean;
 	/** Listed under "Extras", after the start section. */
 	extra?: boolean;
+	/** Orders the section's items before sort order: lower first. */
+	rank?: (i: Item) => number;
 	featured?: string;
 	/** Everything but the featured item is shown as a grid under it. */
 	grid?: boolean;
 };
 
-const printed = (i: Item) => i.sku.startsWith('Pri/');
+// A single printed sheet (not a card, booklet or brochure), and whether it's bigger than letter size.
+const flat = (i: Item) => i.sku.startsWith('Pri/') && !i.packs && !i.binding;
+const poster = (i: Item) => Math.max(i.width_in ?? 0, i.height_in ?? 0) > 11;
 
 export const SECTIONS: Section[] = [
 	{
@@ -29,8 +33,9 @@ export const SECTIONS: Section[] = [
 		blurb: 'The best way to spread Hack Club: hand these out at school, at your club, or to friends.',
 		skus: ['Pri/Bok/Mini25/', 'Pri/Wel/4x6/', 'Pri/Hav/4x6/']
 	},
-	{ key: 'posters', title: 'Posters and flyers', blurb: '', extra: true, match: (i) => printed(i) && !i.packs && !i.binding },
-	{ key: 'cards', title: 'More cards', blurb: '', extra: true, match: (i) => i.packs === 'postcard' },
+	// Cards hand out better than posters, so they come first. Flyers (letter size and smaller) follow the cards.
+	{ key: 'cards', title: 'More cards and flyers', blurb: '', extra: true, match: (i) => i.packs === 'postcard' || (flat(i) && !poster(i)), rank: (i) => Number(i.packs !== 'postcard') },
+	{ key: 'posters', title: 'Posters', blurb: '', extra: true, match: flat },
 	{ key: 'booklets', title: 'Magazine and brochure', blurb: '', extra: true, match: (i) => !!i.binding },
 	{ key: 'wear', title: 'Shirts and pins', blurb: '', extra: true, skus: ['Swa/'] },
 	{ key: 'more', title: 'More', blurb: '', extra: true },
@@ -62,6 +67,7 @@ export function sectionize(items: Item[]): { section: Section; tiles: Tile[]; ro
 				(a, b) =>
 					Number(b.sku === section.featured) - Number(a.sku === section.featured) ||
 					skuIndex(section, a) - skuIndex(section, b) ||
+					(section.rank ? section.rank(a) - section.rank(b) : 0) ||
 					a.sort_order - b.sort_order
 			);
 		const tiles = mine.map((item) => ({ item, big: mine.length > 1 && item.sku === section.featured }));
