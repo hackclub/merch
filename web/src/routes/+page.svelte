@@ -263,9 +263,17 @@
 		{/snippet}
 
 		<h2>What would you like us to send you?</h2>
-		{#each sections as { section, rows, grid } (section.key)}
+		{#each sections as { section, rows, grid }, n (section.key)}
+			<!-- What we most want people to hand out comes first; everything else is an extra. -->
+			{#if section.extra && !sections[n - 1]?.section.extra}
+				<div class="extras">
+					<h3>Extras</h3>
+					<p class="muted">Also available, if you have a use for them.</p>
+				</div>
+			{/if}
 			<section class="group" aria-labelledby="group-{section.key}">
 				<h3 id="group-{section.key}">{section.title}</h3>
+				{#if section.blurb}<p class="blurb">{section.blurb}</p>{/if}
 				{#each rows as { item } (item.id)}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="line" data-item={item.id} class:picked={cart[item.id]} class:sized={open && expanded(item)}
@@ -457,6 +465,11 @@
 	.ask legend { float: left; width: 100%; margin-bottom: 0.5rem; padding: 0; font-weight: 700; font-size: 1.25rem; line-height: 1.3; }
 	.group { margin-bottom: 1.5rem; }
 	.group h3 { margin: 0 0 0.25rem; font-size: 1rem; line-height: 1.3; }
+	.group .blurb { margin: 0 0 0.25rem; }
+	/* The line between the start section and the extras. */
+	.extras { margin: 2.5rem 0 1rem; padding-top: 1.5rem; border-top: 1px solid var(--smoke); }
+	.extras h3 { margin: 0; font-size: 1.1rem; line-height: 1.3; }
+	.extras p { margin: 0.25rem 0 0; }
 	/* A row per item: thumbnail, name and facts, then the add control. */
 	.line { display: flex; gap: 0.9rem; align-items: center; padding: 0.6rem 0; border-bottom: 1px solid var(--smoke); }
 	.thumb { flex: none; display: grid; place-items: center; width: 3.75rem; height: 3.75rem; background: var(--tile); }

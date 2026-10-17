@@ -1,52 +1,45 @@
 import type { Item } from './types';
 
 /**
- * A shelf on the shop page. Items join the first section whose SKU prefix
- * matches; the featured SKU leads its section as a big tile. Program sections
- * link to the program, so people know what a Hackpad poster is for.
+ * A shelf on the request form. Items join the first section that matches them.
+ * The start section holds what we most want people to hand out, in the order of
+ * `skus`; the rest are extras, grouped by what they are. The featured SKU leads
+ * its section as a big tile.
  */
 export type Section = {
 	key: string;
 	title: string;
 	blurb: string;
-	link?: { href: string; label: string };
-	prefixes: string[];
+	/** SKU prefixes; the start section lists its items in this order. */
+	skus?: string[];
+	match?: (i: Item) => boolean;
+	/** Listed under "Extras", after the start section. */
+	extra?: boolean;
 	featured?: string;
 	/** Everything but the featured item is shown as a grid under it. */
 	grid?: boolean;
 };
 
+const printed = (i: Item) => i.sku.startsWith('Pri/');
+
 export const SECTIONS: Section[] = [
 	{
-		key: 'magazines',
-		title: 'Hack Club Magazine',
-		blurb: 'What teenagers built in 2025, in print. Hand them out, leave them on a table.',
-		link: { href: 'https://magazine.hackclub.com', label: 'Read it online' },
-		prefixes: ['Pri/Bok/'],
-		featured: 'Pri/Bok/Mini25/1st'
+		key: 'start',
+		title: 'Start here',
+		blurb: 'The best way to spread Hack Club: hand these out at school, at your club, or to friends.',
+		skus: ['Pri/Bok/Mini25/', 'Pri/Wel/4x6/', 'Pri/Hav/4x6/']
 	},
-	{
-		key: 'hackpad',
-		title: 'Hackpad',
-		blurb: 'Design your own macropad and we ship it to you. Put these up at school.',
-		link: { href: 'https://hackpad.hackclub.com', label: 'About Hackpad' },
-		prefixes: ['Pri/HPd/'],
-		featured: 'Pri/HPd/11x/1st'
-	},
-	{
-		key: 'hackclub',
-		title: 'Hack Club',
-		blurb: 'For teens 13–18, anywhere. Wear it, and tell your friends.',
-		link: { href: 'https://hackclub.com', label: 'hackclub.com' },
-		prefixes: ['Swa/', 'Pri/Wel/'],
-		featured: 'Swa/Shirt/HC'
-	},
-	{ key: 'more', title: 'More', blurb: '', prefixes: [] },
+	{ key: 'posters', title: 'Posters and flyers', blurb: '', extra: true, match: (i) => printed(i) && !i.packs && !i.binding },
+	{ key: 'cards', title: 'More cards', blurb: '', extra: true, match: (i) => i.packs === 'postcard' },
+	{ key: 'booklets', title: 'Magazine and brochure', blurb: '', extra: true, match: (i) => !!i.binding },
+	{ key: 'wear', title: 'Shirts and pins', blurb: '', extra: true, skus: ['Swa/'] },
+	{ key: 'more', title: 'More', blurb: '', extra: true },
 	{
 		key: 'stickers',
 		title: 'Stickers',
-		blurb: 'Packs of 50 for your club, or a few for your laptop.',
-		prefixes: ['Sti/'],
+		blurb: '',
+		extra: true,
+		match: (i) => i.packs === 'sticker' || i.sku.startsWith('Sti/'),
 		featured: 'Sti/Bra/O&H/Lap',
 		grid: true
 	}
@@ -54,15 +47,23 @@ export const SECTIONS: Section[] = [
 
 export type Tile = { item: Item; big: boolean };
 
+// Where an item's SKU falls in its section's `skus`, or -1.
+const skuIndex = (s: Section, i: Item) => s.skus?.findIndex((p) => i.sku.startsWith(p)) ?? -1;
+
 /** The shop's sections in order, each with its tiles; empty sections are left out.
  * `rows` and `grid` split the tiles for the request form: grid sections list only the featured item as a row. */
 export function sectionize(items: Item[]): { section: Section; tiles: Tile[]; rows: Tile[]; grid: Tile[] }[] {
 	const home = (i: Item) =>
-		SECTIONS.find((s) => s.prefixes.some((p) => i.sku.startsWith(p))) ?? SECTIONS.find((s) => s.key === 'more')!;
+		SECTIONS.find((s) => skuIndex(s, i) >= 0 || !!s.match?.(i)) ?? SECTIONS.find((s) => s.key === 'more')!;
 	return SECTIONS.map((section) => {
 		const mine = items
 			.filter((i) => home(i) === section)
-			.sort((a, b) => Number(b.sku === section.featured) - Number(a.sku === section.featured) || a.sort_order - b.sort_order);
+			.sort(
+				(a, b) =>
+					Number(b.sku === section.featured) - Number(a.sku === section.featured) ||
+					skuIndex(section, a) - skuIndex(section, b) ||
+					a.sort_order - b.sort_order
+			);
 		const tiles = mine.map((item) => ({ item, big: mine.length > 1 && item.sku === section.featured }));
 		const inGrid = (t: Tile) => !!section.grid && t.item.sku !== section.featured;
 		return { section, tiles, rows: tiles.filter((t) => !inGrid(t)), grid: tiles.filter(inGrid) };
