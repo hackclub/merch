@@ -329,11 +329,11 @@ func TestTransitionRequest(t *testing.T) {
 	if err != nil || got.Status != swag.StatusPending || got.PaidAt == nil {
 		t.Fatalf("MarkPaid = %+v, %v", got, err)
 	}
-	got, err = s.MarkDispatched(ctx, r.ID, "pkg!1")
+	got, err = s.MarkDispatched(ctx, r.ID, "pkg!1", ShipChanges{})
 	if err != nil || got.Status != swag.StatusDispatched || got.TheseusOrderID != "pkg!1" {
 		t.Fatalf("MarkDispatched = %+v, %v", got, err)
 	}
-	if _, err := s.MarkDispatched(ctx, r.ID, "pkg!2"); !errors.Is(err, ErrBadTransition) {
+	if _, err := s.MarkDispatched(ctx, r.ID, "pkg!2", ShipChanges{}); !errors.Is(err, ErrBadTransition) {
 		t.Fatalf("double dispatch err = %v", err)
 	}
 	got, _ = s.SetTracking(ctx, r.ID, "9400", "USPS")
@@ -424,4 +424,39 @@ func TestStripePayment(t *testing.T) {
 	if err := s.SetStripePayment(ctx, 99999, "pi_2"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing request err = %v", err)
 	}
+}
+
+// An admin can change quantities when shipping: what was asked for is kept,
+// limits count what shipped, and a removed line ships none.
+func TestDispatchWithChanges(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "ident!1", "a@x.com")
+	a, b, c := mkItem(t, s, "Sti/A", true), mkItem(t, s, "Sti/B", true), mkItem(t, s, "Sti/C", true)
+	r, _ := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Status: swag.StatusPending,
+		Lines: []swag.Line{{ItemID: a.ID, Quantity: 3}, {ItemID: b.ID, Quantity: 2}, {ItemID: c.ID, Quantity: 1}}}, noCheck)
+
+	got, err := s.MarkDispatched(ctx, r.ID, "pkg!1", ShipChanges{Quantities: map[string]int{"Sti/A": 1, "Sti/B": 0, "Sti/C": 1}, Note: "Out of B."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]int{"Sti/A": {1, 3}, "Sti/B": {0, 2}, "Sti/C": {1, 0}} // quantity, requested (0 = unchanged)
+	for _, l := range got.Lines {
+		req := 0
+		if l.RequestedQuantity != nil {
+			req = *l.RequestedQuantity
+		}
+		if w := want[l.SKU]; l.Quantity != w[0] || req != w[1] {
+			t.Errorf("%s: quantity %d requested %d, want %v", l.SKU, l.Quantity, req, w)
+		}
+	}
+	if got.AdminNote != "Out of B." || got.Status != swag.StatusDispatched {
+		t.Fatalf("request = %+v", got)
+	}
+	s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: a.ID, Quantity: 1}}, Status: swag.StatusPending},
+		func(prior map[int64]int, _ *time.Time) error {
+			if prior[a.ID] != 1 || prior[b.ID] != 0 {
+				t.Errorf("prior = %v, want what shipped", prior)
+			}
+			return nil
+		})
 }

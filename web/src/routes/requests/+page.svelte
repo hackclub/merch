@@ -3,6 +3,7 @@
 	import { api, ApiError, formatCents, statusLabel } from '$lib/api';
 	import { purposeLabel } from '$lib/purpose';
 	import { arrivalText } from '$lib/shipping';
+	import { lineText } from '$lib/ship';
 	import { paidNotice, payShipping, type CardForm } from '$lib/payment';
 	import CardField from '$lib/CardField.svelte';
 	import { page } from '$app/state';
@@ -72,7 +73,7 @@
 				{#if r.purpose}<span class="badge">{purposeLabel(r.purpose)}</span>{/if}
 			</div>
 			<ul>
-				{#each r.lines as l}<li>{l.quantity} × {l.name}{l.variant ? ` (${l.variant})` : ''}</li>{/each}
+				{#each r.lines as l}<li>{lineText(l)}</li>{/each}
 			</ul>
 			{#if r.status === 'awaiting_payment'}
 				<p>

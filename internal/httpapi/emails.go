@@ -64,8 +64,25 @@ func receivedEmail(req *store.Request, baseURL string) loops.Email {
 
 func shippedEmail(req *store.Request, baseURL string) loops.Email {
 	var b strings.Builder
+	var shipped []store.RequestLine
+	var changed []string
+	for _, l := range req.Lines {
+		if l.Quantity > 0 {
+			shipped = append(shipped, l)
+		}
+		switch {
+		case l.RequestedQuantity == nil:
+		case l.Quantity == 0:
+			changed = append(changed, fmt.Sprintf("- %s: you asked for %d, we couldn't send it", lineName(l), *l.RequestedQuantity))
+		default:
+			changed = append(changed, fmt.Sprintf("- %s: you asked for %d, we sent %d", lineName(l), *l.RequestedQuantity, l.Quantity))
+		}
+	}
 	fmt.Fprintf(&b, "%s\n\nGood news: we approved request #%d and sent it to our warehouse. It usually leaves within a business day or two.\n\nWhat's in the box:\n\n%s",
-		greeting(req), req.ID, lineList(req.Lines))
+		greeting(req), req.ID, lineList(shipped))
+	if len(changed) > 0 {
+		fmt.Fprintf(&b, "\n\nWe changed your request before it shipped:\n\n%s", strings.Join(changed, "\n"))
+	}
 	if note := strings.TrimSpace(req.AdminNote); note != "" {
 		fmt.Fprintf(&b, "\n\nA note from Hack Club:\n\n%s", note)
 	}

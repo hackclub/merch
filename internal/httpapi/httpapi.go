@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -695,10 +696,25 @@ func (s *server) adminReject(w http.ResponseWriter, r *http.Request, v viewer) {
 
 // adminDispatch creates the warehouse order in mail.hackclub.com. The
 // idempotency key is derived from the request id, so a retry after a timeout
-// replays the same Theseus order instead of shipping twice.
+// replays the same Theseus order instead of shipping twice. The admin can
+// change quantities first (0 removes a line) and add a note to the requester.
 func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer) {
 	id, ok := pathID(w, r)
 	if !ok {
+		return
+	}
+	var body struct {
+		Lines []struct {
+			SKU      string `json:"sku"`
+			Quantity int    `json:"quantity"`
+		} `json:"lines"`
+		Note string `json:"note"`
+	}
+	if !readJSON(w, r, &body) {
+		return
+	}
+	if len(body.Note) > 1000 {
+		writeErr(w, http.StatusUnprocessableEntity, "note is too long")
 		return
 	}
 	req, err := s.Store.GetRequest(r.Context(), id)
@@ -717,9 +733,26 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 		writeErr(w, http.StatusConflict, "request is "+string(req.Status)+"; only pending requests can be dispatched")
 		return
 	}
+	changes := store.ShipChanges{Quantities: map[string]int{}, Note: body.Note}
+	for _, l := range body.Lines {
+		if !slices.ContainsFunc(req.Lines, func(rl store.RequestLine) bool { return rl.SKU == l.SKU }) {
+			writeErr(w, http.StatusUnprocessableEntity, l.SKU+" isn't in this request")
+			return
+		}
+		if l.Quantity < 0 || l.Quantity > 10000 {
+			writeErr(w, http.StatusUnprocessableEntity, "quantities must be between 0 and 10000")
+			return
+		}
+		changes.Quantities[l.SKU] = l.Quantity
+	}
 	lines := make([]swag.Shipped, len(req.Lines))
 	shipsWith := map[int64][]string{}
+	shipping := 0
 	for i, l := range req.Lines {
+		if q, ok := changes.Quantities[l.SKU]; ok {
+			l.Quantity = q
+		}
+		shipping += l.Quantity
 		lines[i] = swag.Shipped{ItemID: l.ItemID, SKU: l.SKU, Quantity: l.Quantity}
 		if _, seen := shipsWith[l.ItemID]; seen {
 			continue
@@ -730,6 +763,10 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 			return
 		}
 		shipsWith[l.ItemID] = it.ShipsWith
+	}
+	if shipping == 0 {
+		writeErr(w, http.StatusUnprocessableEntity, "nothing left to ship; reject the request instead")
+		return
 	}
 	var contents []theseus.Content
 	for _, c := range swag.Shipment(lines, shipsWith) {
@@ -753,7 +790,7 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 		writeErr(w, http.StatusBadGateway, "mail.hackclub.com refused the order: "+err.Error())
 		return
 	}
-	req, err = s.Store.MarkDispatched(r.Context(), id, order.ID)
+	req, err = s.Store.MarkDispatched(r.Context(), id, order.ID, changes)
 	if err == nil {
 		s.emailRequest(r, req, "dispatched")
 	}

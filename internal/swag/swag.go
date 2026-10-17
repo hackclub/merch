@@ -377,6 +377,9 @@ func Shipment(lines []Shipped, shipsWith map[int64][]string) []Shipped {
 		out = append(out, s)
 	}
 	for _, l := range lines {
+		if l.Quantity < 1 {
+			continue // removed before shipping
+		}
 		add(l)
 		for _, sku := range shipsWith[l.ItemID] {
 			add(Shipped{ItemID: l.ItemID, SKU: sku, Quantity: l.Quantity})

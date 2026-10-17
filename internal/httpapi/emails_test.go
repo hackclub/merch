@@ -185,3 +185,40 @@ func TestInternationalRequestNeedsCustomsOK(t *testing.T) {
 		t.Fatalf("request_refused = %+v", e)
 	}
 }
+
+func TestShipWithChanges(t *testing.T) {
+	h, m := newMailHarness(t)
+	a, b := h.mkItem("Sti/A", true), h.mkItem("Sti/B", true)
+	admin := h.client(adminEmail)
+	var r store.Request
+	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr,
+		"lines": []swag.Line{{ItemID: a.ID, Quantity: 3}, {ItemID: b.ID, Quantity: 1}}}, &r)
+	path := fmt.Sprintf("/api/admin/requests/%d/dispatch", r.ID)
+
+	for name, body := range map[string]map[string]any{
+		"unknown sku": {"lines": []map[string]any{{"sku": "Sti/Z", "quantity": 1}}},
+		"negative":    {"lines": []map[string]any{{"sku": "Sti/A", "quantity": -1}}},
+		"nothing":     {"lines": []map[string]any{{"sku": "Sti/A", "quantity": 0}, {"sku": "Sti/B", "quantity": 0}}},
+	} {
+		if code := h.do(admin, "POST", path, body, nil); code != 422 {
+			t.Errorf("%s = %d, want 422", name, code)
+		}
+	}
+	if len(h.wh.orders) != 0 {
+		t.Fatalf("refused changes still ordered: %+v", h.wh.orders)
+	}
+
+	var got store.Request
+	code := h.do(admin, "POST", path, map[string]any{"lines": []map[string]any{{"sku": "Sti/A", "quantity": 2}, {"sku": "Sti/B", "quantity": 0}}, "note": "We're out of B."}, &got)
+	if code != 200 || got.AdminNote != "We're out of B." {
+		t.Fatalf("dispatch = %d %+v", code, got)
+	}
+	if c := h.wh.orders[0].Contents; len(c) != 1 || c[0].SKU != "Sti/A" || c[0].Quantity != 2 {
+		t.Fatalf("contents = %+v", c)
+	}
+	e := m.emails()[1]
+	mustContain(t, "shipped", e.Body, "- 2 × Sti/A", "Sti/A: you asked for 3, we sent 2", "Sti/B: you asked for 1, we couldn't send it", "We're out of B.")
+	if strings.Contains(e.Body, "× Sti/B") {
+		t.Errorf("removed line listed as shipped:\n%s", e.Body)
+	}
+}

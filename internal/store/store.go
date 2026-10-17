@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -293,6 +294,8 @@ type RequestLine struct {
 	Name     string `json:"name"`
 	Variant  string `json:"variant,omitempty"` // size label, e.g. "M"
 	Quantity int    `json:"quantity"`
+	// What was asked for, when an admin shipped a different quantity (0 = removed).
+	RequestedQuantity *int `json:"requested_quantity,omitempty"`
 }
 
 type Request struct {
@@ -463,7 +466,7 @@ func (s *Store) attachLines(ctx context.Context, reqs []*Request) error {
 		r.Lines = []RequestLine{}
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT ri.request_id, ri.item_id, ri.sku, i.name, ri.variant, ri.quantity
+		SELECT ri.request_id, ri.item_id, ri.sku, i.name, ri.variant, ri.quantity, ri.requested_quantity
 		FROM swag_request_items ri JOIN items i ON i.id = ri.item_id
 		WHERE ri.request_id = ANY($1) ORDER BY i.sort_order, i.name, ri.sku`, ids)
 	if err != nil {
@@ -473,7 +476,7 @@ func (s *Store) attachLines(ctx context.Context, reqs []*Request) error {
 	for rows.Next() {
 		var rid int64
 		var l RequestLine
-		if err := rows.Scan(&rid, &l.ItemID, &l.SKU, &l.Name, &l.Variant, &l.Quantity); err != nil {
+		if err := rows.Scan(&rid, &l.ItemID, &l.SKU, &l.Name, &l.Variant, &l.Quantity, &l.RequestedQuantity); err != nil {
 			return err
 		}
 		byID[rid].Lines = append(byID[rid].Lines, l)
@@ -505,13 +508,34 @@ func (s *Store) MarkPaidByStripe(ctx context.Context, id int64, paymentIntent st
 	return s.transition(ctx, id, swag.StatusPending, `paid_at = now(), stripe_payment_intent = $3`, paymentIntent)
 }
 
-// MarkDispatched records the mail.hackclub.com order id.
-func (s *Store) MarkDispatched(ctx context.Context, id int64, theseusOrderID string) (*Request, error) {
-	return s.transition(ctx, id, swag.StatusDispatched, `theseus_order_id = $3`, theseusOrderID)
+// ShipChanges is what an admin changed when shipping: new quantities by SKU
+// (0 removes a line) and a note to the requester.
+type ShipChanges struct {
+	Quantities map[string]int
+	Note       string
+}
+
+// MarkDispatched records the mail.hackclub.com order id and what changed.
+func (s *Store) MarkDispatched(ctx context.Context, id int64, theseusOrderID string, ch ShipChanges) (*Request, error) {
+	return s.transitionTx(ctx, id, swag.StatusDispatched, func(tx pgx.Tx) error {
+		for sku, q := range ch.Quantities {
+			if _, err := tx.Exec(ctx, `
+				UPDATE swag_request_items SET requested_quantity = coalesce(requested_quantity, quantity), quantity = $3
+				WHERE request_id = $1 AND sku = $2 AND quantity <> $3`, id, sku, q); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, `theseus_order_id = $3, admin_note = CASE WHEN $4 = '' THEN admin_note ELSE $4 END`, theseusOrderID, strings.TrimSpace(ch.Note))
 }
 
 // transition's set clause gets args as $3, $4…
 func (s *Store) transition(ctx context.Context, id int64, to swag.Status, set string, args ...any) (*Request, error) {
+	return s.transitionTx(ctx, id, to, nil, set, args...)
+}
+
+// transitionTx runs also in the transaction once the move is allowed.
+func (s *Store) transitionTx(ctx context.Context, id int64, to swag.Status, also func(pgx.Tx) error, set string, args ...any) (*Request, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -526,6 +550,11 @@ func (s *Store) transition(ctx context.Context, id int64, to swag.Status, set st
 	}
 	if !swag.CanTransition(from, to) {
 		return nil, fmt.Errorf("%w (%s -> %s)", ErrBadTransition, from, to)
+	}
+	if also != nil {
+		if err := also(tx); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE swag_requests SET status = $2, updated_at = now(), `+set+` WHERE id = $1`, append([]any{id, to}, args...)...); err != nil {
 		return nil, err

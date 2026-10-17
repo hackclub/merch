@@ -82,7 +82,7 @@ export type SwagRequest = {
 	airtable_record_id?: string;
 	internal_note?: string; // admin-only
 	created_at: string;
-	lines: { item_id: number; sku: string; name: string; variant?: string; quantity: number }[];
+	lines: RequestLine[];
 	payment_url?: string; // HCB
 	stripe_key?: string; // pay by card on the page
 	estimate?: ShippingEstimate; // while it waits to ship; postage only for admins
@@ -125,3 +125,13 @@ export type ItemStock = {
 	unit_cost_max: string | null;
 	variants: { sku: string; label: string; in_stock: number; unit_cost: string | null }[]; // per size; empty = one size
 };
+
+/** One line of a request; requested_quantity is set when an admin shipped a different quantity (0 = not sent). */
+export interface RequestLine {
+	item_id: number;
+	sku: string;
+	name: string;
+	variant?: string;
+	quantity: number;
+	requested_quantity?: number;
+}

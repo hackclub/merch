@@ -6,6 +6,7 @@
 	import { byFilename, itemPath, moveImage } from '$lib/items';
 	import { session } from '$lib/session.svelte';
 	import { arrivalText, ozText } from '$lib/shipping';
+	import { lineText, shipBody } from '$lib/ship';
 	import type { Item, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
 
 	type Tab = 'requests' | 'items' | 'settings' | 'submissions';
@@ -65,6 +66,11 @@
 			await api.post(`/api/admin/requests/${id}/${action}`, body);
 			await loadRequests();
 		}, `Request #${id}: ${action} done`);
+
+	// Before shipping, an admin can change quantities (0 = don't send) and write a note for the shipped email.
+	let shipQty = $state<Record<number, Record<string, number>>>({});
+	let shipNote = $state<Record<number, string>>({});
+	const ship = (r: SwagRequest) => act(r.id, 'dispatch', shipBody(r.lines, shipQty[r.id] ?? {}, shipNote[r.id] ?? ''));
 
 	function reject(id: number) {
 		const note = prompt('Reason (shown to the requester):') ?? '';
@@ -166,7 +172,20 @@
 							{#if r.source !== 'app'}<span class="badge" title={r.airtable_record_id}>imported · {r.source}</span>{/if}</td>
 						<td>{r.user_email}{#if r.purpose}<div><span class="badge">{purposeLabel(r.purpose)}</span></div>{/if}{#if r.note}<div class="muted">“{r.note}”</div>{/if}
 							{#if r.internal_note}<details><summary class="muted">internal note</summary><pre style="white-space: pre-wrap">{r.internal_note}</pre></details>{/if}</td>
-						<td>{#each r.lines as l}<div>{l.quantity} × {l.name}{l.variant ? ` (${l.variant})` : ''} <span class="muted">{l.sku}</span></div>{/each}</td>
+						<td>
+							{#if r.status === 'pending' && r.source === 'app'}
+								{#each r.lines as l}
+									<div class="row">
+										<input type="number" min="0" style="width: 4.5rem" aria-label="Quantity to ship" value={shipQty[r.id]?.[l.sku] ?? l.quantity}
+											oninput={(e) => (shipQty[r.id] = { ...shipQty[r.id], [l.sku]: Math.max(0, Math.floor(+e.currentTarget.value || 0)) })} />
+										× {l.name}{l.variant ? ` (${l.variant})` : ''} <span class="muted">{l.sku}</span>
+									</div>
+								{/each}
+								<textarea rows="2" placeholder="Note to the requester (optional; in the shipped email)" bind:value={shipNote[r.id]}></textarea>
+							{:else}
+								{#each r.lines as l}<div>{lineText(l)} <span class="muted">{l.sku}</span></div>{/each}
+							{/if}
+						</td>
 						<td>{r.address.first_name} {r.address.last_name}<br />{r.address.city}, {r.address.state} {r.address.country}</td>
 						<td>
 							<span class="badge {r.status}">{statusLabel[r.status]}</span>
@@ -183,7 +202,7 @@
 						</td>
 						<td class="row">
 							{#if r.status === 'awaiting_payment'}<button onclick={() => act(r.id, 'mark-paid')}>Mark paid</button>{/if}
-							{#if r.status === 'pending' && r.source === 'app'}<button onclick={() => act(r.id, 'dispatch')}>Ship</button>{/if}
+							{#if r.status === 'pending' && r.source === 'app'}<button onclick={() => ship(r)}>Ship</button>{/if}
 							{#if r.status === 'pending' || r.status === 'awaiting_payment'}<button class="secondary" onclick={() => reject(r.id)}>Reject</button>{/if}
 							{#if r.status === 'dispatched' && r.theseus_order_id}<button class="secondary" onclick={() => act(r.id, 'refresh')}>Refresh tracking</button>{/if}
 						</td>

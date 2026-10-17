@@ -389,3 +389,11 @@ func TestValidateCustoms(t *testing.T) {
 		t.Fatalf("US = %v", err)
 	}
 }
+
+// A line an admin removed (0) ships nothing, not even what it ships with.
+func TestShipmentSkipsRemovedLines(t *testing.T) {
+	got := Shipment([]Shipped{{ItemID: 1, SKU: "Pri/M25", Quantity: 0}, {ItemID: 2, SKU: "Sti/A", Quantity: 2}}, map[int64][]string{1: {"Pri/M25/4x6"}})
+	if len(got) != 1 || got[0].SKU != "Sti/A" || got[0].Quantity != 2 {
+		t.Fatalf("Shipment = %+v", got)
+	}
+}
