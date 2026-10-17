@@ -357,6 +357,7 @@ func (s *server) catalog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":    items,
 		"includes": includes,
+		"stock":    s.catalogStock(r.Context(), items),
 		"settings": map[string]any{
 			"requests_open":                    st.RequestsOpen,
 			"max_items_per_request":            st.MaxItemsPerRequest,

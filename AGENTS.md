@@ -335,6 +335,13 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   average). Ranges are shown only to admins (everyone sees the typical
   postage in the cost table). The shop intro, the request form, My requests and the admin
   request list show these estimates (`POST /api/shipping/estimate`, `GET /api/shipping`).
+- **Backorders:** the mail API gives each SKU's `in_stock` (below zero when orders wait on it) and
+  `inbound` (units on order) but no arrival date. When stock can't cover a line and more is
+  inbound (`swag.Backordered`), the shop's item list says "We have 15k inbound to the Hack Club
+  warehouse. Yours ship as soon as they arrive." (`$lib/backorder`, from `/api/catalog`'s
+  `stock`), and the estimate counts from the restock (`Estimate.AfterRestock`: no dates, 1–2
+  extra business days for the warehouse to receive it). The date is in Zenventory purchase
+  orders (`required_by_date`), which Theseus fetches but doesn't return yet.
 - **International fee:** an international request pays its typical postage off the rate card,
   to the cent, the same
   number as the cost table's postage (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback
@@ -454,7 +461,7 @@ blocks landing):
   `fee_cents`, `refund_cents`, `country`, `by` = `admin` or `requester`, `partial` when shipping
   less made postage cheaper), `email_sent` and `email_failed` (a request email: `kind` = `received`, `dispatched` or `rejected`,
   `request_id`, and Loops' `error`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
-  postage, `postage_basis` (the country's rate card, or `international` without one), sample counts, or `error` when it won't pack), `request_created`, `request_refused` (the
+  postage, `postage_basis` (the country's rate card, or `international` without one), sample counts, `restock` when a line is backordered, or `error` when it won't pack), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `submission_created`. They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
 - Admin events (`internal/httpapi/insights.go`). Request events belong to the requester's

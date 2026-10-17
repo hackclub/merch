@@ -212,3 +212,51 @@ func TestAdminRequestListShowsCosts(t *testing.T) {
 		t.Errorf("requester sees costs: %v", mine.Requests[0])
 	}
 }
+
+// A backordered item ships once its restock reaches the warehouse: the
+// catalog says what's inbound, and the estimate counts from the restock.
+func TestBackorderedItemsWaitForRestock(t *testing.T) {
+	h := newHarness(t)
+	_, postcard, _ := shippingFixture(t, h)
+	haven, err := h.store.CreateItem(context.Background(), swag.Item{SKU: "Pri/Hav/4x6/1st", Name: "Haven Postcard",
+		Visible: true, MaxPerRequest: 150, WidthIn: fp(6), HeightIn: fp(4), ThicknessIn: fp(0.016)})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var cat struct {
+		Stock map[string]struct {
+			InStock int `json:"in_stock"`
+			Inbound int `json:"inbound"`
+		} `json:"stock"`
+	}
+	if code := h.do(h.client(""), "GET", "/api/catalog", nil, &cat); code != 200 {
+		t.Fatalf("catalog = %d", code)
+	}
+	if st := cat.Stock["Pri/Hav/4x6/1st"]; st.InStock != -503 || st.Inbound != 15000 {
+		t.Fatalf("haven stock = %+v (all %+v)", st, cat.Stock)
+	}
+	if _, ok := cat.Stock["Pri/Wel/4x6/1st"]; !ok {
+		t.Fatalf("every listed sku has stock (out of stock when the warehouse omits it): %+v", cat.Stock)
+	}
+
+	estimate := func(lines ...swag.Line) swag.Estimate {
+		t.Helper()
+		var out struct{ Estimate swag.Estimate }
+		if code := h.do(h.client(userEmail), "POST", "/api/shipping/estimate", map[string]any{"country": "DE", "lines": lines}, &out); code != 200 {
+			t.Fatalf("estimate = %d", code)
+		}
+		return out.Estimate
+	}
+	if e := estimate(swag.Line{ItemID: postcard.ID, Quantity: 25}); e.Restock || e.ArriveBy == "" {
+		t.Fatalf("in stock: %+v", e)
+	}
+	e := estimate(swag.Line{ItemID: postcard.ID, Quantity: 25}, swag.Line{ItemID: haven.ID, Quantity: 25})
+	if !e.Restock || e.ArriveBy != "" || e.TransitDays == [2]int{} {
+		t.Fatalf("backordered: %+v", e)
+	}
+	evs := h.events("shipping_estimate")
+	if p := props(t, evs[len(evs)-1]); p["restock"] != true {
+		t.Fatalf("shipping_estimate props = %v", p)
+	}
+}

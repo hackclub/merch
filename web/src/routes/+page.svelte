@@ -5,6 +5,7 @@
 	import { api, ApiError, formatCents, isInternational } from '$lib/api';
 	import { addressComplete, addressSummary, blankAddress, prefillAddress } from '$lib/address';
 	import AddressLine1 from '$lib/AddressLine1.svelte';
+	import { backorderNote } from '$lib/backorder';
 	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from '$lib/cart';
@@ -295,6 +296,7 @@
 						<div class="what">
 							<a href={itemPath(item)}>{item.name}</a>
 							<span class="muted">{tileFact(item)}{#if sizesSummary(item, sizes)}{tileFact(item) ? ' · ' : ''}<strong class="in">{sizesSummary(item, sizes)}</strong>{/if}</span>
+							{#if backorderNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="backorder">{backorderNote(item, catalog.stock, cart, sizes)}</span>{/if}
 						</div>
 						{#if open}{@render add(item)}{/if}
 						{#if open && expanded(item) && showsAmountIn3D(item)}
@@ -312,6 +314,7 @@
 									{#if thumbnail(item)}<img src={thumbnail(item)} alt="" loading="lazy" />{/if}
 								</a>
 								<a href={itemPath(item)} class="name">{item.name}</a>
+								{#if backorderNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="backorder">{backorderNote(item, catalog.stock, cart, sizes)}</span>{/if}
 								{#if open}{@render add(item)}{/if}
 								{#if peek === item.id}{@render peekPanel(item)}{/if}
 							</div>
@@ -493,6 +496,7 @@
 	.add { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.4rem; align-items: center; }
 	.add > button { height: 2.6rem; padding: 0 1.2rem; font-size: 1rem; }
 	.what .in { color: var(--dark); }
+	.backorder { font-size: 0.9rem; color: var(--red); }
 	/* Sizes get their own line under the name. */
 	.line.sized { flex-wrap: wrap; }
 	.line.sized .add { flex-basis: 100%; justify-content: flex-start; padding-left: 4.65rem; }

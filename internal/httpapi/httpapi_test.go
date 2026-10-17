@@ -75,8 +75,13 @@ func (f *fakeWarehouse) ListSKUs(context.Context) ([]theseus.SKU, error) {
 		{SKU: "Swa/Shirt/HC/M", Name: "Shirt M", InStock: 95, Enabled: true, UnitCost: "13.8166"},
 		{SKU: "Swa/Shirt/HC/XL", Name: "Shirt XL", InStock: 122, Enabled: true, UnitCost: "14.2682"},
 		{SKU: "Swa/Hood/Small", Name: "Hoodie S", InStock: 4, Enabled: true, UnitCost: "30"},
+		{SKU: "Pri/Hav/4x6/1st", Name: "Haven Postcard", InStock: -503, Inbound: &havenInbound, Enabled: true, UnitCost: "0.05"},
 	}, nil
 }
+
+// havenInbound is the Haven postcard's restock: backordered by 503 with
+// 15,000 on the way, as on 2026-10-17.
+var havenInbound = 15000
 
 func (f *fakeWarehouse) CreateOrder(_ context.Context, in theseus.OrderInput) (*theseus.Order, error) {
 	f.mu.Lock()
@@ -633,7 +638,7 @@ func TestAdminManagesItemsAndSettings(t *testing.T) {
 
 	var skus struct{ SKUs []theseus.SKU }
 	h.do(admin, "GET", "/api/admin/warehouse/skus", nil, &skus)
-	if len(skus.SKUs) != 6 || skus.SKUs[0].SKU != "Sti/A" {
+	if len(skus.SKUs) != 7 || skus.SKUs[0].SKU != "Sti/A" {
 		t.Fatalf("skus = %+v", skus)
 	}
 }

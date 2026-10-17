@@ -18,6 +18,7 @@ const est = (over: Partial<ShippingEstimate>): ShippingEstimate => ({
 	postage_basis: '',
 	postage_samples: 0,
 	handling_samples: 100,
+	restock: false,
 	...over
 });
 
@@ -32,6 +33,13 @@ describe('shipping', () => {
 		expect(arrivalText(est({}))).toBe('Arrives about Oct 21–28');
 		expect(arrivalText(est({ arrive_from: '', arrive_by: '' }))).toBe('');
 		expect(arrivalText(null)).toBe('');
+	});
+
+	it('counts from the restock when an item is backordered', () => {
+		const r = { restock: true, arrive_from: '', arrive_by: '' };
+		expect(arrivalText(est({ ...r, handling_days: [2, 3], transit_days: [2, 5] }))).toBe('Arrives about 4–8 business days after the restock reaches the warehouse');
+		expect(arrivalText(est({ ...r, handling_days: [2, 4], transit_days: [7, 12] }))).toBe('Arrives about 2–4 weeks after the restock reaches the warehouse');
+		expect(arrivalText(est({ ...r, transit_samples: 0 }))).toBe('Ships once the restock reaches the warehouse');
 	});
 
 	it('speaks in business days, then weeks', () => {

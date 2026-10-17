@@ -176,3 +176,34 @@ func TestEstimatePostageUsesRecentPrices(t *testing.T) {
 		t.Fatalf("got %d samples (%s), want all 45 CA", e.PostageSamples, e.PostageBasis)
 	}
 }
+
+func TestBackordered(t *testing.T) {
+	for _, c := range []struct {
+		qty, inStock, inbound int
+		want                  bool
+	}{
+		{25, 100, 0, false},     // in stock
+		{25, -503, 15000, true}, // the Haven postcard on 2026-10-17
+		{25, 10, 500, true},     // some in stock, not enough
+		{25, 0, 0, false},       // out with nothing coming: not a backorder
+	} {
+		if got := Backordered(c.qty, c.inStock, c.inbound); got != c.want {
+			t.Errorf("Backordered(%d, %d, %d) = %v, want %v", c.qty, c.inStock, c.inbound, got, c.want)
+		}
+	}
+}
+
+// A backordered request ships once the restock reaches the warehouse, which
+// takes it a day or two to receive. There's no arrival date for the restock,
+// so there's no date for the request either.
+func TestEstimateAfterRestock(t *testing.T) {
+	h := past(30, "US", ClassParcel, 8, [2]float64{1, 1}, [2]float64{3, 5}, [2]float64{500, 600})
+	e := EstimateShipping(h, "US", parcel, now)
+	r := e.AfterRestock()
+	if !r.Restock || r.ArriveFrom != "" || r.ArriveBy != "" {
+		t.Fatalf("got %+v", r)
+	}
+	if r.HandlingDays != [2]int{e.HandlingDays[0] + 1, e.HandlingDays[1] + 2} || r.TransitDays != e.TransitDays {
+		t.Fatalf("handling %v -> %v, transit %v", e.HandlingDays, r.HandlingDays, r.TransitDays)
+	}
+}

@@ -20,6 +20,7 @@ export type ShippingEstimate = {
 	postage_basis: string;
 	postage_samples: number;
 	handling_samples: number;
+	restock: boolean; // backordered: ships once the restock reaches the warehouse, so no dates
 };
 
 export type ShippingSummary = { us: ShippingEstimate; international: ShippingEstimate };
@@ -39,8 +40,14 @@ export function dateRange(from: string, by: string): string {
 	return `${md(a)} – ${md(b)}`;
 }
 
-// "Arrives about Oct 21–28", or '' when there's no history to go on.
+// "Arrives about Oct 21–28", or '' when there's no history to go on. A
+// backordered request counts from the restock instead.
 export function arrivalText(e: ShippingEstimate | null | undefined): string {
+	if (e?.restock) {
+		if (!e.transit_samples) return 'Ships once the restock reaches the warehouse';
+		const [h, t] = [e.handling_days, e.transit_days];
+		return `Arrives about ${spanText([h[0] + t[0], h[1] + t[1]])} after the restock reaches the warehouse`;
+	}
 	if (!e?.arrive_from || !e.arrive_by) return '';
 	return `Arrives about ${dateRange(e.arrive_from, e.arrive_by)}`;
 }

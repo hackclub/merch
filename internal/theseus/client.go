@@ -157,10 +157,13 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
-// Stock is the warehouse's total for one item. Costs are the lowest and
-// highest unit cost among its SKUs, as the API's decimal strings ("" if none).
+// Stock is the warehouse's total for one item. InStock goes below zero when
+// orders wait on a restock; Inbound is what's on order. Costs are the lowest
+// and highest unit cost among its SKUs, as the API's decimal strings ("" if
+// none).
 type Stock struct {
 	InStock int
+	Inbound int
 	MinCost string
 	MaxCost string
 }
@@ -176,6 +179,9 @@ func StockFor(skus []SKU, want ...string) Stock {
 			continue
 		}
 		st.InStock += k.InStock
+		if k.Inbound != nil {
+			st.Inbound += *k.Inbound
+		}
 		c, err := strconv.ParseFloat(k.UnitCost, 64)
 		if err != nil {
 			continue

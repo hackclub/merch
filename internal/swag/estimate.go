@@ -67,6 +67,26 @@ type Estimate struct {
 	PostageBasis    string `json:"postage_basis"`
 	PostageSamples  int    `json:"postage_samples"`
 	HandlingSamples int    `json:"handling_samples"`
+	// Restock is set when an item is backordered: the request ships once the
+	// restock reaches the warehouse, on no known date, so ArriveFrom and
+	// ArriveBy are empty and the days count from the restock.
+	Restock bool `json:"restock"`
+}
+
+// Backordered says whether qty of a SKU waits on a restock: the warehouse
+// doesn't have enough (inStock goes below zero when orders are already
+// waiting) but has more on order.
+func Backordered(qty, inStock, inbound int) bool {
+	return inStock < qty && inbound > 0
+}
+
+// AfterRestock re-counts an estimate from when a restock reaches the
+// warehouse, which takes it a day or two to receive and shelve.
+func (e Estimate) AfterRestock() Estimate {
+	e.Restock = true
+	e.HandlingDays = [2]int{e.HandlingDays[0] + 1, e.HandlingDays[1] + 2}
+	e.ArriveFrom, e.ArriveBy = "", ""
+	return e
 }
 
 // MinSamples is the fewest past shipments a figure is worked out from; with

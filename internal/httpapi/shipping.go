@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hackclub/merch/internal/swag"
+	"github.com/hackclub/merch/internal/theseus"
 )
 
 // historyTTL bounds how often estimates reload shipping history (it changes
@@ -121,6 +122,9 @@ func (s *server) shippingEstimate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, e, err := s.quote(r.Context(), st, country, lines, cat)
+	if err == nil && s.waitsForRestock(r.Context(), lines, cat) {
+		e = e.AfterRestock()
+	}
 	u := s.currentUser(r)
 	if errors.Is(err, swag.ErrWontPack) || errors.Is(err, swag.ErrTooHeavy) {
 		s.track(r, u, "shipping_estimate", map[string]any{"country": country, "lines": lines, "items": itemCount(lines), "error": err.Error()})
@@ -180,6 +184,59 @@ func shipment(lines []swag.Line, cat map[int64]swag.Item) []swag.Shipped {
 		shipsWith[l.ItemID] = cat[l.ItemID].ShipsWith
 	}
 	return swag.Shipment(shipped, shipsWith)
+}
+
+// waitsForRestock says whether any line is backordered: the warehouse is short
+// of it but has more on order (swag.Backordered). Without the warehouse,
+// nothing is.
+func (s *server) waitsForRestock(ctx context.Context, lines []swag.Line, cat map[int64]swag.Item) bool {
+	skus, err := s.cachedSKUs(ctx)
+	if err != nil {
+		s.Log.Error("warehouse sku lookup failed", "err", err)
+		return false
+	}
+	for _, l := range lines {
+		sku := l.SKU
+		if sku == "" {
+			sku = cat[l.ItemID].SKU
+		}
+		if st := theseus.StockFor(skus, sku); swag.Backordered(l.Quantity, st.InStock, st.Inbound) {
+			return true
+		}
+	}
+	return false
+}
+
+// skuStock is one SKU's warehouse stock, for the shop's item list.
+type skuStock struct {
+	InStock int `json:"in_stock"`
+	Inbound int `json:"inbound"`
+}
+
+// catalogStock is the stock of every listed item's SKU and size SKUs, so the
+// shop can say when one is backordered. Without the warehouse it's empty.
+func (s *server) catalogStock(ctx context.Context, items []swag.Item) map[string]skuStock {
+	out := map[string]skuStock{}
+	skus, err := s.cachedSKUs(ctx)
+	if err != nil {
+		s.Log.Error("warehouse sku lookup failed", "err", err)
+		return out
+	}
+	for _, it := range items {
+		for _, sku := range append([]string{it.SKU}, variantSKUs(it)...) {
+			st := theseus.StockFor(skus, sku)
+			out[sku] = skuStock{st.InStock, st.Inbound}
+		}
+	}
+	return out
+}
+
+func variantSKUs(it swag.Item) []string {
+	var out []string
+	for _, v := range it.Variants {
+		out = append(out, v.SKU)
+	}
+	return out
 }
 
 // unitCosts is the warehouse's unit cost of each SKU, in dollars. Without the
@@ -254,6 +311,9 @@ func (s *server) withEstimates(ctx context.Context, views []requestView, admin b
 			continue
 		}
 		full := h.Estimate(v.Address.Country, p, s.Now())
+		if s.waitsForRestock(ctx, lines, cat) {
+			full = full.AfterRestock()
+		}
 		e := forViewer(full, admin)
 		views[i].Estimate = &e
 		if admin {

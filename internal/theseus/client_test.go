@@ -102,6 +102,7 @@ func TestGetOrder(t *testing.T) {
 }
 
 func TestStockFor(t *testing.T) {
+	inbound := 15000
 	skus := []SKU{
 		{SKU: "Sti/A", InStock: 100, UnitCost: "0.25"},
 		{SKU: "Sti/AB", InStock: 7, UnitCost: "9"},
@@ -110,6 +111,7 @@ func TestStockFor(t *testing.T) {
 		{SKU: "Swa/Shirt/HC/XL", InStock: 122, UnitCost: "14.2682"},
 		{SKU: "Swa/Cap/L", InStock: 3, UnitCost: "5"},
 		{SKU: "Swa/Cap/S", InStock: 4, UnitCost: "5.00"},
+		{SKU: "Pri/Hav/4x6/1st", InStock: -503, Inbound: &inbound},
 	}
 	for _, tc := range []struct {
 		skus []string
@@ -122,6 +124,8 @@ func TestStockFor(t *testing.T) {
 		{[]string{"Swa/Shirt/HC"}, Stock{InStock: 309, MinCost: "13.8166", MaxCost: "14.2682"}},
 		{[]string{"Swa/Cap"}, Stock{InStock: 7, MinCost: "5", MaxCost: "5"}},
 		{[]string{"Sti/Gone"}, Stock{}},
+		// backordered: below zero, with more on the way
+		{[]string{"Pri/Hav/4x6/1st"}, Stock{InStock: -503, Inbound: 15000}},
 		{[]string{"Swa/Shirt/H"}, Stock{}}, // only the SKU itself and "<sku>/…" children count
 		{nil, Stock{}},
 	} {

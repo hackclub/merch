@@ -42,7 +42,11 @@ export type Catalog = {
 	items: Item[];
 	includes: Item[]; // what listed items ship with, often hidden items
 	settings: Settings & { stripe_key: string }; // Stripe publishable key for the card form
+	stock?: Record<string, SkuStock>; // by SKU, for listed items and their sizes; empty if the warehouse is down
 };
+
+// in_stock goes below zero when requests wait on a restock; inbound is what's on order.
+export type SkuStock = { in_stock: number; inbound: number };
 
 export type Address = {
 	first_name: string;
