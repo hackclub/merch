@@ -137,7 +137,7 @@ func TestInternationalReceivedEmailWaitsForPayment(t *testing.T) {
 	if r.Status != swag.StatusAwaitingPayment || len(m.emails()) != 0 {
 		t.Fatalf("status %s, emails %+v", r.Status, m.emails())
 	}
-	h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/requests/%d/mark-paid", r.ID), map[string]any{}, nil)
+	h.payByCard(userEmail, r.ID)
 	if got := m.emails(); len(got) != 1 || !strings.Contains(got[0].Body, "customs") {
 		t.Fatalf("after paid: %+v", got)
 	}
@@ -302,23 +302,6 @@ func TestCancelRefundsCardPayment(t *testing.T) {
 	if ev := h.events("payment_refunded"); len(ev) != 1 || props(t, ev[0])["by"] != "requester" {
 		t.Fatalf("payment_refunded = %+v", ev)
 	}
-}
-
-// Paid outside Stripe (marked paid by hand): the email says we'll refund it.
-func TestRejectManuallyPaidRequest(t *testing.T) {
-	h, m := newMailHarness(t)
-	it := h.mkItem("Sti/A", true)
-	var r store.Request
-	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "customs_ok": true, "address": deAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
-	admin := h.client(adminEmail)
-	h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/mark-paid", r.ID), map[string]any{}, nil)
-	var got store.Request
-	h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/reject", r.ID), map[string]any{}, &got)
-	if got.Status != swag.StatusRejected || got.RefundedAt != nil {
-		t.Fatalf("request = %+v", got)
-	}
-	e := m.emails()
-	mustContain(t, "rejected", e[len(e)-1].Body, "We'll refund", dollarsText(r.ShippingFeeCents))
 }
 
 // Shipping less than a paid international request asked for refunds the

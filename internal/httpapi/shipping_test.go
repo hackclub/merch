@@ -132,13 +132,10 @@ func TestShippingSummary(t *testing.T) {
 func TestInternationalFeeIsEstimatedPostage(t *testing.T) {
 	h := newHarness(t)
 	_, _, magazine := shippingFixture(t, h)
-	var r struct {
-		store.Request
-		PaymentURL string `json:"payment_url"`
-	}
+	var r store.Request
 	code := h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "club", "note": "for our club", "customs_ok": true, "address": deAddr,
 		"lines": []swag.Line{{ItemID: magazine.ID, Quantity: 1}}}, &r)
-	if code != 201 || r.Status != swag.StatusAwaitingPayment || r.ShippingFeeCents != 900 || !strings.Contains(r.PaymentURL, "amount=900") {
+	if code != 201 || r.Status != swag.StatusAwaitingPayment || r.ShippingFeeCents != 900 {
 		t.Fatalf("create = %d %+v", code, r)
 	}
 }

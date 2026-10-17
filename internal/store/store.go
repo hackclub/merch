@@ -511,11 +511,6 @@ func (s *Store) RecordRefund(ctx context.Context, id int64, cents int) (*Request
 	return s.GetRequest(ctx, id)
 }
 
-// MarkPaid records the HCB shipping payment and moves the request to review.
-func (s *Store) MarkPaid(ctx context.Context, id int64) (*Request, error) {
-	return s.transition(ctx, id, swag.StatusPending, `paid_at = now(), admin_note = admin_note || $3`, "")
-}
-
 // SetInternalNote replaces the admins' own note on a request (Markdown; the requester never sees it).
 func (s *Store) SetInternalNote(ctx context.Context, id int64, note string) (*Request, error) {
 	tag, err := s.pool.Exec(ctx, `UPDATE swag_requests SET internal_note = $2, updated_at = now() WHERE id = $1`, id, note)

@@ -43,10 +43,7 @@ type Config struct {
 	GooglePlacesBaseURL string
 	GooglePlacesAPIKey  string
 
-	// HCB donation page international recipients pay shipping through
-	HCBShippingPaymentURL string
-
-	// Stripe takes international shipping payments by card when both keys are set (replaces HCB)
+	// Stripe takes international shipping payments by card
 	StripeBaseURL        string
 	StripeSecretKey      string
 	StripePublishableKey string // the browser's card form
@@ -91,7 +88,6 @@ func Load(getenv func(string) string) (*Config, error) {
 		AirtableAuthorsEmailFld: get("AIRTABLE_AUTHORS_EMAIL_FIELD", "Hack Club Auth Email"),
 		CDNBaseURL:              strings.TrimRight(get("HACKCLUB_CDN_BASE_URL", "https://cdn.hackclub.com"), "/"),
 		CDNAPIKey:               get("HACKCLUB_CDN_API_KEY", ""),
-		HCBShippingPaymentURL:   get("HCB_SHIPPING_PAYMENT_URL", ""),
 		StripeBaseURL:           strings.TrimRight(get("STRIPE_BASE_URL", "https://api.stripe.com"), "/"),
 		StripeSecretKey:         get("STRIPE_SECRET_KEY", ""),
 		StripePublishableKey:    get("STRIPE_PUBLISHABLE_KEY", ""),
@@ -127,12 +123,14 @@ func Load(getenv func(string) string) (*Config, error) {
 
 	var missing []string
 	for k, v := range map[string]string{
-		"DATABASE_URL":      c.DatabaseURL,
-		"BASE_URL":          c.BaseURL,
-		"SESSION_SECRET":    c.SessionSecret,
-		"HCA_CLIENT_ID":     c.HCAClientID,
-		"HCA_CLIENT_SECRET": c.HCAClientSecret,
-		"THESEUS_API_KEY":   c.TheseusAPIKey,
+		"DATABASE_URL":           c.DatabaseURL,
+		"BASE_URL":               c.BaseURL,
+		"SESSION_SECRET":         c.SessionSecret,
+		"HCA_CLIENT_ID":          c.HCAClientID,
+		"HCA_CLIENT_SECRET":      c.HCAClientSecret,
+		"THESEUS_API_KEY":        c.TheseusAPIKey,
+		"STRIPE_SECRET_KEY":      c.StripeSecretKey,
+		"STRIPE_PUBLISHABLE_KEY": c.StripePublishableKey,
 	} {
 		if v == "" {
 			missing = append(missing, k)

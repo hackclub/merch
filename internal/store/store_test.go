@@ -325,9 +325,9 @@ func TestTransitionRequest(t *testing.T) {
 	if _, err := s.TransitionRequest(ctx, r.ID, swag.StatusDispatched, ""); !errors.Is(err, ErrBadTransition) {
 		t.Fatalf("awaiting_payment -> dispatched err = %v", err)
 	}
-	got, err := s.MarkPaid(ctx, r.ID)
+	got, err := s.MarkPaidByStripe(ctx, r.ID, "pi_1")
 	if err != nil || got.Status != swag.StatusPending || got.PaidAt == nil {
-		t.Fatalf("MarkPaid = %+v, %v", got, err)
+		t.Fatalf("MarkPaidByStripe = %+v, %v", got, err)
 	}
 	got, err = s.MarkDispatched(ctx, r.ID, "pkg!1", ShipChanges{})
 	if err != nil || got.Status != swag.StatusDispatched || got.TheseusOrderID != "pkg!1" {

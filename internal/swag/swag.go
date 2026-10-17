@@ -15,7 +15,7 @@ import (
 type Status string
 
 const (
-	StatusAwaitingPayment Status = "awaiting_payment" // international: waiting on HCB shipping payment
+	StatusAwaitingPayment Status = "awaiting_payment" // international: waiting on the card payment for shipping
 	StatusPending         Status = "pending"          // waiting on admin review
 	StatusDispatched      Status = "dispatched"       // order created in mail.hackclub.com
 	StatusRejected        Status = "rejected"

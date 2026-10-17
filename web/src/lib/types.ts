@@ -41,7 +41,7 @@ export type Settings = {
 export type Catalog = {
 	items: Item[];
 	includes: Item[]; // what listed items ship with, often hidden items
-	settings: Settings & { hcb_payment_url: string; stripe_key?: string };
+	settings: Settings & { stripe_key: string }; // Stripe publishable key for the card form
 };
 
 export type Address = {
@@ -86,7 +86,6 @@ export type SwagRequest = {
 	internal_note?: string; // admin-only
 	created_at: string;
 	lines: RequestLine[];
-	payment_url?: string; // HCB
 	stripe_key?: string; // pay by card on the page
 	estimate?: ShippingEstimate; // while it waits to ship; postage only for admins
 	costs?: Costs; // admins: what it costs Hack Club to send, while it waits to ship

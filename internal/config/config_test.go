@@ -11,12 +11,14 @@ func env(m map[string]string) func(string) string {
 
 func validEnv() map[string]string {
 	return map[string]string{
-		"DATABASE_URL":      "postgres://localhost/x",
-		"BASE_URL":          "http://localhost:8080",
-		"SESSION_SECRET":    "0123456789abcdef0123456789abcdef",
-		"HCA_CLIENT_ID":     "id",
-		"HCA_CLIENT_SECRET": "secret",
-		"THESEUS_API_KEY":   "th_api_test",
+		"DATABASE_URL":           "postgres://localhost/x",
+		"BASE_URL":               "http://localhost:8080",
+		"SESSION_SECRET":         "0123456789abcdef0123456789abcdef",
+		"HCA_CLIENT_ID":          "id",
+		"HCA_CLIENT_SECRET":      "secret",
+		"THESEUS_API_KEY":        "th_api_test",
+		"STRIPE_SECRET_KEY":      "sk_test_x",
+		"STRIPE_PUBLISHABLE_KEY": "pk_test_x",
 	}
 }
 
@@ -46,7 +48,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadRequiresSecrets(t *testing.T) {
-	for _, key := range []string{"DATABASE_URL", "BASE_URL", "SESSION_SECRET", "HCA_CLIENT_ID", "HCA_CLIENT_SECRET", "THESEUS_API_KEY"} {
+	for _, key := range []string{"DATABASE_URL", "BASE_URL", "SESSION_SECRET", "HCA_CLIENT_ID", "HCA_CLIENT_SECRET", "THESEUS_API_KEY", "STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY"} {
 		e := validEnv()
 		delete(e, key)
 		_, err := Load(env(e))

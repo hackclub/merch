@@ -22,9 +22,9 @@ through the app, not into migrations or seed files. Before every commit, read `g
 
 | Who | How we know | What they do |
 | --- | --- | --- |
-| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card on the form (Stripe; HCB without Stripe keys) before we ship (see "Shipping estimates and packing"). |
+| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card on the form (Stripe) before we ship (see "Shipping estimates and packing"). |
 | YSWS author | Their HCA email matches `Hack Club Auth Email` in the **YSWS Authors** table of the Unified YSWS Projects DB (Airtable `app3A5kJwYqxMLOgh`) | Submit print-ready material (stickers, posters…) to be printed and stocked in the warehouse. |
-| Admin | Email is in `ADMIN_EMAILS` (admins are also authors) | Manage global limits, list warehouse SKUs as items, set visibility and order, review requests (mark paid → ship → tracking), and review author submissions. |
+| Admin | Email is in `ADMIN_EMAILS` (admins are also authors) | Manage global limits, list warehouse SKUs as items, set visibility and order, review requests (ship → tracking), and review author submissions. |
 
 Items can come in **sizes** (`items.variants`, e.g. the red Hack Club T-shirt `Swa/Shirt/HC` with
 S/M/L/XL → `Swa/Shirt/HC/<size>`). Each size ships its own warehouse SKU; limits count the item as a
@@ -284,9 +284,8 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   `restore_database_backup` replaces the live data, and deleting the project deletes its
   backups.
 - Required env: `DATABASE_URL`, `BASE_URL` (public https origin), `SESSION_SECRET`,
-  `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, `THESEUS_API_KEY`, `ADMIN_EMAILS`. Also needed:
-  `AIRTABLE_API_KEY` for authors, `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` for international payments (or
-  `HCB_SHIPPING_PAYMENT_URL` without Stripe),
+  `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, `THESEUS_API_KEY`, `STRIPE_SECRET_KEY`,
+  `STRIPE_PUBLISHABLE_KEY`, `ADMIN_EMAILS`. Also needed: `AIRTABLE_API_KEY` for authors,
   `HACKCLUB_CDN_API_KEY` for item image uploads, `GOOGLE_PLACES_API_KEY` for address
   autocomplete, and `LOOPS_API_KEY` for request emails.
 - `$BASE_URL/auth/callback` must be registered as a redirect URI on the Hack Club Auth app.
@@ -447,8 +446,7 @@ blocks landing):
 - Admin events (`internal/httpapi/insights.go`). Request events belong to the requester's
   `user_id`, with `admin_id` for who acted, and carry `request_id`, `country`, `purpose`, `source`,
   `lines`, `items_requested`, `items_shipped`, `fee_cents`, `wait_h` (hours since the request was
-  made), `since_paid_h` and `refunded_cents`: `request_paid` (marked paid by hand, `by`),
-  `request_dispatched` (`changed` when quantities changed, `has_note`, `warning`),
+  made), `since_paid_h` and `refunded_cents`: `request_dispatched` (`changed` when quantities changed, `has_note`, `warning`),
   `request_rejected` (`from`, `has_note`, `refunded`), `tracking_updated` (`carrier`,
   `has_tracking`), `internal_note_updated` (admins' Markdown note on a request: `has_note`, `chars`,
   `from_chars`; never the text). Catalog and limits, with the admin's `user_id`: `item_created` (`item_id`,
@@ -552,11 +550,10 @@ When Zach asks you to improve the shop from evidence, run this loop end to end:
   the full amount moves the request to `pending` (`paid_at`, `stripe_payment_intent`). Pay
   never starts a second payment while the first is processing or Stripe can't be reached.
   Rejecting or cancelling cancels an unpaid PaymentIntent and refunds a paid one in full
-  (`refunded_at`); if Stripe won't refund, the request stays open so the admin can retry. A
-  request marked paid by hand (HCB) has to be refunded by hand; its rejected email says
-  we'll refund it. When an admin ships less of a card-paid request, it's re-quoted on what
-  shipped and the difference goes back to the card (`refunded_cents`; the shipped email says so). Both `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY` turn
-  it on (without them, HCB). Dev uses the sandbox (`sk_test_…`/`pk_test_…`, test card
+  (`refunded_at`); if Stripe won't refund, the request stays open so the admin can retry. When an admin ships less of a card-paid request, it's re-quoted on what
+  shipped and the difference goes back to the card (`refunded_cents`; the shipped email says so). Card payment is the only way to pay
+  (HCB links and "Mark paid" were removed 2026-10-17); the server won't start without
+  `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY`. Dev uses the sandbox (`sk_test_…`/`pk_test_…`, test card
   4242 4242 4242 4242); the keys live only in the shared `.env` and Orchard, never in the repo.
 - **Loops** (`internal/loops`, `internal/httpapi/emails.go`) emails the requester through one
   transactional template (`LOOPS_TRANSACTIONAL_ID`) whose variables are `subject_line`,

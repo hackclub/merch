@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { billingDetails, paidNotice, payShipping, payWhere, type CardForm } from './payment';
+import { billingDetails, paidNotice, payShipping, type CardForm } from './payment';
 import type { Address } from './types';
 
 const de: Address = { first_name: 'Orpheus', last_name: 'Dino', line_1: 'Teststr 1', line_2: '', city: 'Berlin', state: '', postal_code: '10115', country: 'de', phone_number: '+49301234567' };
@@ -18,11 +18,6 @@ function fakeCard(result: Awaited<ReturnType<CardForm['confirm']>>) {
 }
 
 describe('payment', () => {
-	it('says how international shipping is paid', () => {
-		expect(payWhere(true)).toBe('');
-		expect(payWhere(false)).toBe("After you submit we'll send you to HCB to pay it; we ship once it's received.");
-	});
-
 	it('bills the shipping address, so the card form only asks for the card', () => {
 		expect(billingDetails(de)).toEqual({
 			name: 'Orpheus Dino',

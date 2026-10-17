@@ -77,14 +77,9 @@ func run(log *slog.Logger) error {
 		log.Warn("GOOGLE_PLACES_API_KEY not set: the request form has no address autocomplete")
 	}
 
-	var payments httpapi.Payments
-	if cfg.StripeSecretKey != "" && cfg.StripePublishableKey != "" {
-		payments = stripe.New(cfg.StripeBaseURL, cfg.StripeSecretKey, nil)
-		if strings.HasPrefix(cfg.StripeSecretKey, "sk_test_") {
-			log.Warn("STRIPE_SECRET_KEY is a sandbox key: card payments are test payments")
-		}
-	} else {
-		log.Warn("STRIPE_SECRET_KEY and STRIPE_PUBLISHABLE_KEY not both set: international shipping is paid on HCB (HCB_SHIPPING_PAYMENT_URL)")
+	payments := stripe.New(cfg.StripeBaseURL, cfg.StripeSecretKey, nil)
+	if strings.HasPrefix(cfg.StripeSecretKey, "sk_test_") {
+		log.Warn("STRIPE_SECRET_KEY is a sandbox key: card payments are test payments")
 	}
 
 	var mailer httpapi.Mailer

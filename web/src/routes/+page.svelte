@@ -14,7 +14,7 @@
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
-	import { payShipping, payWhere, type CardForm } from '$lib/payment';
+	import { payShipping, type CardForm } from '$lib/payment';
 	import CardField from '$lib/CardField.svelte';
 	import { arrivalText, costRows, summaryText, costToYou, usd, worthText, type CostSides, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
@@ -73,8 +73,8 @@
 	const count = $derived(totalQuantity(cart));
 	const problems = $derived(catalog ? cartErrors(cart, catalog.settings.max_items_per_request, catalog.items, sizes) : []);
 	const intl = $derived(isInternational(address.country));
-	// International shipping is paid by card right on the form when Stripe is set up.
-	const payByCard = $derived(intl && !!catalog?.settings.stripe_key && !!quote?.estimate.fee_cents);
+	// International shipping is paid by card right on the form.
+	const payByCard = $derived(intl && !!quote?.estimate.fee_cents);
 	// Two strips of everything under the intro: photos and products on top, magazine pages and backs below.
 	const rows = $derived(catalog ? galleryRows(catalog.items) : null);
 	// What's coming, line by line (one per size), for the 3D preview: beside the sheet on wide screens, above Submit otherwise.
@@ -172,8 +172,7 @@
 			if (failed !== null) {
 				// Paid: My requests thanks them. Not paid: the request waits there, with the card field to try again.
 				goto(failed ? `/requests?unpaid=${r.id}` : `/requests?paid=${r.id}`, { state: { payError: failed } });
-			} else if (r.payment_url) window.location.href = r.payment_url;
-			else goto('/requests');
+			} else goto('/requests');
 		} catch (e) {
 			error = e instanceof ApiError ? e.message : 'Something went wrong.';
 		} finally {
@@ -395,10 +394,8 @@
 				</div>
 				{#if intl}
 					<div class="pay">
-						{#if payByCard && catalog?.settings.stripe_key && quote}
+						{#if payByCard && quote}
 							<CardField bind:this={card} stripeKey={catalog.settings.stripe_key} amountCents={quote.estimate.fee_cents} billing={address} />
-						{:else if quote?.estimate.fee_cents}
-							<p>{payWhere(false)}</p>
 						{/if}
 						<label class="choice" class:on={customsOK}>
 							<input type="checkbox" name="customs_ok" required bind:checked={customsOK} />

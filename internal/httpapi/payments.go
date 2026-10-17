@@ -11,22 +11,12 @@ import (
 	"github.com/hackclub/merch/internal/swag"
 )
 
-// Payments takes international shipping payments by card (Stripe in
-// production). Without it, requests link to the HCB donation page instead.
+// Payments takes international shipping payments by card (Stripe).
 type Payments interface {
 	CreatePayment(ctx context.Context, in stripe.PaymentInput) (*stripe.Payment, error)
 	GetPayment(ctx context.Context, id string) (*stripe.Payment, error)
 	CancelPayment(ctx context.Context, id string) error
 	Refund(ctx context.Context, id string, amountCents int, idempotencyKey string) error // 0 refunds all of it
-}
-
-// stripeKey is the publishable key the browser's card form uses, or "" when
-// card payments are off.
-func (s *server) stripeKey() string {
-	if s.Payments == nil {
-		return ""
-	}
-	return s.Config.StripePublishableKey
 }
 
 // payRequest starts (or picks up) the card payment for a request's shipping
@@ -41,10 +31,6 @@ func (s *server) payRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 	req, err := s.Store.GetRequest(r.Context(), id)
 	if err != nil || req.UserID != v.user.ID {
 		writeErr(w, http.StatusNotFound, "request not found")
-		return
-	}
-	if s.Payments == nil {
-		writeErr(w, http.StatusNotFound, "card payments are off")
 		return
 	}
 	if req.Status != swag.StatusAwaitingPayment {
@@ -99,7 +85,7 @@ func (s *server) payRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 // payment and, once it's paid in full, moves it to review. Errors leave the
 // request as it was; the next look tries again.
 func (s *server) syncPayment(r *http.Request, req *store.Request) *store.Request {
-	if s.Payments == nil || req.Status != swag.StatusAwaitingPayment || req.StripePaymentIntent == "" {
+	if req.Status != swag.StatusAwaitingPayment || req.StripePaymentIntent == "" {
 		return req
 	}
 	p, err := s.Payments.GetPayment(r.Context(), req.StripePaymentIntent)
@@ -141,7 +127,7 @@ func (s *server) settlePayment(r *http.Request, req *store.Request, by string) (
 			return req, false, nil
 		}
 	}
-	if s.Payments == nil || req.PaidAt == nil || req.StripePaymentIntent == "" || req.RefundedAt != nil {
+	if req.PaidAt == nil || req.StripePaymentIntent == "" || req.RefundedAt != nil {
 		return req, false, nil
 	}
 	key := s.Config.TheseusOrderTag + "-request-" + strconv.FormatInt(req.ID, 10) + "-refund"
@@ -157,7 +143,7 @@ func (s *server) settlePayment(r *http.Request, req *store.Request, by string) (
 // after an admin shipped less of it: what it paid, minus the fee for what
 // actually shipped. It returns a warning for the admin if that didn't work.
 func (s *server) refundUnusedPostage(r *http.Request, req *store.Request) (*store.Request, string) {
-	if s.Payments == nil || req.PaidAt == nil || req.StripePaymentIntent == "" || req.ShippingFeeCents == 0 || req.RefundedCents > 0 {
+	if req.PaidAt == nil || req.StripePaymentIntent == "" || req.ShippingFeeCents == 0 || req.RefundedCents > 0 {
 		return req, ""
 	}
 	ctx := r.Context()
@@ -204,7 +190,7 @@ func (s *server) refundUnusedPostage(r *http.Request, req *store.Request) (*stor
 // closePayment cancels a cancelled request's unpaid payment, so it can't be
 // paid after all.
 func (s *server) closePayment(r *http.Request, req *store.Request) {
-	if s.Payments == nil || req.StripePaymentIntent == "" {
+	if req.StripePaymentIntent == "" {
 		return
 	}
 	if err := s.Payments.CancelPayment(r.Context(), req.StripePaymentIntent); err != nil {

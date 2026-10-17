@@ -77,10 +77,7 @@
 				{#each r.lines as l}<li>{lineText(l)}</li>{/each}
 			</ul>
 			{#if r.status === 'awaiting_payment'}
-				<p>
-					Shipping to {r.address.country} costs {formatCents(r.shipping_fee_cents)}.
-					{#if r.payment_url}<a class="button" href={r.payment_url} data-track="pay-shipping">Pay shipping on HCB</a>{/if}
-				</p>
+				<p>Shipping to {r.address.country} costs {formatCents(r.shipping_fee_cents)}.</p>
 				{#if r.stripe_key}
 					<CardField bind:this={cards[r.id]} stripeKey={r.stripe_key} amountCents={r.shipping_fee_cents} billing={r.address} />
 					{#if payErrors[r.id]}<p class="error">{payErrors[r.id]}</p>{/if}

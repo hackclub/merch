@@ -58,7 +58,7 @@ type Deps struct {
 	Warehouse Warehouse
 	Images    ImageStore    // nil disables image uploads
 	Places    AddressFinder // nil disables address autocomplete
-	Payments  Payments      // nil: international shipping is paid on HCB
+	Payments  Payments      // card payments for international shipping (Stripe)
 	Mailer    Mailer        // nil sends no emails
 	Static    fs.FS         // built PWA (web/build); nil disables static serving
 	Now       func() time.Time
@@ -120,7 +120,6 @@ func New(d Deps) http.Handler {
 
 	// admin
 	mux.Handle("GET /api/admin/requests", s.requireAdmin(s.adminRequests))
-	mux.Handle("POST /api/admin/requests/{id}/mark-paid", s.requireAdmin(s.adminMarkPaid))
 	mux.Handle("POST /api/admin/requests/{id}/dispatch", s.requireAdmin(s.adminDispatch))
 	mux.Handle("POST /api/admin/requests/{id}/reject", s.requireAdmin(s.adminReject))
 	mux.Handle("POST /api/admin/requests/{id}/refresh", s.requireAdmin(s.adminRefresh))
@@ -363,8 +362,7 @@ func (s *server) catalog(w http.ResponseWriter, r *http.Request) {
 			"max_items_per_request":            st.MaxItemsPerRequest,
 			"request_cooldown_days":            st.RequestCooldownDays,
 			"international_shipping_fee_cents": st.InternationalShippingFeeCents,
-			"hcb_payment_url":                  s.Config.HCBShippingPaymentURL,
-			"stripe_key":                       s.stripeKey(),
+			"stripe_key":                       s.Config.StripePublishableKey,
 		},
 	})
 }
@@ -443,25 +441,15 @@ func (s *server) cachedSKUs(ctx context.Context) ([]theseus.SKU, error) {
 
 type requestView struct {
 	*store.Request
-	PaymentURL string         `json:"payment_url,omitempty"`
-	StripeKey  string         `json:"stripe_key,omitempty"` // pay by card on the page, with this publishable key
-	Estimate   *swag.Estimate `json:"estimate,omitempty"`   // when it should arrive, while it waits to ship
-	Costs      *swag.Costs    `json:"costs,omitempty"`      // admins: what it costs Hack Club to send
+	StripeKey string         `json:"stripe_key,omitempty"` // pay by card on the page, with this publishable key
+	Estimate  *swag.Estimate `json:"estimate,omitempty"`   // when it should arrive, while it waits to ship
+	Costs     *swag.Costs    `json:"costs,omitempty"`      // admins: what it costs Hack Club to send
 }
 
 func (s *server) view(r *store.Request) requestView {
 	v := requestView{Request: r}
-	if r.Status == swag.StatusAwaitingPayment && s.Payments != nil {
-		v.StripeKey = s.stripeKey()
-	} else if r.Status == swag.StatusAwaitingPayment && s.Config.HCBShippingPaymentURL != "" {
-		q := url.Values{}
-		q.Set("amount", strconv.Itoa(r.ShippingFeeCents))
-		q.Set("message", "Shipping for swag request #"+strconv.FormatInt(r.ID, 10))
-		sep := "?"
-		if strings.Contains(s.Config.HCBShippingPaymentURL, "?") {
-			sep = "&"
-		}
-		v.PaymentURL = s.Config.HCBShippingPaymentURL + sep + q.Encode()
+	if r.Status == swag.StatusAwaitingPayment {
+		v.StripeKey = s.Config.StripePublishableKey
 	}
 	return v
 }
@@ -671,19 +659,6 @@ func (s *server) adminRequests(w http.ResponseWriter, r *http.Request, v viewer)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"requests": out})
-}
-
-func (s *server) adminMarkPaid(w http.ResponseWriter, r *http.Request, v viewer) {
-	id, ok := pathID(w, r)
-	if !ok {
-		return
-	}
-	req, err := s.Store.MarkPaid(r.Context(), id)
-	if err == nil {
-		s.trackRequest(r, v, "request_paid", req, map[string]any{"by": "admin"})
-		s.emailRequest(r, req, "received")
-	}
-	s.respondRequest(w, req, err)
 }
 
 func (s *server) adminReject(w http.ResponseWriter, r *http.Request, v viewer) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -89,8 +90,7 @@ func newStripeHarness(t *testing.T) (*harness, *fakeStripe) {
 
 type viewed struct {
 	store.Request
-	PaymentURL string `json:"payment_url"`
-	StripeKey  string `json:"stripe_key"`
+	StripeKey string `json:"stripe_key"`
 }
 
 type payResponse struct {
@@ -116,10 +116,33 @@ func (h *harness) pay(email string, id int64) (int, payResponse) {
 	return code, out
 }
 
+// payByCard pays a request's postage with the harness's fake Stripe, as the
+// card form would, and returns the request once the app has seen the payment.
+func (h *harness) payByCard(email string, id int64) store.Request {
+	h.t.Helper()
+	code, p := h.pay(email, id)
+	if code != 200 {
+		h.t.Fatalf("pay = %d %+v", code, p)
+	}
+	pi := p.ClientSecret[:strings.Index(p.ClientSecret, "_secret")]
+	h.stripe.set(pi, "succeeded", p.AmountCents)
+	var out struct {
+		Requests []store.Request `json:"requests"`
+	}
+	h.do(h.client(email), "GET", "/api/requests", nil, &out)
+	for _, r := range out.Requests {
+		if r.ID == id {
+			return r
+		}
+	}
+	h.t.Fatalf("request %d not listed", id)
+	return store.Request{}
+}
+
 func TestCardPaymentForInternationalShipping(t *testing.T) {
 	h, fs := newStripeHarness(t)
 	r := h.intlRequest(userEmail)
-	if r.Status != swag.StatusAwaitingPayment || r.StripeKey != "pk_test_x" || r.PaymentURL != "" {
+	if r.Status != swag.StatusAwaitingPayment || r.StripeKey != "pk_test_x" {
 		t.Fatalf("created = %+v", r)
 	}
 	var cat struct {

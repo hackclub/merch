@@ -52,12 +52,12 @@ func TestAdminActionsAreTracked(t *testing.T) {
 		t.Errorf("tracking_updated = %+v", evs)
 	}
 
-	// International: marked paid by hand, then a second request turned down.
+	// International: paid by card, then turned down.
 	var intl store.Request
 	h.do(h.client("b@x.com"), "POST", "/api/requests", map[string]any{"purpose": "personal", "customs_ok": true, "address": deAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &intl)
-	h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/mark-paid", intl.ID), map[string]any{}, nil)
-	if evs := h.events("request_paid"); len(evs) != 1 || props(t, evs[0])["by"] != "admin" || props(t, evs[0])["country"] != "DE" {
-		t.Errorf("request_paid = %+v", evs)
+	h.payByCard("b@x.com", intl.ID)
+	if evs := h.events("payment_completed"); len(evs) != 1 || props(t, evs[0])["country"] != "DE" {
+		t.Errorf("payment_completed = %+v", evs)
 	}
 	if code := h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/reject", intl.ID), map[string]any{"note": "Out of stock"}, nil); code != 200 {
 		t.Fatalf("reject = %d", code)

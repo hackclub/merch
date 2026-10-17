@@ -108,8 +108,6 @@ func rejectedEmail(req *store.Request, baseURL string) loops.Email {
 	switch {
 	case req.RefundedAt != nil:
 		fmt.Fprintf(&b, "\n\nWe refunded the %s you paid for postage to your card. It can take 5–10 business days to show up.", dollars(req.ShippingFeeCents))
-	case req.PaidAt != nil && req.ShippingFeeCents > 0:
-		fmt.Fprintf(&b, "\n\nWe'll refund the %s you paid for postage.", dollars(req.ShippingFeeCents))
 	}
 	fmt.Fprintf(&b, "\n\nSee your requests at %s/requests.\n\nHack Club", baseURL)
 	return loops.Email{

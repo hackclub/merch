@@ -79,10 +79,8 @@
 		}, `Request #${r.id}: shipped`);
 
 	function reject(r: SwagRequest) {
-		const refund = r.paid_at && r.shipping_fee_cents
-			? r.stripe_payment_intent
-				? `\n\nTheir ${formatCents(r.shipping_fee_cents)} card payment is refunded automatically.`
-				: `\n\nThey paid ${formatCents(r.shipping_fee_cents)} outside Stripe: refund it yourself (the email says we will).`
+		const refund = r.paid_at && r.shipping_fee_cents && r.stripe_payment_intent
+			? `\n\nTheir ${formatCents(r.shipping_fee_cents)} card payment is refunded automatically.`
 			: '';
 		const note = prompt(`Reason (in the email to the requester; optional):${refund}`);
 		if (note === null) return;
@@ -220,7 +218,6 @@
 							{/if}
 						</td>
 						<td class="row">
-							{#if r.status === 'awaiting_payment'}<button onclick={() => act(r.id, 'mark-paid')}>Mark paid</button>{/if}
 							{#if r.status === 'pending' && r.source === 'app'}<button onclick={() => ship(r)}>Ship</button>{/if}
 							{#if r.status === 'pending' || r.status === 'awaiting_payment'}<button class="secondary" onclick={() => reject(r)}>Reject</button>{/if}
 							{#if r.status === 'dispatched' && r.theseus_order_id}<button class="secondary" onclick={() => act(r.id, 'refresh')}>Refresh tracking</button>{/if}

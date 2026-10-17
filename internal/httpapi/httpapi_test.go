@@ -118,6 +118,7 @@ type harness struct {
 	wh     *fakeWarehouse
 	cdn    *fakeCDN
 	places *fakePlaces
+	stripe *fakeStripe // the default payments, unless an option swaps them
 	cfg    *config.Config
 }
 
@@ -131,12 +132,13 @@ func newHarness(t *testing.T, opts ...func(*Deps)) *harness {
 	t.Helper()
 	st := store.New(dbtest.New(t))
 	cfg := &config.Config{
-		BaseURL:               "http://app.test",
-		ExtraBaseURLs:         []string{"http://porygon:5173"},
-		AdminEmails:           []string{adminEmail},
-		TheseusOrderTag:       "merch",
-		HCBShippingPaymentURL: "https://hcb.hackclub.com/donations/start/swag",
+		BaseURL:              "http://app.test",
+		ExtraBaseURLs:        []string{"http://porygon:5173"},
+		AdminEmails:          []string{adminEmail},
+		TheseusOrderTag:      "merch",
+		StripePublishableKey: "pk_test_x",
 	}
+	fs := &fakeStripe{}
 	wh := &fakeWarehouse{}
 	cdn := &fakeCDN{}
 	pl := &fakePlaces{}
@@ -153,6 +155,7 @@ func newHarness(t *testing.T, opts ...func(*Deps)) *harness {
 		Warehouse: wh,
 		Images:    cdn,
 		Places:    pl,
+		Payments:  fs,
 		Static: fstest.MapFS{
 			"index.html":           {Data: []byte("<html>app shell</html>")},
 			"manifest.webmanifest": {Data: []byte(`{"name":"x"}`)},
@@ -164,7 +167,7 @@ func newHarness(t *testing.T, opts ...func(*Deps)) *harness {
 	}
 	srv := httptest.NewServer(New(d))
 	t.Cleanup(srv.Close)
-	return &harness{t: t, srv: srv, store: st, wh: wh, cdn: cdn, places: pl, cfg: cfg}
+	return &harness{t: t, srv: srv, store: st, wh: wh, cdn: cdn, places: pl, stripe: fs, cfg: cfg}
 }
 
 // client returns an http.Client logged in as email ("" = anonymous).
@@ -379,7 +382,7 @@ func TestCatalogShowsOnlyVisibleItems(t *testing.T) {
 		Settings struct {
 			RequestsOpen                  bool   `json:"requests_open"`
 			InternationalShippingFeeCents int    `json:"international_shipping_fee_cents"`
-			HCBPaymentURL                 string `json:"hcb_payment_url"`
+			StripeKey                     string `json:"stripe_key"`
 		} `json:"settings"`
 	}
 	if code := h.do(h.client(""), "GET", "/api/catalog", nil, &out); code != 200 {
@@ -388,7 +391,7 @@ func TestCatalogShowsOnlyVisibleItems(t *testing.T) {
 	if len(out.Items) != 1 || out.Items[0].SKU != "Sti/A" {
 		t.Fatalf("items = %+v", out.Items)
 	}
-	if !out.Settings.RequestsOpen || out.Settings.InternationalShippingFeeCents != 1500 || out.Settings.HCBPaymentURL == "" {
+	if !out.Settings.RequestsOpen || out.Settings.InternationalShippingFeeCents != 1500 || out.Settings.StripeKey != "pk_test_x" {
 		t.Fatalf("settings = %+v", out.Settings)
 	}
 }
@@ -545,24 +548,20 @@ func TestInternationalRequestNeedsPayment(t *testing.T) {
 	it := h.mkItem("Sti/A", true)
 	user, admin := h.client(userEmail), h.client(adminEmail)
 
-	var r struct {
-		store.Request
-		PaymentURL string `json:"payment_url"`
-	}
+	var r viewed
 	code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "customs_ok": true, "address": deAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
-	if code != 201 || r.Status != swag.StatusAwaitingPayment || r.ShippingFeeCents != 1500 {
+	if code != 201 || r.Status != swag.StatusAwaitingPayment || r.ShippingFeeCents != 1500 || r.StripeKey != "pk_test_x" {
 		t.Fatalf("create = %d %+v", code, r)
-	}
-	if !strings.HasPrefix(r.PaymentURL, h.cfg.HCBShippingPaymentURL) || !strings.Contains(r.PaymentURL, "amount=1500") {
-		t.Errorf("payment_url = %q", r.PaymentURL)
 	}
 
 	if code := h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/dispatch", r.ID), map[string]any{}, nil); code != 409 {
 		t.Fatalf("dispatch unpaid = %d, want 409", code)
 	}
-	var paid store.Request
-	h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/mark-paid", r.ID), map[string]any{}, &paid)
-	if paid.Status != swag.StatusPending || paid.PaidAt == nil {
+	// Only a card payment moves it on: there's no marking it paid by hand.
+	if code := h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/mark-paid", r.ID), map[string]any{}, nil); code != 404 && code != 405 {
+		t.Fatalf("mark-paid = %d, want gone", code)
+	}
+	if paid := h.payByCard(userEmail, r.ID); paid.Status != swag.StatusPending || paid.PaidAt == nil {
 		t.Fatalf("paid = %+v", paid)
 	}
 }
