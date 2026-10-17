@@ -5,6 +5,9 @@ COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
 RUN npm run build
+# The app can't start if index.html and the chunks name different SvelteKit versions (a blank site).
+RUN g=$(grep -o '__sveltekit_[a-z0-9]*' build/index.html | head -1) && grep -rq "$g" build/_app/immutable \
+    || { echo "build/index.html ($g) doesn't match the app chunks"; exit 1; }
 
 FROM golang:1.26-alpine AS server
 WORKDIR /src

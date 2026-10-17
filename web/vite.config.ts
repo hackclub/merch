@@ -7,8 +7,10 @@ import { defineConfig } from 'vitest/config';
 const backend = process.env.BACKEND_URL ?? 'http://localhost:8080';
 // The build's time names the release: usage events carry it, so changes can be
 // compared before and after they shipped (the server reads it from version.json).
-// Compact ISO 8601 (20261017T143818Z): SvelteKit breaks on a version name with colons.
-const release = new Date().toISOString().replace(/[-:]|\.\d+/g, '');
+// Compact ISO 8601 (20261017T143818Z). SvelteKit evaluates this file more than once per build
+// (the fallback index.html is written by a later pass), so the first pass pins the name in the
+// environment: two different names make index.html and the chunks disagree and the app won't start.
+const release = (process.env.MERCH_RELEASE ||= new Date().toISOString().replace(/[-:]|\.\d+/g, ''));
 
 export default defineConfig({
 	plugins: [
