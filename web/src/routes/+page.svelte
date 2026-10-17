@@ -247,16 +247,15 @@
 			{@const preview = tilePreview(item)}
 			{@const sides = cardSides(item)}
 			<div class="peek" aria-hidden="true">
-				{#if sides}
-					<!-- Cards show both printed sides flat; portrait cards sit side by side. -->
-					<div class="peek-sides" class:portrait={(item.height_in ?? 0) > (item.width_in ?? 0)}>
-						{#each sides as src, i (i)}
-							<figure style:aspect-ratio="{item.width_in} / {item.height_in}">
-								<img {src} alt="" />
-								<figcaption>{i ? 'Back' : 'Front'}</figcaption>
-							</figure>
-						{/each}
-					</div>
+				{#if sides && preview}
+					<!-- Cards show both sides in 3D: the stack as it comes, then turned over. -->
+					{#each sides as src, i (i)}
+						<div class="peek-img side" class:portrait={(item.height_in ?? 0) > (item.width_in ?? 0)}>
+							<img {src} alt="" />
+							<Tile3D {preview} active back={i === 1} count={previewCount(item, cart[item.id] ?? 0)} rest={-0.45} />
+							<span class="side-label">{i ? 'Back' : 'Front'}</span>
+						</div>
+					{/each}
 				{:else if thumbnail(item) || preview}
 					<div class="peek-img" class:sticker={item.packs === 'sticker'}>
 						{#if thumbnail(item)}<img src={thumbnail(item)} alt="" />{/if}
@@ -516,12 +515,10 @@
 		.peek-img img { width: 85%; height: 85%; object-fit: contain; mix-blend-mode: multiply; }
 		.peek-img.sticker img { mix-blend-mode: normal; }
 		.peek-3d :global(.controls) { display: none; }
-		.peek-sides { display: grid; gap: 0.5rem; margin-bottom: 0.4rem; }
-		.peek-sides.portrait { grid-template-columns: 1fr 1fr; }
-		.peek-sides figure { position: relative; margin: 0; background: var(--tile); }
-		.peek-sides img { display: block; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; }
-		.peek-sides figcaption {
-			position: absolute; left: 0.35rem; bottom: 0.35rem; padding: 0.1rem 0.35rem; background: white;
+		.peek-img.side { aspect-ratio: 16 / 10; overflow: hidden; margin-bottom: 0.1rem; }
+		.peek-img.side.portrait { aspect-ratio: 4 / 3; }
+		.side-label {
+			position: absolute; z-index: 1; left: 0.4rem; bottom: 0.4rem; padding: 0.1rem 0.35rem; background: white;
 			font: 0.65rem var(--mono); text-transform: uppercase; letter-spacing: 0.04em;
 		}
 		/* The hover panel shows the amount in 3D, so the row doesn't. */

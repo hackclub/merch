@@ -15,12 +15,14 @@
 	import type { BookViewer } from './book3d';
 	import { loadPreviewViewer, type Preview3D, type TilePreview } from './items';
 	import type { Viewer } from './paper3d';
+	import type { PostcardViewer } from './postcard3d';
 	import type { StickerViewer } from './sticker3d';
 	import { flipStep, hoverTurn, isImage } from './tile';
 
 	// count: stickers in the bag; rest: the angle it sits at; active: animate as if hovered
-	// (the clip plays, a booklet flips, a print swings), for previews that never get the pointer.
-	let { preview, count = 0, rest = -0.45, active = false }: { preview: TilePreview; count?: number; rest?: number; active?: boolean } = $props();
+	// (the clip plays, a booklet flips, a print swings), for previews that never get the pointer;
+	// back: postcards lie turned over, showing their back.
+	let { preview, count = 0, rest = -0.45, active = false, back = false }: { preview: TilePreview; count?: number; rest?: number; active?: boolean; back?: boolean } = $props();
 
 	const FLIP_EVERY = 1100; // ms per leaf while hovering a booklet
 	let stage: HTMLDivElement;
@@ -93,6 +95,7 @@
 				if (disposed) return v.dispose();
 				viewer = v;
 				v.angle = target;
+				if (back && 'flipped' in v) (v as PostcardViewer).flipped = 1;
 				v.resize(stage.clientWidth, stage.clientHeight);
 				ro.observe(stage);
 				const bv = opens ? (v as BookViewer) : null;
