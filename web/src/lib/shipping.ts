@@ -14,7 +14,7 @@ export type ShippingEstimate = {
 	arrive_by: string;
 	postage_cents: [number, number]; // admins only; [0, 0] otherwise
 	postage_typical_cents: number; // admins only
-	fee_cents: number; // what the requester pays: typical postage abroad, rounded up to a dollar; 0 in the US
+	fee_cents: number; // what the requester pays: typical postage abroad; 0 in the US
 	transit_basis: string;
 	transit_samples: number;
 	postage_basis: string;

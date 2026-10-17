@@ -326,8 +326,8 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   postage in the cost table). The shop intro, the request form, My requests and the admin
   request list show these estimates (`POST /api/shipping/estimate`, `GET /api/shipping`).
 - **International fee:** an international request pays the median postage of past shipments like
-  it (same country, about the same packed weight, recent first), rounded up to a whole dollar
-  (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback
+  it (same country, about the same packed weight, recent first), to the cent, the same
+  number as the cost table's postage (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback
   when there's no postage history; 0 still makes international shipping free.
 - **Cost to Hack Club** (`internal/swag/costs.go`, shown to everyone above the request form's
   "I understand" checkbox, with "Cost to you": $0 in the US, the shipping fee abroad):

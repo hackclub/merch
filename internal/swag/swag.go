@@ -306,7 +306,7 @@ func IsInternational(country string) bool {
 
 // InitialStatus decides where a new request starts and what shipping it owes.
 // US shipping is free. Abroad, the requester pays the typical postage for
-// their package (e, see EstimateShipping), rounded up to a whole dollar; with
+// their package (e, see EstimateShipping), to the cent; with
 // no postage history, the admin's flat InternationalShippingFeeCents. A flat
 // fee of 0 makes international shipping free too.
 func InitialStatus(s Settings, country string, e Estimate) (Status, int) {
@@ -315,7 +315,7 @@ func InitialStatus(s Settings, country string, e Estimate) (Status, int) {
 	}
 	fee := s.InternationalShippingFeeCents
 	if e.PostageSamples > 0 && e.PostageTypicalCents > 0 {
-		fee = (e.PostageTypicalCents + 99) / 100 * 100
+		fee = e.PostageTypicalCents
 	}
 	return StatusAwaitingPayment, fee
 }

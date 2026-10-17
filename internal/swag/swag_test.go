@@ -164,11 +164,11 @@ func TestInitialStatus(t *testing.T) {
 	if st != StatusAwaitingPayment || fee != 1500 {
 		t.Errorf("DE: got %s/%d", st, fee)
 	}
-	// With history, it pays what postage for this package typically costs,
-	// rounded up to a whole dollar.
+	// With history, it pays exactly what postage for this package typically
+	// costs: the same number the cost table shows.
 	est := Estimate{PostageTypicalCents: 843, PostageSamples: 40}
-	if st, fee = InitialStatus(settings(), "DE", est); st != StatusAwaitingPayment || fee != 900 {
-		t.Errorf("DE with history: got %s/%d, want 900", st, fee)
+	if st, fee = InitialStatus(settings(), "DE", est); st != StatusAwaitingPayment || fee != 843 {
+		t.Errorf("DE with history: got %s/%d, want 843", st, fee)
 	}
 	if _, fee = InitialStatus(settings(), "US", est); fee != 0 {
 		t.Errorf("US shipping is free, got %d", fee)
