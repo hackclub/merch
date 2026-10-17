@@ -40,3 +40,14 @@ export function postcardLabel(q: number): string {
 	if (!bundles) return cards;
 	return `${cards} · ${bundles === 1 ? 'a bundle' : `${bundles} bundles`} of ${PER_BUNDLE}`;
 }
+
+/**
+ * The top card turning over (p = 0 front up, 1 back up): its turn about its
+ * long axis, and how far it rises so its edge clears the stack under it.
+ */
+export function cardFlip(p: number, depth: number): { rotX: number; lift: number } {
+	const k = Math.min(1, Math.max(0, p));
+	if (k === 0) return { rotX: 0, lift: 0 };
+	const rotX = k * Math.PI;
+	return { rotX, lift: (depth / 2) * Math.sin(rotX) };
+}

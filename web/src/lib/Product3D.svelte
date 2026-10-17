@@ -1,7 +1,8 @@
 <script lang="ts">
 	// Interactive 3D view of a printed item (see paper3d.ts), a sticker request
 	// (sticker3d.ts) or a T-shirt (shirt3d.ts): slowly spins like a store's 3D product view; drag or arrow
-	// keys turn it, + / − zoom in to see the paper. Booklets (book3d.ts) also
+	// keys turn it, + / − zoom in to see the paper. Postcards lie in a stack whose
+	// top card turns over to show its back. Booklets (book3d.ts) also
 	// open: drag, arrow keys or the slider turn their pages. A trifold brochure
 	// (fold3d.ts) opens and folds itself back up on a loop until you touch it;
 	// then tap, drag or the arrows fold it. Falls back to the flat front image
@@ -16,6 +17,7 @@
 	import { packLabel } from './stickers';
 	import type { Viewer } from './paper3d';
 	import type { StickerViewer } from './sticker3d';
+	import type { PostcardViewer } from './postcard3d';
 	import { postcardLabel } from './postcards';
 	import { shirtSize } from './shirt';
 
@@ -54,7 +56,10 @@
 							: preview.stickers.front
 	);
 	// Shirts always have a back to show, if only a plain one.
-	const back = $derived('sheet' in preview ? !!preview.sheet.back : 'shirt' in preview);
+	const back = $derived(
+		'sheet' in preview ? !!preview.sheet.back : 'postcards' in preview ? !!preview.postcards.back : 'shirt' in preview
+	);
+	const postcards = $derived('postcards' in preview);
 	const leaves = $derived(book ? Math.ceil(book.pages.length / 2) : fold ? FOLD_STEPS : 0);
 	const stepLabel = (k: number) => (book ? spreadLabel(k, book.pages.length) : foldLabel(k));
 	const isOpen = $derived(goal > 0);
@@ -65,6 +70,7 @@
 	let resumeAt = 0;
 	let lastX = 0;
 	let cycleFrom = 0; // when a trifold's open-and-fold loop started
+	let cardGoal = $state(0); // postcards: 1 = the top card turned over to its back
 
 	const finish = $derived('sheet' in preview ? finishInfo(preview.sheet.finish).label : 'postcards' in preview ? finishInfo(preview.postcards.finish).label : '');
 	const label = $derived(
@@ -143,7 +149,13 @@
 					const wantZoom = ZOOMS[zoomLevel];
 					viewer.zoom += (wantZoom - viewer.zoom) * Math.min(1, dt * 6);
 					if (Math.abs(wantZoom - viewer.zoom) < 0.0005) viewer.zoom = wantZoom;
-					showingBack = Math.cos(viewer.angle) < 0;
+					if (postcards) {
+						// The top card turns over at an even pace, about half a second.
+						const pv = viewer as PostcardViewer;
+						const d = cardGoal - pv.flipped;
+						pv.flipped = Math.abs(d) < 0.001 ? cardGoal : pv.flipped + Math.sign(d) * Math.min(Math.abs(d), dt * 2);
+						showingBack = cardGoal === 1;
+					} else showingBack = Math.cos(viewer.angle) < 0;
 					viewer.render();
 				};
 				raf = requestAnimationFrame(tick);
@@ -217,6 +229,11 @@
 	}
 	function flip() {
 		if (!viewer) return;
+		if (postcards) {
+			cardGoal = 1 - cardGoal;
+			pause();
+			return;
+		}
 		// Turn to face the other side squarely, the short way round.
 		const turns = Math.round(viewer.angle / Math.PI) + 1;
 		target = turns * Math.PI;
@@ -295,7 +312,6 @@
 			{/if}
 		{:else}
 			<span class="muted">{label} · drag to turn</span>
-			<!-- A stack of postcards only shows its top card, so there's no back to show. -->
 			{#if back && !failed}
 				<button type="button" class="secondary small" onclick={flip}>{showingBack ? 'Show front' : 'Show back'}</button>
 			{/if}

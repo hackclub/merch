@@ -1,10 +1,11 @@
 // WebGL view of a postcard request: the cards lying on a table, a banded bundle
 // for every 50 and the rest in a loose stack (postcards.ts), next to a phone for
 // scale. setCount() follows the quantity, so bundles appear as you ask for more.
+// The loose stack's top card turns over (flipped, 0 → 1) to show the back.
 // Units are inches.
 import * as THREE from 'three';
 import { createPhone, createStage, loadArt, pageEdges, paperBand, paperEdge, paperFace, PHONE_DEPTH, type ViewerOptions } from './paper3d';
-import { CARD_IN, postcardStacks } from './postcards';
+import { cardFlip, CARD_IN, postcardStacks } from './postcards';
 import { PHONE } from './scale';
 
 export type PostcardOptions = Omit<ViewerOptions, 'thicknessIn'> & { kind: 'postcards'; thicknessIn: number | null };
@@ -12,6 +13,7 @@ export type PostcardOptions = Omit<ViewerOptions, 'thicknessIn'> & { kind: 'post
 export type PostcardViewer = {
 	angle: number;
 	zoom: number;
+	flipped: number; // 0 front up, 1 the top card turned over to its back
 	setCount(n: number): void;
 	resize(width: number, height: number): void;
 	render(): void;
@@ -40,6 +42,22 @@ export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOp
 		onReady();
 	});
 	const bottom = paperEdge();
+	// The top card's underside: the back art, or plain card when there's none.
+	const backFace = paperFace(opts.finish, w, d);
+	if (opts.back) {
+		loadArt(renderer, opts.back, w / d, (tex) => {
+			if (tex) {
+				backFace.mat.map = tex;
+				backFace.mat.needsUpdate = true;
+			}
+		});
+	}
+	const edge = paperEdge();
+	// BoxGeometry faces: +x, -x, +y (top), -y, +z, -z. Turned over about x, the
+	// -y face comes up with its art upright.
+	const topCard = new THREE.Mesh(new THREE.BoxGeometry(w, t, d), [edge, edge, face.mat, backFace.mat, edge, edge]);
+	topCard.castShadow = true;
+	let topRest = { x: 0, y: t / 2, z: 0 };
 
 	const phone = createPhone(true);
 	if (withPhone) turntable.add(phone);
@@ -51,6 +69,7 @@ export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOp
 
 	function layout(n: number) {
 		turntable.remove(stacks);
+		stacks.remove(topCard);
 		stacks.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
 		stacks = new THREE.Group();
 		const { stacks: piles, width, depth } = postcardStacks(n, w, d);
@@ -58,21 +77,28 @@ export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOp
 		const sceneW = withPhone ? width + GAP + PHONE.w : width;
 		const shift = -sceneW / 2 + width / 2;
 		let tallest = 0;
-		for (const s of piles) {
+		piles.forEach((s, i) => {
 			const h = Math.max(s.cards * t, t);
 			tallest = Math.max(tallest, h);
+			if (i === piles.length - 1) {
+				// The last stack's top card is its own mesh, so it can turn over.
+				topRest = { x: s.x + shift, y: h - t / 2, z: s.z };
+				stacks.add(topCard);
+				if (s.cards <= 1) return;
+			}
+			const below = i === piles.length - 1 ? h - t : h;
 			const side = paperEdge();
 			if (s.cards > 1) {
 				side.map = pageEdges(false);
 				side.map.repeat.set(1, s.cards / 64);
 			}
 			// BoxGeometry faces: +x, -x, +y (top), -y, +z, -z.
-			const pile = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, face.mat, bottom, side, side]);
-			pile.position.set(s.x + shift, h / 2, s.z);
+			const pile = new THREE.Mesh(new THREE.BoxGeometry(w, below, d), [side, side, face.mat, bottom, side, side]);
+			pile.position.set(s.x + shift, below / 2, s.z);
 			pile.castShadow = true;
 			stacks.add(pile);
 			if (s.band) stacks.add(paperBand(w, h, d, s.x + shift, s.z));
-		}
+		});
 		if (withPhone) phone.position.set(shift + width / 2 + GAP + PHONE.w / 2, PHONE_DEPTH / 2, 0);
 		turntable.add(stacks);
 		extent = { width: sceneW, depth: withPhone ? Math.max(depth, PHONE.h) : depth, tallest: Math.max(tallest, withPhone ? PHONE_DEPTH : t) };
@@ -82,6 +108,7 @@ export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOp
 	const viewer: PostcardViewer = {
 		angle: 0,
 		zoom: 1,
+		flipped: 0,
 		setCount(n) {
 			if (n === count) return;
 			count = n;
@@ -90,11 +117,17 @@ export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOp
 		resize: stage.resize,
 		render() {
 			turntable.rotation.y = viewer.angle;
+			const pose = cardFlip(viewer.flipped, d);
+			topCard.position.set(topRest.x, topRest.y + pose.lift, topRest.z);
+			topCard.rotation.x = pose.rotX;
 			stage.frameTable(extent.width, extent.depth, extent.tallest, viewer.zoom, { elevation: ELEVATION, room: 0.55, y: extent.tallest * 0.4 });
 			stage.render();
 		},
 		dispose() {
 			face.dispose();
+			backFace.dispose();
+			stacks.remove(topCard);
+			topCard.geometry.dispose();
 			stacks.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
 			stage.dispose();
 		}
