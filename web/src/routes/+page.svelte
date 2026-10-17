@@ -35,6 +35,8 @@
 	let understood = $state(false);
 	let customsOK = $state(false); // outside the US: they'll pay their country's customs fees
 	let error = $state('');
+	// Why Submit didn't go through, shown next to the button.
+	let submitError = $state('');
 	let submitting = $state(false);
 	let card = $state<CardForm | null>(null);
 	// Delivery times from past shipments, and this request's packing and arrival estimate.
@@ -149,13 +151,13 @@
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		if (!catalog) return;
-		error = '';
+		submitError = '';
 		submitting = true;
 		try {
 			// Check the card before the request exists, so a typo doesn't leave an unpaid request.
 			const cardProblem = payByCard && card ? await card.check() : null;
 			if (cardProblem) {
-				error = cardProblem;
+				submitError = cardProblem;
 				return;
 			}
 			const r = await api.post<SwagRequest>('/api/requests', {
@@ -174,7 +176,7 @@
 				goto(failed ? `/requests?unpaid=${r.id}` : `/requests?paid=${r.id}`, { state: { payError: failed } });
 			} else goto('/requests');
 		} catch (e) {
-			error = e instanceof ApiError ? e.message : 'Something went wrong.';
+			submitError = e instanceof ApiError ? e.message : 'Something went wrong.';
 		} finally {
 			submitting = false;
 		}
@@ -407,6 +409,7 @@
 					{#if quote && arrivalText(quote.estimate)}<p>{arrivalText(quote.estimate)}, by {quote.estimate.service}.</p>{/if}
 					{#each problems as p}<p class="error">{p}</p>{/each}
 					{#if quoteError}<p class="error">{quoteError}</p>{/if}
+					{#if submitError}<p class="error" role="alert">{submitError}</p>{/if}
 					<button disabled={submitting || problems.length > 0 || !!quoteError || !understood || (intl && !customsOK)}>
 						{submitting ? 'Sending…' : payByCard && quote ? `Submit and pay ${usd(quote.estimate.fee_cents)}` : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
 					</button>
