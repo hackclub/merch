@@ -11,7 +11,7 @@ but it only works on `/api/agent/*`. It can't change items, settings or keys.
 - `POST` bodies must be JSON, sent with `Content-Type: application/json`. Send `{}` when there's nothing to say.
 - Errors come back as `{"error": "…"}` with a 4xx or 5xx status. A 409 means the request
   isn't in a state that allows the action (for example, it's already shipped).
-- If the site is behind Orchard login, also send the Orchard bypass header the admin gives you.
+- `/api/agent` is open past the site's Orchard login. The key is all you need.
 
 ```sh
 curl -H "Authorization: Bearer $MERCH_API_KEY" "{BASE_URL}/api/agent/requests?status=pending"
