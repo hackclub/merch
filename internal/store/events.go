@@ -18,7 +18,8 @@ type Event struct {
 	Visit   string          `json:"visit"`
 	UserID  *int64          `json:"user_id"`
 	Path    string          `json:"path"`
-	Props   json.RawMessage `json:"props"` // a JSON object; nil: {}
+	Props   json.RawMessage `json:"props"`   // a JSON object; nil: {}
+	Release string          `json:"release"` // the site build it came from ("" unknown)
 }
 
 // RecordEvents saves usage events in one round trip.
@@ -33,9 +34,9 @@ func (s *Store) RecordEvents(ctx context.Context, evs []Event) error {
 		if len(props) == 0 {
 			props = json.RawMessage(`{}`)
 		}
-		b.Queue(`INSERT INTO usage_events (at, source, name, visitor, visit, user_id, path, props)
-			VALUES (coalesce($1, now()), $2, $3, $4, $5, $6, $7, $8)`,
-			at, e.Source, e.Name, e.Visitor, e.Visit, e.UserID, e.Path, string(props))
+		b.Queue(`INSERT INTO usage_events (at, source, name, visitor, visit, user_id, path, props, release)
+			VALUES (coalesce($1, now()), $2, $3, $4, $5, $6, $7, $8, $9)`,
+			at, e.Source, e.Name, e.Visitor, e.Visit, e.UserID, e.Path, string(props), e.Release)
 	}
 	return s.pool.SendBatch(ctx, b).Close()
 }
@@ -43,7 +44,7 @@ func (s *Store) RecordEvents(ctx context.Context, evs []Event) error {
 // RecentEvents lists the newest events, all of them or those named name.
 func (s *Store) RecentEvents(ctx context.Context, name string, limit int) ([]Event, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, at, source, name, visitor, visit, user_id, path, props::text
+		SELECT id, at, source, name, visitor, visit, user_id, path, props::text, release
 		FROM usage_events WHERE $1 = '' OR name = $1 ORDER BY at DESC, id DESC LIMIT $2`, name, limit)
 	if err != nil {
 		return nil, err
@@ -51,7 +52,7 @@ func (s *Store) RecentEvents(ctx context.Context, name string, limit int) ([]Eve
 	return collect(rows, func(r pgx.Rows) (Event, error) {
 		var e Event
 		var props string
-		err := r.Scan(&e.ID, &e.At, &e.Source, &e.Name, &e.Visitor, &e.Visit, &e.UserID, &e.Path, &props)
+		err := r.Scan(&e.ID, &e.At, &e.Source, &e.Name, &e.Visitor, &e.Visit, &e.UserID, &e.Path, &props, &e.Release)
 		e.Props = json.RawMessage(props)
 		return e, err
 	})

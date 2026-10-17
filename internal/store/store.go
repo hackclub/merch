@@ -659,6 +659,10 @@ func (s *Store) ListSubmissions(ctx context.Context) ([]*Submission, error) {
 	return collect(rows, func(r pgx.Rows) (*Submission, error) { return scanSubmission(r) })
 }
 
+func (s *Store) GetSubmission(ctx context.Context, id int64) (*Submission, error) {
+	return scanSubmission(s.pool.QueryRow(ctx, submissionSelect+` WHERE s.id = $1`, id))
+}
+
 func (s *Store) UpdateSubmission(ctx context.Context, id int64, status, adminNote, sku string) (*Submission, error) {
 	tag, err := s.pool.Exec(ctx, `UPDATE author_submissions SET status = $2, admin_note = $3, sku = $4, updated_at = now() WHERE id = $1`,
 		id, status, adminNote, sku)

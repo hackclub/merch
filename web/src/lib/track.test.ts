@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cartChanges, describeClick, describeField, nextVisit, PageClock, pageProps, sizeChanges, Tracker } from './track';
+import { cartChanges, describeClick, describeField, describeInvalid, nextVisit, PageClock, pageProps, SeenItems, sizeChanges, Tracker, vitalProps } from './track';
 
 const el = (html: string) => {
 	document.body.innerHTML = html;
@@ -10,7 +10,7 @@ describe('Tracker', () => {
 	it('batches events and stamps them with the visit and the client clock', () => {
 		const sent: unknown[] = [];
 		let now = 1000;
-		const t = new Tracker({ send: (b) => sent.push(b), now: () => now, visit: () => 'v1', path: () => '/' });
+		const t = new Tracker({ send: (b) => sent.push(b), now: () => now, visit: () => 'v1', path: () => '/', release: 'r1' });
 		t.track('page_view', { from: '' });
 		now = 1500;
 		t.track('click', { text: 'Add' }, '/items/3-x');
@@ -20,6 +20,7 @@ describe('Tracker', () => {
 		expect(sent).toEqual([
 			{
 				visit: 'v1',
+				release: 'r1',
 				sent: 2000,
 				events: [
 					{ name: 'page_view', path: '/', t: 1000, props: { from: '' } },
@@ -33,7 +34,7 @@ describe('Tracker', () => {
 
 	it('sends big queues in chunks', () => {
 		const sent: { events: unknown[] }[] = [];
-		const t = new Tracker({ send: (b) => sent.push(b as { events: unknown[] }), now: () => 1, visit: () => 'v', path: () => '/' });
+		const t = new Tracker({ send: (b) => sent.push(b as { events: unknown[] }), now: () => 1, visit: () => 'v', path: () => '/', release: '' });
 		for (let i = 0; i < 95; i++) t.track('click');
 		t.flush();
 		expect(sent.map((b) => b.events.length)).toEqual([40, 40, 15]);
@@ -118,5 +119,42 @@ describe('pageProps', () => {
 	it('picks out the item on product pages', () => {
 		expect(pageProps('/items/12-orpheus-sticker')).toEqual({ item_id: 12 });
 		expect(pageProps('/requests')).toEqual({});
+	});
+});
+
+describe('SeenItems', () => {
+	it('lists items that were at least half on screen for a second, in the order they were first seen', () => {
+		const s = new SeenItems();
+		s.update(5, true, 0);
+		s.update(7, true, 0);
+		s.update(7, false, 400); // scrolled past
+		s.update(9, true, 500);
+		expect(s.seen(1000)).toEqual([5]);
+		s.update(7, true, 2000);
+		expect(s.seen(3100)).toEqual([5, 9, 7]);
+		s.update(9, false, 3200);
+		expect(s.seen(9000)).toEqual([5, 9, 7]); // once seen, stays seen
+	});
+});
+
+describe('describeInvalid', () => {
+	it('names the field the browser refused and why, never its value', () => {
+		el(`<form><input name="postal" required pattern="[0-9]{5}" value="ABCDE"><input type="email" name="email" value="orpheus"><input name="city" required></form>`);
+		const [postal, email, city] = document.querySelectorAll('input');
+		expect(describeInvalid(postal)).toEqual({ field: 'postal', type: 'text', reason: 'patternMismatch' });
+		expect(describeInvalid(email)).toEqual({ field: 'email', type: 'email', reason: 'typeMismatch' });
+		expect(describeInvalid(city)).toEqual({ field: 'city', type: 'text', reason: 'valueMissing' });
+		expect(JSON.stringify(describeInvalid(postal))).not.toContain('ABCDE');
+	});
+});
+
+describe('vitalProps', () => {
+	it('keeps the metric, its value, rating and how the page was reached', () => {
+		expect(vitalProps({ name: 'LCP', value: 1234.56, rating: 'good', navigationType: 'navigate' })).toEqual({
+			metric: 'LCP', value: 1235, rating: 'good', nav: 'navigate'
+		});
+		expect(vitalProps({ name: 'CLS', value: 0.123456, rating: 'needs-improvement', navigationType: 'reload' })).toEqual({
+			metric: 'CLS', value: 0.1235, rating: 'needs-improvement', nav: 'reload'
+		});
 	});
 });

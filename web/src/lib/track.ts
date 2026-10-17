@@ -3,21 +3,23 @@
 // is used and improve it. Page views and time on page, clicks, form fields
 // (never what's typed), cart changes, hovers over items, and errors.
 // Text inside [data-private] (addresses) is never sent.
+import { version } from '$app/environment';
 import type { Cart, Sizes } from './cart';
 
 type Props = Record<string, unknown>;
-type Batch = { visit: string; sent: number; events: { name: string; path: string; t: number; props: Props }[] };
+type Batch = { visit: string; release: string; sent: number; events: { name: string; path: string; t: number; props: Props }[] };
 
 const CHUNK = 40;
 const VISIT_IDLE_MS = 30 * 60_000;
 const INPUT_IDLE_MS = 60_000;
 const HOVER_MIN_MS = 500;
+const SEEN_MIN_MS = 1000;
 
 /** Queues events and sends them in batches. */
 export class Tracker {
 	private queue: Batch['events'] = [];
 	constructor(
-		private io: { send: (b: Batch) => void; now: () => number; visit: () => string; path: () => string }
+		private io: { send: (b: Batch) => void; now: () => number; visit: () => string; path: () => string; release: string }
 	) {}
 
 	track(name: string, props: Props = {}, path = this.io.path()) {
@@ -31,7 +33,7 @@ export class Tracker {
 	flush() {
 		while (this.queue.length) {
 			const events = this.queue.splice(0, CHUNK);
-			this.io.send({ visit: this.io.visit(), sent: this.io.now(), events });
+			this.io.send({ visit: this.io.visit(), release: this.io.release, sent: this.io.now(), events });
 		}
 	}
 }
@@ -151,6 +153,42 @@ export class PageClock {
 	}
 }
 
+/** Which items were on screen (at least half of them) for a second, in the order they were first seen. */
+export class SeenItems {
+	private since = new Map<number, number>();
+	private done = new Set<number>();
+	update(id: number, visible: boolean, now: number) {
+		if (this.done.has(id)) return;
+		const since = this.since.get(id);
+		if (visible && since === undefined) this.since.set(id, now);
+		if (!visible && since !== undefined) {
+			if (now - since >= SEEN_MIN_MS) this.done.add(id);
+			this.since.delete(id);
+		}
+	}
+	seen(now: number): number[] {
+		for (const [id, since] of this.since) if (now - since >= SEEN_MIN_MS) this.done.add(id);
+		return [...this.done];
+	}
+}
+
+/** A field the browser refused to submit: which one and why (valueMissing, typeMismatch…), never its value. */
+export function describeInvalid(el: Element): Props | null {
+	if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) return null;
+	const { type, field } = fieldName(el);
+	const out: Props = { field, type };
+	if (!field) delete out.field;
+	const v = el.validity;
+	const reason = (['valueMissing', 'typeMismatch', 'patternMismatch', 'tooShort', 'tooLong', 'rangeUnderflow', 'rangeOverflow', 'stepMismatch', 'badInput', 'customError'] as const).find((k) => v[k]);
+	if (reason) out.reason = reason;
+	return Object.assign(out, context(el));
+}
+
+/** A Core Web Vital (from the web-vitals library) as event props: CLS keeps 4 decimals, the rest whole milliseconds. */
+export function vitalProps(m: { name: string; value: number; rating: string; navigationType: string }): Props {
+	return { metric: m.name, value: m.name === 'CLS' ? Math.round(m.value * 10_000) / 10_000 : Math.round(m.value), rating: m.rating, nav: m.navigationType };
+}
+
 /** Facts about a page from its path: the item on product pages. */
 export function pageProps(path: string): Props {
 	const m = path.match(/^\/items\/(\d+)/);
@@ -166,7 +204,8 @@ let tracker: Tracker | null = null;
 let visit: Visit | null = null;
 // A visit that started before tracking did (the first API call can come first) is announced once it starts.
 let announce = false;
-let page: { id: string; path: string; clock: PageClock; scroll: number; clicks: number } | null = null;
+let page: { id: string; path: string; clock: PageClock; scroll: number; clicks: number; seen: SeenItems } | null = null;
+let seenObserver: IntersectionObserver | null = null;
 let hover: { id: string; since: number } | null = null;
 
 // Ends the current hover over an item, logging it if it lasted.
@@ -242,7 +281,7 @@ function closePage(final: boolean) {
 	page.clock.tick(Date.now(), document.visibilityState === 'visible');
 	tracker.track(
 		'page_time',
-		{ pv: page.id, active_ms: page.clock.activeMs, visible_ms: page.clock.visibleMs, scroll_pct: page.scroll, clicks: page.clicks, final, ...pageProps(page.path) },
+		{ pv: page.id, active_ms: page.clock.activeMs, visible_ms: page.clock.visibleMs, scroll_pct: page.scroll, clicks: page.clicks, seen: page.seen.seen(Date.now()), final, ...pageProps(page.path) },
 		page.path
 	);
 }
@@ -250,7 +289,7 @@ function closePage(final: boolean) {
 /** Starts tracking (once). Call from the root layout. */
 export function startTracking() {
 	if (tracker || typeof window === 'undefined') return;
-	tracker = new Tracker({ send, now: Date.now, visit: () => visit?.id ?? currentVisit(), path: () => location.pathname });
+	tracker = new Tracker({ send, now: Date.now, visit: () => visit?.id ?? currentVisit(), path: () => location.pathname, release: version });
 	currentVisit();
 
 	const input = () => page?.clock.input(Date.now());
@@ -286,6 +325,36 @@ export function startTracking() {
 		if (id) hover = { id, since: now };
 	}, { passive: true });
 
+	// The browser blocked a submit: which fields it refused and why.
+	addEventListener('invalid', (e) => {
+		if (privatePage() || !(e.target instanceof Element)) return;
+		const f = describeInvalid(e.target);
+		if (f) track('field_invalid', f);
+	}, { capture: true });
+
+	// Which items people actually saw (half on screen for a second), reported with page_time.
+	if ('IntersectionObserver' in window) {
+		seenObserver = new IntersectionObserver((entries) => {
+			const now = Date.now();
+			for (const en of entries) {
+				const id = Number(en.target.getAttribute('data-item'));
+				if (id) page?.seen.update(id, en.isIntersecting, now);
+			}
+		}, { threshold: 0.5 });
+		const watch = (n: Node) => {
+			if (!(n instanceof Element)) return;
+			if (n.matches('[data-item]')) seenObserver?.observe(n);
+			n.querySelectorAll('[data-item]').forEach((e) => seenObserver?.observe(e));
+		};
+		watch(document.body);
+		new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach(watch))).observe(document.body, { childList: true, subtree: true });
+	}
+
+	// How fast the site feels on real devices (Core Web Vitals), once per page load.
+	import('web-vitals').then(({ onCLS, onFCP, onINP, onLCP, onTTFB }) => {
+		for (const on of [onCLS, onFCP, onINP, onLCP, onTTFB]) on((m) => track('web_vital', vitalProps(m)));
+	}).catch(() => {});
+
 	addEventListener('error', (e) => track('js_error', { message: squash(e.message, 200), source: (e.filename ?? '').split('?')[0].slice(-120), line: e.lineno, col: e.colno }));
 	addEventListener('unhandledrejection', (e) => track('js_error', { message: squash(String(e.reason?.message ?? e.reason), 200), unhandled: true }));
 	addEventListener('appinstalled', () => track('pwa_installed'));
@@ -296,6 +365,7 @@ export function startTracking() {
 		if (document.visibilityState === 'hidden') {
 			closePage(false);
 			tracker?.flush();
+			setTimeout(() => tracker?.flush(), 0); // web vitals report on this same event, after us
 		} else {
 			page?.clock.tick(Date.now(), false);
 			page?.clock.input(Date.now());
@@ -315,6 +385,11 @@ export function trackPage(path: string) {
 	const from = page?.path ?? '';
 	endHover(Date.now());
 	closePage(true);
-	page = { id: randomId(), path, clock: new PageClock(Date.now()), scroll: 0, clicks: 0 };
+	page = { id: randomId(), path, clock: new PageClock(Date.now()), scroll: 0, clicks: 0, seen: new SeenItems() };
+	// Items already on screen count for the new page too: re-observing reports where they are now.
+	document.querySelectorAll('[data-item]').forEach((e) => {
+		seenObserver?.unobserve(e);
+		seenObserver?.observe(e);
+	});
 	track('page_view', { pv: page.id, from, ...pageProps(path) });
 }

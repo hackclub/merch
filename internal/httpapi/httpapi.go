@@ -74,6 +74,8 @@ type server struct {
 	skusAt time.Time
 
 	history historyCache
+
+	release string // the web build being served, stamped on usage events
 }
 
 // skuCacheTTL bounds how often product pages hit mail.hackclub.com.
@@ -86,7 +88,7 @@ func New(d Deps) http.Handler {
 	if d.Log == nil {
 		d.Log = slog.Default()
 	}
-	s := &server{Deps: d}
+	s := &server{Deps: d, release: buildRelease(d.Static)}
 	if d.Warm {
 		go s.warm(context.Background())
 	}
@@ -676,6 +678,7 @@ func (s *server) adminMarkPaid(w http.ResponseWriter, r *http.Request, v viewer)
 	}
 	req, err := s.Store.MarkPaid(r.Context(), id)
 	if err == nil {
+		s.trackRequest(r, v, "request_paid", req, map[string]any{"by": "admin"})
 		s.emailRequest(r, req, "received")
 	}
 	s.respondRequest(w, req, err)
@@ -706,8 +709,10 @@ func (s *server) adminReject(w http.ResponseWriter, r *http.Request, v viewer) {
 		writeErr(w, http.StatusBadGateway, "couldn't refund the card, so the request wasn't rejected: "+err.Error())
 		return
 	}
+	from := req.Status
 	req, err = s.Store.CloseRequest(r.Context(), id, swag.StatusRejected, body.Note, refunded)
 	if err == nil {
+		s.trackRequest(r, v, "request_rejected", req, map[string]any{"from": from, "has_note": body.Note != "", "refunded": refunded})
 		s.emailRequest(r, req, "rejected")
 	}
 	s.respondRequest(w, req, err)
@@ -818,6 +823,8 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 	if len(changes.Quantities) > 0 {
 		req, warning = s.refundUnusedPostage(r, req)
 	}
+	changed := slices.ContainsFunc(req.Lines, func(l store.RequestLine) bool { return l.RequestedQuantity != nil })
+	s.trackRequest(r, v, "request_dispatched", req, map[string]any{"changed": changed, "has_note": body.Note != "", "warning": warning != ""})
 	s.emailRequest(r, req, "dispatched")
 	writeJSON(w, http.StatusOK, struct {
 		requestView
@@ -844,7 +851,11 @@ func (s *server) adminRefresh(w http.ResponseWriter, r *http.Request, v viewer) 
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	s.respond(w)(s.Store.SetTracking(r.Context(), id, o.TrackingNumber, o.Carrier))
+	req, err = s.Store.SetTracking(r.Context(), id, o.TrackingNumber, o.Carrier)
+	if err == nil {
+		s.trackRequest(r, v, "tracking_updated", req, map[string]any{"carrier": o.Carrier, "has_tracking": o.TrackingNumber != ""})
+	}
+	s.respondRequest(w, req, err)
 }
 
 func (s *server) respond(w http.ResponseWriter) func(*store.Request, error) {
@@ -960,6 +971,7 @@ func (s *server) adminCreateItem(w http.ResponseWriter, r *http.Request, v viewe
 		s.serverErr(w, err)
 		return
 	}
+	s.trackAdmin(r, v, "item_created", map[string]any{"item_id": created.ID, "sku": created.SKU, "visible": created.Visible})
 	writeJSON(w, http.StatusCreated, created)
 }
 
@@ -977,6 +989,7 @@ func (s *server) adminUpdateItem(w http.ResponseWriter, r *http.Request, v viewe
 		writeErr(w, http.StatusUnprocessableEntity, msg)
 		return
 	}
+	before, _ := s.Store.GetItem(r.Context(), id)
 	upd, err := s.Store.UpdateItem(r.Context(), it)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
@@ -986,6 +999,7 @@ func (s *server) adminUpdateItem(w http.ResponseWriter, r *http.Request, v viewe
 	case err != nil:
 		s.serverErr(w, err)
 	default:
+		s.trackAdmin(r, v, "item_updated", map[string]any{"item_id": upd.ID, "sku": upd.SKU, "changed": changedFields(before, upd)})
 		writeJSON(w, http.StatusOK, upd)
 	}
 }
@@ -1011,6 +1025,7 @@ func (s *server) adminUploadItemImage(w http.ResponseWriter, r *http.Request, v 
 	if !ok {
 		return
 	}
+	s.trackAdmin(r, v, "item_media_added", map[string]any{"item_id": id, "kind": "image"})
 	s.respondItem(w)(s.Store.AddItemImage(r.Context(), id, url))
 }
 
@@ -1020,6 +1035,7 @@ func (s *server) adminUploadItemPage(w http.ResponseWriter, r *http.Request, v v
 	if !ok {
 		return
 	}
+	s.trackAdmin(r, v, "item_media_added", map[string]any{"item_id": id, "kind": "page"})
 	s.respondItem(w)(s.Store.AddItemPage(r.Context(), id, url))
 }
 
@@ -1031,6 +1047,7 @@ func (s *server) adminUploadItemPhoto(w http.ResponseWriter, r *http.Request, v 
 		return
 	}
 	p := swag.Photo{URL: url, Caption: strings.TrimSpace(body.Caption), Credit: strings.TrimSpace(body.Credit)}
+	s.trackAdmin(r, v, "item_media_added", map[string]any{"item_id": id, "kind": "photo"})
 	s.respondItem(w)(s.Store.AddItemPhoto(r.Context(), id, p))
 }
 
@@ -1141,10 +1158,12 @@ func (s *server) adminUpdateSettings(w http.ResponseWriter, r *http.Request, v v
 		writeErr(w, http.StatusUnprocessableEntity, "limits can't be negative")
 		return
 	}
+	before, _ := s.Store.GetSettings(r.Context())
 	if err := s.Store.UpdateSettings(r.Context(), st); err != nil {
 		s.serverErr(w, err)
 		return
 	}
+	s.trackAdmin(r, v, "settings_updated", map[string]any{"changed": changedFields(before, st)})
 	s.adminSettings(w, r, v)
 }
 
@@ -1176,6 +1195,10 @@ func (s *server) adminUpdateSubmission(w http.ResponseWriter, r *http.Request, v
 		writeErr(w, http.StatusUnprocessableEntity, "unknown status")
 		return
 	}
+	from := ""
+	if prev, err := s.Store.GetSubmission(r.Context(), id); err == nil {
+		from = prev.Status
+	}
 	sub, err := s.Store.UpdateSubmission(r.Context(), id, body.Status, body.AdminNote, strings.TrimSpace(body.SKU))
 	if errors.Is(err, store.ErrNotFound) {
 		writeErr(w, http.StatusNotFound, "submission not found")
@@ -1184,6 +1207,7 @@ func (s *server) adminUpdateSubmission(w http.ResponseWriter, r *http.Request, v
 		s.serverErr(w, err)
 		return
 	}
+	s.trackAdmin(r, v, "submission_updated", map[string]any{"submission_id": sub.ID, "from": from, "to": sub.Status, "kind": sub.Kind, "has_sku": sub.SKU != ""})
 	writeJSON(w, http.StatusOK, sub)
 }
 
@@ -1246,6 +1270,9 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 
 func (s *server) serverErr(w http.ResponseWriter, err error) {
 	s.Log.Error("internal error", "err", err)
+	if sw, ok := w.(*statusWriter); ok {
+		sw.err = err
+	}
 	writeErr(w, http.StatusInternalServerError, "something went wrong")
 }
 

@@ -395,8 +395,8 @@ used and improve it. **Use it as evidence, and keep it complete:**
 **Release gates** (`internal/httpapi/tracking_gate_test.go`, part of `make test`, so a red gate
 blocks landing):
 - `TestEveryActionIsTracked`: every POST/PUT/PATCH/DELETE route's handler must call `s.track`,
-  directly or through a server method. Admin routes (`/api/admin/`) and the
-  explicit `untracked` list (each entry with its reason) are exempt. Don't add to `untracked` to
+  directly or through a server method (`s.trackRequest`, `s.trackAdmin`). Admin routes count too.
+  Only the explicit `untracked` list (each entry with its reason) is exempt. Don't add to `untracked` to
   get a build through; track the action.
 - `TestEventsAreDocumented`: every event name passed to `s.track` or `track(` must have a valid
   name and appear in backticks in this section.
@@ -405,25 +405,32 @@ blocks landing):
 
 - Columns: `at`, `source` (`client` from the browser, `server` from handlers), `name`, `visitor`
   (random id per browser, cookie `zmr_visitor`), `visit` (per tab; renewed after 30 idle minutes),
-  `user_id` (when signed in), `path` (the page), `props` (jsonb).
+  `user_id` (when signed in), `path` (the page), `props` (jsonb), `release` (the web build's time,
+  e.g. `2026-10-17T14:16:45Z`: the server's build on server events, the open tab's on browser
+  events; `''` before 2026-10-17). Group by `release` to compare before and after a change;
+  Orchard's `get_image_history` maps a build time to its commit.
 - `visitor` links what someone did before they signed in to who they are (`sign_in` has both).
   Leave out admins (`users.email` in `ADMIN_EMAILS`) and `visit_start.props->>'automated' = 'true'`
   (headless browsers, agents) when you measure real people.
 - Browser events (`web/src/lib/track.ts`, sent in batches to `POST /api/events`):
   `visit_start` (referrer, `utm_*`, screen, viewport, language, time zone, touch, PWA, user agent),
   `page_view` (`pv` id, `from`, `item_id` on product pages), `page_time` (`active_ms` with input
-  in the last minute, `visible_ms`, `scroll_pct`, `clicks`; snapshots, so use the
+  in the last minute, `visible_ms`, `scroll_pct`, `clicks`, `seen`: the `data-item` ids at least
+  half on screen for a second, in the order seen; snapshots, so use the
   **`usage_page_times`** view, which keeps the latest per page view), `page_return`, `click` (element,
   its text, `href`, `item_id` and `area` from the nearest `data-item`/`data-track`, `dead` when
   nothing clickable was hit), `field` (which field changed; the choice for radios, checkboxes and
-  selects, only `chars` for typed text), `cart` and `cart_size` (`item_id`, `sku`, `from`, `to`; from
+  selects, only `chars` for typed text), `field_invalid` (the browser blocked a submit: `field`,
+  `type`, `reason` such as `valueMissing` or `patternMismatch`; never the value), `cart` and `cart_size` (`item_id`, `sku`, `from`, `to`; from
   every page, since all cart changes go through `$lib/bag.svelte`), `purpose`, `item_hover` (mouse
   over an item for ≥ 0.5 s), `payment_error` (a card didn't go through: `request_id` and Stripe's `type`,
-  `code`, `decline_code`; never the message), `api_error`, `js_error`, `pwa_installed`. `/admin` sends only page views and
+  `code`, `decline_code`; never the message), `api_error`, `js_error`, `pwa_installed`,
+  `web_vital` (Core Web Vitals from the `web-vitals` library, once per page load: `metric` =
+  `LCP`, `INP`, `CLS`, `FCP` or `TTFB`, `value` in ms (CLS unitless), `rating`, `nav`). `/admin` sends only page views and
   page time.
 - `api`: every `/api/*` and `/auth/*` call (except `/api/events`), logged by middleware: `route`
-  (the mux pattern), `url` (the path, never the query), `status`, `ms`. Use it for errors and
-  slow routes, and for admin actions (the URL has the id).
+  (the mux pattern), `url` (the path, never the query), `status`, `ms`, and on a 500 the
+  `error` that `serverErr` logged. Use it for errors and slow routes.
 - Server events (`s.track` in `internal/httpapi`): `login_start`, `sign_in`, `sign_in_refused`,
   `sign_out`, `payment_started` (the card form is about to charge: `request_id`, `fee_cents`, `country`,
   `retry`), `payment_completed` (Stripe says it's paid in full; the request moved to `pending`),
@@ -434,6 +441,16 @@ blocks landing):
   postage, sample counts, or `error` when it won't pack), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `submission_created`. They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
+- Admin events (`internal/httpapi/insights.go`). Request events belong to the requester's
+  `user_id`, with `admin_id` for who acted, and carry `request_id`, `country`, `purpose`, `source`,
+  `lines`, `items_requested`, `items_shipped`, `fee_cents`, `wait_h` (hours since the request was
+  made), `since_paid_h` and `refunded_cents`: `request_paid` (marked paid by hand, `by`),
+  `request_dispatched` (`changed` when quantities changed, `has_note`, `warning`),
+  `request_rejected` (`from`, `has_note`, `refunded`), `tracking_updated` (`carrier`,
+  `has_tracking`). Catalog and limits, with the admin's `user_id`: `item_created` (`item_id`,
+  `sku`, `visible`), `item_updated` (`changed`: `{field: {from, to}}`, lists as their lengths),
+  `item_media_added` (`kind` = `image`, `page` or `photo`), `settings_updated` (`changed`),
+  `submission_updated` (`from`, `to`, `kind`, `has_sku`). Notes are never logged, only `has_note`.
 - **Never log what people type or where they live.** No addresses, names, notes, search text,
   or IPs: just countries, lengths and choices. Put `data-private` on any element that shows
   personal data, so clicks on it log no text. To track something new, add a `data-item` or `data-track` attribute,
@@ -457,7 +474,40 @@ from usage_events where at > now() - interval '30 days';
 -- why requests and estimates fail
 select name, props->>'error' error, count(*) from usage_events
 where props ? 'error' group by 1, 2 order by 3 desc;
+-- items people saw but didn't add (product rows on screen ≥ 1 s vs cart adds)
+with seen as (select distinct visitor, jsonb_array_elements_text(seen)::bigint item_id from usage_page_times),
+     added as (select distinct visitor, (props->>'item_id')::bigint item_id from usage_events
+               where name = 'cart' and (props->>'to')::int > 0)
+select i.name, count(*) saw, count(a.visitor) added from seen s join items i on i.id = s.item_id
+left join added a using (visitor, item_id) group by 1 order by 2 desc;
+-- the same funnel before and after a release
+select release, count(distinct visitor) filter (where name = 'page_view') visitors,
+       count(distinct visitor) filter (where name = 'request_created') requested
+from usage_events where release <> '' group by 1 order by 1;
 ```
+
+### Self-improvement runs
+
+When Zach asks you to improve the shop from evidence, run this loop end to end:
+
+1. **Read the evidence.** Run `scripts/usage-report 30` (real people) and `scripts/usage-report --all 30`
+   (errors and slow routes). Then join `usage_events` with the domain tables in production
+   (`scripts/prod-psql`): `swag_requests` and `swag_request_items` (what was asked for and
+   shipped; `status`, `paid_at`, `refunded_cents`, `requested_quantity`; app requests have no
+   dispatch time column, so use `request_dispatched.at` and its `wait_h`), `items`
+   (limits, visibility, sizes), `settings`, `shipping_history` (postage and transit), and
+   `author_submissions`. The admin events give you the timeline of what changed.
+2. **Find the biggest leak.** Use the funnel (visited → picked → signed in → estimate → requested →
+   paid → dispatched), where people stop (`page_time`, `field_invalid`, dead clicks,
+   `request_refused`, `shipping_estimate` errors, `payment_error`), what they see but skip (`seen`
+   vs `cart`), slow pages (`web_vital`, `api` `ms`), errors (`api` 5xx `error`, `js_error`,
+   `email_failed`), and what admins change by hand (`request_dispatched.changed`, rejections).
+   Count people, not events, and say how many there were. With fewer than about 20 people in a
+   step, say the evidence is thin, and don't overfit to Zach's own testing.
+3. **Change one thing** (TDD, instrumented, landed as usual), and name in the commit message the
+   numbers that motivated it.
+4. **Check it later.** Compare the same query grouped by `release` before and after. Write what
+   you found, and what you'd try next, in your final reply.
 
 ## External systems
 

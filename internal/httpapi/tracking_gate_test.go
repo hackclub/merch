@@ -24,10 +24,6 @@ var untracked = map[string]string{
 	"POST /api/events": "it is the tracker",
 }
 
-// untrackedAdmin: admin actions are logged by the `api` event (the route,
-// including the id) and their outcome is in the table they change.
-const untrackedAdmin = "/api/admin/"
-
 // TestEveryActionIsTracked: every route that changes something must call
 // s.track (directly or through a server method it calls) with what happened.
 func TestEveryActionIsTracked(t *testing.T) {
@@ -98,12 +94,13 @@ func TestEveryActionIsTracked(t *testing.T) {
 			return true
 		}
 		pattern, _ := strconv.Unquote(lit.Value)
-		method, path, _ := strings.Cut(pattern, " ")
+		method, _, _ := strings.Cut(pattern, " ")
 		if !slices.Contains([]string{"POST", "PUT", "PATCH", "DELETE"}, method) {
 			return true
 		}
 		routes++
-		if _, ok := untracked[pattern]; ok || strings.HasPrefix(path, untrackedAdmin) {
+		// Admin actions count too: how fast requests ship and when the catalog changed is evidence.
+		if _, ok := untracked[pattern]; ok {
 			return true
 		}
 		// The handler is the s.<method> among the arguments (maybe inside s.requireUser(…)).
@@ -127,7 +124,7 @@ func TestEveryActionIsTracked(t *testing.T) {
 }
 
 var (
-	goEvent  = regexp.MustCompile(`s\.track\(r, [^,]+, "([a-z0-9_]+)"`)
+	goEvent  = regexp.MustCompile(`s\.track(?:Request|Admin)?\(r, [^,]+, "([a-z0-9_]+)"`)
 	webEvent = regexp.MustCompile(`\btrack\(\s*'([a-z0-9_]+)'`)
 )
 

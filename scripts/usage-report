@@ -100,6 +100,54 @@ from ev where name = 'api' group by 1 order by p95_ms desc limit 15;
 $ev select path, props->>'el' el, props->>'area' area, props->>'item_id' item_id, count(*), count(distinct visitor) people
 from ev where name = 'click' and props->>'dead' = 'true' group by 1, 2, 3, 4 order by 5 desc limit 15;
 
+\echo '== Releases (web build time): visitors, picks and requests per build'
+$ev select nullif(release, '') release, min(at)::date first_day, count(distinct visitor) visitors,
+    count(distinct visitor) filter (where name = 'cart') picked,
+    count(distinct visitor) filter (where name = 'request_created') requested,
+    count(*) filter (where name = 'shipping_estimate' and props ? 'error') refused_estimates,
+    count(*) filter (where name in ('js_error', 'api_error')) errors
+from ev group by 1 order by 2 desc nulls last limit 10;
+
+\echo '== Seen vs added: items on screen for a second, and how many of those people added them'
+$ev, seen as (
+    select distinct t.visitor, jsonb_array_elements_text(t.seen)::bigint item_id from usage_page_times t
+    where t.page_view in (select props->>'pv' from ev where name = 'page_view')
+), added as (
+    select distinct visitor, (props->>'item_id')::bigint item_id from ev where name = 'cart' and (props->>'to')::int > 0
+)
+select i.name, count(*) people_saw, count(a.visitor) added, round(100.0 * count(a.visitor) / count(*)) pct
+from seen s join items i on i.id = s.item_id left join added a using (visitor, item_id)
+group by 1 order by 2 desc limit 25;
+
+\echo '== Page speed: Core Web Vitals p75 (LCP/FCP/TTFB/INP ms, CLS) by page'
+$ev, v as (select distinct on (visit, props->>'metric') * from ev where name = 'web_vital' order by visit, props->>'metric', at desc)
+select props->>'metric' metric, coalesce(nullif(split_part(path, '/', 2), ''), 'home') page,
+    count(*) loads, percentile_cont(.75) within group (order by (props->>'value')::float) p75,
+    count(*) filter (where props->>'rating' = 'poor') poor
+from v group by 1, 2 order by 1, 3 desc;
+
+\echo '== Fields the browser refused at submit'
+$ev select props->>'field' field, props->>'reason' reason, path, count(*), count(distinct visitor) people
+from ev where name = 'field_invalid' group by 1, 2, 3 order by 4 desc limit 15;
+
+\echo '== Requests (app, last $days days): status, how long they waited to ship, what changed'
+select r.status, count(*) requests, count(distinct r.user_id) people,
+    round(percentile_cont(.5) within group (order by (d.props->>'wait_h')::float)::numeric, 1) median_wait_h,
+    count(*) filter (where (d.props->>'changed')::boolean) shipped_changed,
+    sum(r.refunded_cents) refunded_cents
+from swag_requests r
+left join usage_events d on d.name = 'request_dispatched' and (d.props->>'request_id')::bigint = r.id
+where r.source = 'app' and r.created_at > now() - interval '$days days'
+    and r.user_id not in $staff
+group by 1 order by 2 desc;
+
+\echo '== What admins changed (catalog, limits): line these up with the numbers above'
+select at::date as day, name, props->>'item_id' item_id, props->>'sku' sku,
+    left(coalesce(props->'changed', props - 'item_id' - 'sku')::text, 160) what
+from usage_events where name in ('item_created', 'item_updated', 'item_media_added', 'settings_updated')
+    and at > now() - interval '$days days'
+order by at desc limit 25;
+
 \echo '== Where visits come from'
 $ev select coalesce(nullif(props->>'utm_source', ''), nullif(split_part(props->>'referrer', '/', 3), ''), '(direct)') source,
     count(*) visits, count(*) filter (where (props->>'touch')::boolean) on_touch

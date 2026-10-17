@@ -15,7 +15,10 @@ export default defineConfig({
 			},
 			// Single-page app: every unknown path falls back to index.html, which the
 			// Go server mirrors in production.
-			adapter: adapter({ fallback: 'index.html' })
+			adapter: adapter({ fallback: 'index.html' }),
+			// The build's time names the release: usage events carry it, so changes can
+			// be compared before and after they shipped.
+			version: { name: new Date().toISOString().slice(0, 19) + 'Z' }
 		})
 	],
 	server: {

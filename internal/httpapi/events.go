@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -30,9 +31,29 @@ const (
 )
 
 var (
-	eventName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
-	idChars   = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+	eventName    = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
+	idChars      = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+	releaseChars = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,40}$`)
 )
+
+// buildRelease names the web build being served (SvelteKit's version.json,
+// stamped with the build's time in vite.config.ts), or "" without one.
+func buildRelease(static fs.FS) string {
+	if static == nil {
+		return ""
+	}
+	b, err := fs.ReadFile(static, "_app/version.json")
+	if err != nil {
+		return ""
+	}
+	var v struct {
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(b, &v) != nil || !releaseChars.MatchString(v.Version) {
+		return ""
+	}
+	return v.Version
+}
 
 type visitorKey struct{}
 
@@ -73,15 +94,20 @@ func (s *server) logAPI(next http.Handler) http.Handler {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r)
-		s.track(r, nil, "api", map[string]any{
+		props := map[string]any{
 			"route": r.Pattern, "url": clip(r.URL.Path, 200), "status": sw.status, "ms": time.Since(start).Milliseconds(),
-		})
+		}
+		if sw.err != nil {
+			props["error"] = clip(sw.err.Error(), 300)
+		}
+		s.track(r, nil, "api", props)
 	})
 }
 
 type statusWriter struct {
 	http.ResponseWriter
 	status int
+	err    error // what serverErr reported, for the api event
 }
 
 func (w *statusWriter) WriteHeader(code int) {
@@ -128,7 +154,7 @@ func (s *server) track(r *http.Request, u *store.User, name string, props map[st
 		s.Log.Warn("usage event not encodable", "name", name, "err", err)
 		return
 	}
-	e := store.Event{Source: "server", Name: name, Visitor: visitorOf(r), Visit: visitOf(r), Path: pagePath(r), Props: b}
+	e := store.Event{Source: "server", Name: name, Visitor: visitorOf(r), Visit: visitOf(r), Path: pagePath(r), Props: b, Release: s.release}
 	if u != nil {
 		e.UserID = &u.ID
 	}
@@ -143,9 +169,10 @@ func (s *server) track(r *http.Request, u *store.User, name string, props map[st
 // sent happened that long before it arrived.
 func (s *server) clientEvents(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Visit  string `json:"visit"`
-		Sent   int64  `json:"sent"`
-		Events []struct {
+		Visit   string `json:"visit"`
+		Release string `json:"release"`
+		Sent    int64  `json:"sent"`
+		Events  []struct {
 			Name  string          `json:"name"`
 			Path  string          `json:"path"`
 			T     int64           `json:"t"`
@@ -163,6 +190,9 @@ func (s *server) clientEvents(w http.ResponseWriter, r *http.Request) {
 	visit := body.Visit
 	if !idChars.MatchString(visit) {
 		visit = visitOf(r)
+	}
+	if !releaseChars.MatchString(body.Release) {
+		body.Release = ""
 	}
 	var uid *int64
 	if u := s.currentUser(r); u != nil {
@@ -190,7 +220,7 @@ func (s *server) clientEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		evs = append(evs, store.Event{
 			At: at, Source: "client", Name: in.Name, Visitor: visitorOf(r), Visit: visit, UserID: uid,
-			Path: clip(in.Path, 512), Props: props,
+			Path: clip(in.Path, 512), Props: props, Release: body.Release,
 		})
 	}
 	if len(evs) > 0 {
