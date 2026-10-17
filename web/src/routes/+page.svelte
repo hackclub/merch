@@ -375,9 +375,6 @@
 						Shipping is <strong>{formatCents(quote.estimate.fee_cents)}</strong>, what postage for this package usually costs.
 						{payWhere(payByCard)}
 					</p>
-					{#if payByCard && catalog?.settings.stripe_key}
-						<CardField bind:this={card} stripeKey={catalog.settings.stripe_key} amountCents={quote.estimate.fee_cents} billing={address} />
-					{/if}
 				{/if}
 				{#if intl}
 					<label class="choice" class:on={customsOK}>
@@ -407,6 +404,9 @@
 						<span>I understand, and I'll only request what I'll use.</span>
 					</label>
 				</div>
+				{#if payByCard && catalog?.settings.stripe_key && quote}
+					<CardField bind:this={card} stripeKey={catalog.settings.stripe_key} amountCents={quote.estimate.fee_cents} billing={address} />
+				{/if}
 				{#if haul.length && !side.current}<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
 					<button type="button" class="link" onclick={clearAll}>Clear request</button>{/if}
 				{#if quote && arrivalText(quote.estimate)}<p>{arrivalText(quote.estimate)}, by {quote.estimate.service}.</p>{/if}

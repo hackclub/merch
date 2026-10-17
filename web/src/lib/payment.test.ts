@@ -19,7 +19,7 @@ function fakeCard(result: Awaited<ReturnType<CardForm['confirm']>>) {
 
 describe('payment', () => {
 	it('says how international shipping is paid', () => {
-		expect(payWhere(true)).toBe("Pay it by card below; we ship once it's paid.");
+		expect(payWhere(true)).toBe('');
 		expect(payWhere(false)).toBe("After you submit we'll send you to HCB to pay it; we ship once it's received.");
 	});
 

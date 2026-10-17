@@ -1,11 +1,11 @@
 import { track } from './track';
 import type { Address, RequestStatus } from './types';
 
-// payWhere tells international requesters how they'll pay shipping: by card on
-// the form (Stripe), or on HCB after they submit.
+// payWhere tells international requesters how they'll pay shipping. The card
+// form (Stripe) speaks for itself; HCB happens after they submit.
 export function payWhere(card: boolean): string {
 	return card
-		? "Pay it by card below; we ship once it's paid."
+		? ''
 		: "After you submit we'll send you to HCB to pay it; we ship once it's received.";
 }
 
