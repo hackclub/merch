@@ -10,7 +10,7 @@
 	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from '$lib/cart';
 	import { feeTooltip, galleryRows, roughFee } from '$lib/gallery';
 	import { pickedLines } from '$lib/haul';
-	import { itemPath, previewCount, showsAmountIn3D, thumbnail, tilePreview } from '$lib/items';
+	import { cardSides, itemPath, previewCount, showsAmountIn3D, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
@@ -245,8 +245,19 @@
 
 		{#snippet peekPanel(item: Item)}
 			{@const preview = tilePreview(item)}
+			{@const sides = cardSides(item)}
 			<div class="peek" aria-hidden="true">
-				{#if thumbnail(item) || preview}
+				{#if sides}
+					<!-- Cards show both printed sides flat; portrait cards sit side by side. -->
+					<div class="peek-sides" class:portrait={(item.height_in ?? 0) > (item.width_in ?? 0)}>
+						{#each sides as src, i (i)}
+							<figure style:aspect-ratio="{item.width_in} / {item.height_in}">
+								<img {src} alt="" />
+								<figcaption>{i ? 'Back' : 'Front'}</figcaption>
+							</figure>
+						{/each}
+					</div>
+				{:else if thumbnail(item) || preview}
 					<div class="peek-img" class:sticker={item.packs === 'sticker'}>
 						{#if thumbnail(item)}<img src={thumbnail(item)} alt="" />{/if}
 						{#if preview}<Tile3D {preview} active count={previewCount(item, cart[item.id] ?? 0)} rest={'stickers' in preview ? -0.25 : -0.45} />{/if}
@@ -505,6 +516,14 @@
 		.peek-img img { width: 85%; height: 85%; object-fit: contain; mix-blend-mode: multiply; }
 		.peek-img.sticker img { mix-blend-mode: normal; }
 		.peek-3d :global(.controls) { display: none; }
+		.peek-sides { display: grid; gap: 0.5rem; margin-bottom: 0.4rem; }
+		.peek-sides.portrait { grid-template-columns: 1fr 1fr; }
+		.peek-sides figure { position: relative; margin: 0; background: var(--tile); }
+		.peek-sides img { display: block; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: multiply; }
+		.peek-sides figcaption {
+			position: absolute; left: 0.35rem; bottom: 0.35rem; padding: 0.1rem 0.35rem; background: white;
+			font: 0.65rem var(--mono); text-transform: uppercase; letter-spacing: 0.04em;
+		}
 		/* The hover panel shows the amount in 3D, so the row doesn't. */
 		.amount-3d { display: none; }
 		/* Once the 3D view or clip is up it replaces the photo. */

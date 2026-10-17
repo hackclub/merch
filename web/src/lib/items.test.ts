@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byFilename, formatUnitCost, isBooklet, itemIdFromParam, productPreview, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, previewCount, showsAmountIn3D, tilePreview, thumbnail } from './items';
+import { byFilename, cardSides, formatUnitCost, isBooklet, itemIdFromParam, productPreview, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, previewCount, showsAmountIn3D, tilePreview, thumbnail } from './items';
 import type { Item } from './types';
 
 const poster: Item = {
@@ -223,5 +223,17 @@ describe('showsAmountIn3D', () => {
 		// A plain print keeps its turning tile; nothing measured can't be stacked.
 		expect(showsAmountIn3D({ ...poster, width_in: 11, height_in: 17 })).toBe(false);
 		expect(showsAmountIn3D({ ...poster, clip: 'loop.mp4', width_in: null, height_in: null })).toBe(false);
+	});
+});
+
+describe('cardSides', () => {
+	const card: Item = { ...poster, packs: 'postcard', width_in: 6, height_in: 4 };
+	it('gives a card\'s front and back, for the hover preview', () => {
+		expect(cardSides(card)).toEqual(['https://cdn.example/front.jpg', 'https://cdn.example/back.jpg']);
+	});
+	it('is null for one-sided cards, cards printed the same both sides, and anything else', () => {
+		expect(cardSides({ ...card, images: ['https://cdn.example/front.jpg'] })).toBeNull();
+		expect(cardSides({ ...card, images: ['https://cdn.example/a.jpg', 'https://cdn.example/a.jpg'] })).toBeNull();
+		expect(cardSides(poster)).toBeNull();
 	});
 });

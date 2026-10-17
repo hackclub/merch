@@ -146,6 +146,10 @@ export function loadPreviewViewer(canvas: HTMLCanvasElement, preview: Preview3D,
 	return import('./paper3d').then((m) => m.createViewer(canvas, preview.sheet, onReady));
 }
 
+/** A card's front and back, shown flat side by side in the shop's hover preview; null unless it has two different sides. */
+export const cardSides = (item: Item): [string, string] | null =>
+	item.packs === 'postcard' && item.images.length >= 2 && item.images[0] !== item.images[1] ? [item.images[0], item.images[1]] : null;
+
 /** The postcard view's options for a sized postcard item, no phone (the product page adds one). */
 export const postcardOptions = (item: Item, phone = false): PostcardOptions => ({
 	kind: 'postcards', front: item.images[0], back: item.images[1], widthIn: item.width_in!, heightIn: item.height_in!,
