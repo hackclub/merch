@@ -60,7 +60,7 @@ cmd/shiphistory/     loads past shipments for estimates (see "Shipping estimates
 internal/cdn/        cdn.hackclub.com upload client (item images)
 internal/imgprep/    shrinks uploaded artwork to ≤1600px JPEGs before upload
 internal/httpapi/    routes, role middleware, CSRF guard, SPA static serving
-web/                 SvelteKit SPA (adapter-static, ssr=false) + service worker + manifest
+web/                 SvelteKit SPA (adapter-static, ssr=false) + manifest
 ```
 
 ## Visual style
@@ -698,5 +698,8 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   whole school can share one address. A refused call is a 429, logged as an `api` event with
   `status` 429. Production turns this on (`Deps.RateLimit`); tests turn it on only where they
   test it.
-- The service worker never caches `/api/*` or `/auth/*`. Keep it that way; limits and statuses
-  must be live.
+- No service worker. The old offline cache (removed 2026-10-17) served stale or failed asset
+  loads after a deploy, and the page came up blank. 0 of 56 visitors in 30 days had installed the
+  PWA. `web/static/service-worker.js` is a kill switch: browsers that still have the old worker
+  load it, and it clears the caches, unregisters, and reloads the open tabs. Keep it, and don't
+  add `web/src/service-worker.ts` back (SvelteKit registers it automatically).
