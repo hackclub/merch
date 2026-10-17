@@ -8,9 +8,9 @@
 	import { session } from '$lib/session.svelte';
 	import { arrivalText, costBreakdown, ozText } from '$lib/shipping';
 	import { lineText, shipBody } from '$lib/ship';
-	import type { Item, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
+	import type { APIKey, Item, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
 
-	type Tab = 'requests' | 'items' | 'settings' | 'submissions';
+	type Tab = 'requests' | 'items' | 'settings' | 'submissions' | 'api keys';
 	let tab = $state<Tab>('requests');
 	let error = $state('');
 	let flash = $state('');
@@ -21,6 +21,9 @@
 	let skus = $state<WarehouseSKU[]>([]);
 	let settings = $state<Settings | null>(null);
 	let submissions = $state<Submission[]>([]);
+	let apiKeys = $state<APIKey[]>([]);
+	let newKeyName = $state('');
+	let newToken = $state(''); // shown once, right after the key is made
 
 	async function guard(fn: () => Promise<unknown>, ok = '') {
 		error = flash = '';
@@ -54,12 +57,32 @@
 			submissions = (await api.get<{ submissions: Submission[] }>('/api/admin/submissions')).submissions;
 		});
 
+	const loadKeys = () =>
+		guard(async () => {
+			apiKeys = (await api.get<{ keys: APIKey[] }>('/api/admin/api-keys')).keys;
+		});
+	const makeKey = () =>
+		guard(async () => {
+			const res = await api.post<{ key: APIKey; token: string }>('/api/admin/api-keys', { name: newKeyName });
+			newToken = res.token;
+			newKeyName = '';
+			await loadKeys();
+		}, 'Key made. Copy it now: it won\'t be shown again.');
+	const revokeKey = (k: APIKey) => {
+		if (!confirm(`Revoke "${k.name}"? Agents using it stop working.`)) return;
+		guard(async () => {
+			await api.post(`/api/admin/api-keys/${k.id}/revoke`);
+			await loadKeys();
+		}, `Revoked ${k.name}`);
+	};
+
 	onMount(() => {
 		if (!session.me?.roles.admin) return;
 		loadRequests();
 		loadItems();
 		loadSettings();
 		loadSubmissions();
+		loadKeys();
 	});
 
 	const act = (id: number, action: string, body: object = {}) =>
@@ -157,7 +180,7 @@
 	<p class="error">Admins only.</p>
 {:else}
 	<div class="row" style="margin-bottom: 1rem">
-		{#each ['requests', 'items', 'settings', 'submissions'] as t}
+		{#each ['requests', 'items', 'settings', 'submissions', 'api keys'] as t}
 			<button class:secondary={tab !== t} onclick={() => (tab = t as Tab)}>{t}</button>
 		{/each}
 	</div>
@@ -395,6 +418,30 @@
 			</div>
 			<button style="margin-top: 0.75rem">Save settings</button>
 		</form>
+	{:else if tab === 'api keys'}
+		<p>Agents use these keys to review requests: read them, add notes, ship and reject. A key acts for you, and
+			only on the <a href="/api/agent" target="_blank" rel="noreferrer">agent API</a> (that page is the agent's instructions).</p>
+		<form class="row" onsubmit={(e) => { e.preventDefault(); makeKey(); }}>
+			<input bind:value={newKeyName} placeholder="Name, e.g. Review agent" style="width: auto" />
+			<button>Make key</button>
+		</form>
+		{#if newToken}<p data-private><code>{newToken}</code></p>{/if}
+		<table>
+			<thead><tr><th>Name</th><th>Key</th><th>Made</th><th>Last used</th><th></th></tr></thead>
+			<tbody>
+				{#each apiKeys as k (k.id)}
+					<tr class:muted={k.revoked_at}>
+						<td>{k.name}</td>
+						<td><code>{k.prefix}…</code></td>
+						<td>{new Date(k.created_at).toLocaleDateString()} <span class="muted">by {k.created_by_email}</span></td>
+						<td>{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : 'never'}</td>
+						<td>{#if k.revoked_at}Revoked {new Date(k.revoked_at).toLocaleDateString()}{:else}<button class="secondary" onclick={() => revokeKey(k)}>Revoke</button>{/if}</td>
+					</tr>
+				{:else}
+					<tr><td colspan="5" class="muted">No keys yet.</td></tr>
+				{/each}
+			</tbody>
+		</table>
 	{:else if tab === 'submissions'}
 		<table>
 			<thead><tr><th>Author</th><th>Material</th><th>Qty</th><th>Status / SKU / note</th><th></th></tr></thead>

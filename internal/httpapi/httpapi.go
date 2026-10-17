@@ -135,6 +135,18 @@ func New(d Deps) http.Handler {
 	mux.Handle("PUT /api/admin/settings", s.requireAdmin(s.adminUpdateSettings))
 	mux.Handle("GET /api/admin/submissions", s.requireAdmin(s.adminSubmissions))
 	mux.Handle("PUT /api/admin/submissions/{id}", s.requireAdmin(s.adminUpdateSubmission))
+	mux.Handle("GET /api/admin/api-keys", s.requireAdmin(s.adminAPIKeys))
+	mux.Handle("POST /api/admin/api-keys", s.requireAdmin(s.adminCreateAPIKey))
+	mux.Handle("POST /api/admin/api-keys/{id}/revoke", s.requireAdmin(s.adminRevokeAPIKey))
+
+	// agents reviewing requests, with an admin's API key (agent.go)
+	mux.HandleFunc("GET /api/agent", s.agentDocs)
+	mux.Handle("GET /api/agent/requests", s.requireAgent(s.adminRequests))
+	mux.Handle("GET /api/agent/requests/{id}", s.requireAgent(s.agentRequest))
+	mux.Handle("POST /api/agent/requests/{id}/notes", s.requireAgent(s.agentNote))
+	mux.Handle("POST /api/agent/requests/{id}/dispatch", s.requireAgent(s.adminDispatch))
+	mux.Handle("POST /api/agent/requests/{id}/reject", s.requireAgent(s.adminReject))
+	mux.Handle("GET /api/agent/items", s.requireAgent(s.adminItems))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeErr(w, http.StatusNotFound, "not found") })
 	mux.HandleFunc("/", s.static)
@@ -169,6 +181,7 @@ type ctxKey struct{}
 type viewer struct {
 	user  *store.User
 	roles roles
+	key   *store.APIKey // set when an agent calls with an API key
 }
 
 type roles struct {

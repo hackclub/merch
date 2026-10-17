@@ -31,6 +31,17 @@ export type Item = {
 export type Variant = { label: string; sku: string; weight_oz?: number | null }; // weight_oz: one unit of this size; null = the item's
 export type Photo = { url: string; caption: string; credit: string };
 
+/** A key an agent uses to review requests (/api/agent). The token is shown only when it's made. */
+export type APIKey = {
+	id: number;
+	name: string;
+	prefix: string;
+	created_by_email: string;
+	created_at: string;
+	last_used_at: string | null;
+	revoked_at: string | null;
+};
+
 export type Settings = {
 	requests_open: boolean;
 	international_shipping_fee_cents: number;

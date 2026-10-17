@@ -25,6 +25,7 @@ through the app, not into migrations or seed files. Before every commit, read `g
 | Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card on the form (Stripe) before we ship (see "Shipping estimates and packing"). |
 | YSWS author | Their HCA email matches `Hack Club Auth Email` in the **YSWS Authors** table of the Unified YSWS Projects DB (Airtable `app3A5kJwYqxMLOgh`) | Submit print-ready material (stickers, posters…) to be printed and stocked in the warehouse. |
 | Admin | Email is in `ADMIN_EMAILS` (admins are also authors) | Manage global limits, list warehouse SKUs as items, set visibility and order, review requests (ship → tracking), and review author submissions. |
+| Review agent | An API key an admin made (`Authorization: Bearer merch_…`) | Read pending requests, the requester and their history, add notes, ship (with changes) or reject. See "Agent API". |
 
 Items can come in **sizes** (`items.variants`, e.g. the red Hack Club T-shirt `Swa/Shirt/HC` with
 S/M/L/XL → `Swa/Shirt/HC/<size>`). Each size ships its own warehouse SKU; limits count the item as a
@@ -473,7 +474,10 @@ blocks landing):
   `from_chars`; never the text). Catalog and limits, with the admin's `user_id`: `item_created` (`item_id`,
   `sku`, `visible`), `item_updated` (`changed`: `{field: {from, to}}`, lists as their lengths),
   `item_media_added` (`kind` = `image`, `page` or `photo`), `settings_updated` (`changed`),
-  `submission_updated` (`from`, `to`, `kind`, `has_sku`). Notes are never logged, only `has_note`.
+  `submission_updated` (`from`, `to`, `kind`, `has_sku`), `api_key_created` and `api_key_revoked`
+  (`api_key_id`). Notes are never logged, only `has_note`. What an agent does with an API key
+  (see "Agent API") logs the same events with `api_key_id` added; its notes are
+  `internal_note_updated` with `appended`.
 - **Never log what people type or where they live.** No addresses, names, notes, search text,
   or IPs: just countries, lengths and choices. Put `data-private` on any element that shows
   personal data, so clicks on it log no text. To track something new, add a `data-item` or `data-track` attribute,
@@ -532,6 +536,25 @@ When Zach asks you to improve the shop from evidence, run this loop end to end:
 4. **Check it later.** Compare the same query grouped by `release` before and after. Write what
    you found, and what you'd try next, in your final reply.
 
+## Agent API
+
+A scheduled agent (about every 3 hours) reviews pending requests through `/api/agent/*`
+(`internal/httpapi/agent.go`). Its docs are `internal/httpapi/agent_api.md`, served at
+`GET /api/agent`; keep them in step with the code, because they're all the agent reads.
+- Admins make and revoke keys on the Admin page's API keys tab (`/api/admin/api-keys`). The
+  token (`merch_…`) is shown once; only its SHA-256 is stored (`api_keys`).
+- A key acts for the admin who made it and stops working if they leave `ADMIN_EMAILS`. It
+  works only on `/api/agent/*`, never on cookie routes, and can't make keys or change items
+  or settings.
+- `GET /api/agent/requests/{id}` adds `requester`, `history` (their other requests) and
+  `same_address` (other accounts' requests to the same street and postal code, compared on
+  letters and digits only).
+- `POST …/notes` appends a signed paragraph to `internal_note`; it never replaces it.
+  `POST …/dispatch` and `…/reject` are the admin handlers, so they ship real mail and send
+  the same emails. Uncertain cases get a `Needs a human:` note and stay `pending`.
+- While production is behind Orchard login, the agent also needs the ingress bypass secret
+  (`get_ingress_protection`).
+
 ## External systems
 
 - **Hack Club Auth**: OAuth2 authorization code flow. The token comes from `/oauth/token`, then
@@ -557,7 +580,8 @@ When Zach asks you to improve the shop from evidence, run this loop end to end:
     `<THESEUS_ORDER_TAG>-request-<id>`, so retries replay the order instead of shipping twice.
   - International orders need a phone number for customs.
   - A billing profile is required; it comes from the API key's default.
-  - **Never call CreateOrder outside the admin "Ship" action. It ships real mail.**
+  - **Never call CreateOrder outside the admin "Ship" action (`adminDispatch`, which the
+    agent API's dispatch also uses). It ships real mail.**
 - **Stripe** (`internal/stripe`, `internal/httpapi/payments.go`, `web/src/lib/CardField.svelte`)
   takes international shipping payments with a card field right on the request form: Stripe's
   Payment Element, cards only, no wallets. It asks for just the number, expiry and CVC (the

@@ -54,11 +54,17 @@ func (s *server) trackRequest(r *http.Request, v viewer, name string, req *store
 	if v.user != nil {
 		p["admin_id"] = v.user.ID
 	}
+	if v.key != nil {
+		p["api_key_id"] = v.key.ID
+	}
 	s.track(r, &store.User{ID: req.UserID}, name, p)
 }
 
 // trackAdmin records an admin's change to the catalog, settings or submissions.
 func (s *server) trackAdmin(r *http.Request, v viewer, name string, p map[string]any) {
+	if v.key != nil {
+		p["api_key_id"] = v.key.ID
+	}
 	s.track(r, v.user, name, p)
 }
 
