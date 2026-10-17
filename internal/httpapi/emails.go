@@ -19,9 +19,11 @@ type Mailer interface {
 
 // emailRequest tells a requester what happened to their request: kind is
 // received, dispatched or rejected. Each kind goes out once per request (the
-// idempotency key), and a failure is logged without undoing the action.
+// idempotency key), and a failure is logged without undoing the action. Every
+// email is saved word for word in sent_emails (logEmail), even with no mailer
+// configured, so audits can read what people were told.
 func (s *server) emailRequest(r *http.Request, req *store.Request, kind string) {
-	if s.Mailer == nil || req.UserEmail == "" {
+	if req.UserEmail == "" {
 		return
 	}
 	var e loops.Email
@@ -34,13 +36,63 @@ func (s *server) emailRequest(r *http.Request, req *store.Request, kind string) 
 		e = rejectedEmail(req, s.Config.BaseURL)
 	}
 	e.IdempotencyKey = s.Config.TheseusOrderTag + "-request-" + strconv.FormatInt(req.ID, 10) + "-" + kind
+	if s.Mailer == nil {
+		s.logEmail(r, req, kind, e, "unsent", "")
+		return
+	}
 	u := &store.User{ID: req.UserID}
 	if err := s.Mailer.Send(r.Context(), e); err != nil {
 		s.Log.Error("email not sent", "kind", kind, "request", req.ID, "err", err)
-		s.track(r, u, "email_failed", map[string]any{"kind": kind, "request_id": req.ID, "error": err.Error()})
+		id := s.logEmail(r, req, kind, e, "failed", err.Error())
+		s.track(r, u, "email_failed", map[string]any{"kind": kind, "request_id": req.ID, "email_id": id, "error": err.Error()})
 		return
 	}
-	s.track(r, u, "email_sent", map[string]any{"kind": kind, "request_id": req.ID})
+	id := s.logEmail(r, req, kind, e, "sent", "")
+	s.track(r, u, "email_sent", map[string]any{"kind": kind, "request_id": req.ID, "email_id": id})
+}
+
+// logEmail saves an email in sent_emails and returns its id (0 if it couldn't).
+func (s *server) logEmail(r *http.Request, req *store.Request, kind string, e loops.Email, status, errText string) int64 {
+	row, err := s.Store.LogEmail(r.Context(), store.SentEmail{
+		Kind: kind, RequestID: &req.ID, UserID: &req.UserID, To: e.To, Subject: e.Subject, Preview: e.Preview,
+		Body: e.Body, IdempotencyKey: e.IdempotencyKey, Status: status, Error: errText, Release: s.release,
+	})
+	if err != nil {
+		s.Log.Warn("email not logged", "kind", kind, "request", req.ID, "err", err)
+		return 0
+	}
+	return row.ID
+}
+
+// adminEmails lists logged emails, newest first: ?request_id=, ?kind=,
+// ?status= (sent, failed, unsent), ?before=<id> to page, ?limit= (default 100, max 500).
+func (s *server) adminEmails(w http.ResponseWriter, r *http.Request, v viewer) {
+	q := r.URL.Query()
+	f := store.EmailFilter{Kind: q.Get("kind"), Status: q.Get("status"), Limit: 100}
+	for name, dst := range map[string]*int64{"request_id": &f.RequestID, "before": &f.Before} {
+		if raw := q.Get(name); raw != "" {
+			n, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, name+" must be a number")
+				return
+			}
+			*dst = n
+		}
+	}
+	if raw := q.Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			writeErr(w, http.StatusBadRequest, "limit must be a positive number")
+			return
+		}
+		f.Limit = min(n, 500)
+	}
+	emails, err := s.Store.ListEmails(r.Context(), f)
+	if err != nil {
+		s.serverErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"emails": emails})
 }
 
 func receivedEmail(req *store.Request, baseURL string) loops.Email {

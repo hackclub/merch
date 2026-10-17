@@ -461,7 +461,7 @@ blocks landing):
   `payment_refunded` (a rejected or cancelled request's card payment went back: `request_id`,
   `fee_cents`, `refund_cents`, `country`, `by` = `admin` or `requester`, `partial` when shipping
   less made postage cheaper), `email_sent` and `email_failed` (a request email: `kind` = `received`, `dispatched` or `rejected`,
-  `request_id`, and Loops' `error`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
+  `request_id`, `email_id` (its `sent_emails` row, with the full text), and Loops' `error`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
   postage, `postage_basis` (the country's rate card, or `international` without one), sample counts, `restock` when a line is backordered, or `error` when it won't pack), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `submission_created`. They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
@@ -614,6 +614,15 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   idempotency key `<THESEUS_ORDER_TAG>-request-<id>-<kind>` sends each one once. A failed send is
   logged (`email_failed`) and never blocks the action. Without `LOOPS_API_KEY`, no emails. The
   key lives only in the shared `.env` and Orchard.
+- **Every email is saved word for word** in `sent_emails` (`kind`, `request_id`, `user_id`,
+  `to_email`, `subject`, `preview`, `body`, `idempotency_key`, `status` = `sent`, `failed` or
+  `unsent` (no `LOOPS_API_KEY`, so dev logs the wording too), `error`, `release`), so audits
+  can read what people were told and catch confusing or odd wording. Add any new email through
+  `emailRequest` (or `logEmail`) so it's logged too. Read them on the Admin page's emails tab,
+  `GET /api/admin/emails` or `/api/agent/emails` (`?request_id=`, `?kind=`, `?status=`,
+  `?before=`, `?limit=`), or `scripts/prod-psql -c "select at, kind, request_id, subject, body
+  from sent_emails order by id desc limit 20"`. The table holds requesters' emails and names
+  (the greeting): it's personal data, so never copy rows into the repo.
 - **cdn.hackclub.com** hosts item images. Admins upload them on the admin Items tab; the
   server re-encodes them as ≤1600px JPEGs (print PNGs are ~9 MB) and stores the CDN URLs in
   `items.images` (ordered; the first is the thumbnail). Each item has a product page at

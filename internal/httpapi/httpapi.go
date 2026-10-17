@@ -138,6 +138,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET /api/admin/api-keys", s.requireAdmin(s.adminAPIKeys))
 	mux.Handle("POST /api/admin/api-keys", s.requireAdmin(s.adminCreateAPIKey))
 	mux.Handle("POST /api/admin/api-keys/{id}/revoke", s.requireAdmin(s.adminRevokeAPIKey))
+	mux.Handle("GET /api/admin/emails", s.requireAdmin(s.adminEmails))
 
 	// agents reviewing requests, with an admin's API key (agent.go)
 	mux.HandleFunc("GET /api/agent", s.agentDocs)
@@ -147,6 +148,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/agent/requests/{id}/dispatch", s.requireAgent(s.adminDispatch))
 	mux.Handle("POST /api/agent/requests/{id}/reject", s.requireAgent(s.adminReject))
 	mux.Handle("GET /api/agent/items", s.requireAgent(s.adminItems))
+	mux.Handle("GET /api/agent/emails", s.requireAgent(s.adminEmails))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeErr(w, http.StatusNotFound, "not found") })
 	mux.HandleFunc("/", s.static)

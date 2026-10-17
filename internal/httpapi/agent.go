@@ -87,12 +87,18 @@ func (s *server) agentRequest(w http.ResponseWriter, r *http.Request, v viewer) 
 		s.serverErr(w, err)
 		return
 	}
+	emails, err := s.Store.ListEmails(r.Context(), store.EmailFilter{RequestID: req.ID, Limit: 50})
+	if err != nil {
+		s.serverErr(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, struct {
 		requestView
-		Requester   *store.Requester `json:"requester"`
-		History     []*store.Request `json:"history"`      // their other requests, newest first
-		SameAddress []*store.Request `json:"same_address"` // other people's requests to this address
-	}{out[0], who, history, nonNilRequests(same)})
+		Requester   *store.Requester  `json:"requester"`
+		History     []*store.Request  `json:"history"`      // their other requests, newest first
+		SameAddress []*store.Request  `json:"same_address"` // other people's requests to this address
+		Emails      []store.SentEmail `json:"emails"`       // what we emailed them about this request, newest first
+	}{out[0], who, history, nonNilRequests(same), emails})
 }
 
 func nonNilRequests(rs []*store.Request) []*store.Request {

@@ -47,6 +47,15 @@ One request, with the same fields, plus:
 - `same_address`: other accounts' requests to the same street address and postal code.
   Siblings and club leaders can share an address. Many accounts at one address can also mean
   one person asking many times.
+- `emails`: what we emailed the requester about this request, newest first (see below).
+
+### `GET /api/agent/emails`
+
+Every email the site sent, word for word, newest first (100 by default): `id`, `at`, `kind`
+(`received`, `dispatched` or `rejected`), `request_id`, `to`, `subject`, `preview`, `body`
+(plain text), `status` (`sent`, `failed`, or `unsent` when no mailer is set up) and `error`.
+Filter with `?request_id=`, `?kind=`, `?status=`; page with `?before=<id>` and `?limit=` (up
+to 500). Use it to audit what people are told: wording that's confusing, wrong, or reads oddly.
 
 ### `GET /api/agent/items`
 

@@ -8,9 +8,9 @@
 	import { session } from '$lib/session.svelte';
 	import { arrivalText, costBreakdown, ozText } from '$lib/shipping';
 	import { lineText, shipBody } from '$lib/ship';
-	import type { APIKey, Item, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
+	import type { APIKey, Item, SentEmail, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
 
-	type Tab = 'requests' | 'items' | 'settings' | 'submissions' | 'api keys';
+	type Tab = 'requests' | 'items' | 'settings' | 'submissions' | 'emails' | 'api keys';
 	let tab = $state<Tab>('requests');
 	let error = $state('');
 	let flash = $state('');
@@ -22,6 +22,8 @@
 	let settings = $state<Settings | null>(null);
 	let submissions = $state<Submission[]>([]);
 	let apiKeys = $state<APIKey[]>([]);
+	let emails = $state<SentEmail[]>([]);
+	let emailStatus = $state('');
 	let newKeyName = $state('');
 	let newToken = $state(''); // shown once, right after the key is made
 
@@ -57,6 +59,12 @@
 			submissions = (await api.get<{ submissions: Submission[] }>('/api/admin/submissions')).submissions;
 		});
 
+	const loadEmails = () =>
+		guard(async () => {
+			const q = emailStatus ? `?status=${emailStatus}` : '';
+			emails = (await api.get<{ emails: SentEmail[] }>(`/api/admin/emails${q}`)).emails;
+		});
+
 	const loadKeys = () =>
 		guard(async () => {
 			apiKeys = (await api.get<{ keys: APIKey[] }>('/api/admin/api-keys')).keys;
@@ -82,6 +90,7 @@
 		loadItems();
 		loadSettings();
 		loadSubmissions();
+		loadEmails();
 		loadKeys();
 	});
 
@@ -180,7 +189,7 @@
 	<p class="error">Admins only.</p>
 {:else}
 	<div class="row" style="margin-bottom: 1rem">
-		{#each ['requests', 'items', 'settings', 'submissions', 'api keys'] as t}
+		{#each ['requests', 'items', 'settings', 'submissions', 'emails', 'api keys'] as t}
 			<button class:secondary={tab !== t} onclick={() => (tab = t as Tab)}>{t}</button>
 		{/each}
 	</div>
@@ -418,6 +427,35 @@
 			</div>
 			<button style="margin-top: 0.75rem">Save settings</button>
 		</form>
+	{:else if tab === 'emails'}
+		<p>Every email the site sends requesters, word for word (newest 100).</p>
+		<div class="row">
+			<select bind:value={emailStatus} onchange={loadEmails} style="width: auto">
+				<option value="">All</option>
+				{#each ['sent', 'failed', 'unsent'] as s}<option value={s}>{s}</option>{/each}
+			</select>
+		</div>
+		<table>
+			<thead><tr><th>When</th><th>Request</th><th>To</th><th>Email</th><th>Status</th></tr></thead>
+			<tbody>
+				{#each emails as e (e.id)}
+					<tr>
+						<td>{new Date(e.at).toLocaleString()}</td>
+						<td>{e.request_id ? `#${e.request_id}` : ''} <span class="muted">{e.kind}</span></td>
+						<td data-private>{e.to}</td>
+						<td data-private>
+							<details>
+								<summary><strong>{e.subject}</strong> <span class="muted">{e.preview}</span></summary>
+								<pre class="email-body">{e.body}</pre>
+							</details>
+						</td>
+						<td>{e.status}{#if e.error}<div class="muted">{e.error}</div>{/if}</td>
+					</tr>
+				{:else}
+					<tr><td colspan="5" class="muted">No emails yet.</td></tr>
+				{/each}
+			</tbody>
+		</table>
 	{:else if tab === 'api keys'}
 		<p>Agents use these keys to review requests: read them, add notes, ship and reject. A key acts for you, and
 			only on the <a href="/api/agent" target="_blank" rel="noreferrer">agent API</a> (that page is the agent's instructions).</p>
@@ -495,5 +533,6 @@
 	.photo-row { display: grid; grid-template-columns: 4rem 1fr auto; gap: 0.5rem; align-items: center; margin: 0.4rem 0; }
 	.photo-row img { width: 4rem; height: 3rem; object-fit: cover; border-radius: 4px; }
 	.photo-row div { display: grid; gap: 0.25rem; }
+	.email-body { white-space: pre-wrap; font-family: inherit; margin: 0.5rem 0 0; }
 	.small-btn { background: var(--dark); padding: 0.3rem 0.8rem; font-size: 0.85rem; display: inline-block; margin-top: 0.25rem; cursor: pointer; }
 </style>

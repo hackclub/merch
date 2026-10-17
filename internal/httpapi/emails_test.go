@@ -350,3 +350,72 @@ func TestShipLessRefundsPostageDifference(t *testing.T) {
 		t.Fatalf("payment_refunded = %+v", ev)
 	}
 }
+
+// Every email is saved word for word (sent_emails), and its usage event points at the row.
+func TestEmailsAreLogged(t *testing.T) {
+	h, m := newMailHarness(t)
+	it := h.mkItem("Sti/A", true)
+	var r store.Request
+	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 2}}}, &r)
+	m.fail = fmt.Errorf("loops: 500: down")
+	h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/requests/%d/dispatch", r.ID), map[string]any{}, nil)
+
+	logged, err := h.store.ListEmails(context.Background(), store.EmailFilter{RequestID: r.ID, Limit: 10})
+	if err != nil || len(logged) != 2 {
+		t.Fatalf("logged = %+v %v", logged, err)
+	}
+	failed, sent := logged[0], logged[1]
+	want := m.emails()[0]
+	if sent.Status != "sent" || sent.Kind != "received" || sent.To != userEmail || sent.Subject != want.Subject ||
+		sent.Preview != want.Preview || sent.Body != want.Body || sent.IdempotencyKey != want.IdempotencyKey || sent.UserID == nil || *sent.UserID != r.UserID {
+		t.Fatalf("sent row = %+v, email %+v", sent, want)
+	}
+	if failed.Status != "failed" || failed.Kind != "dispatched" || failed.Error != "loops: 500: down" || !strings.Contains(failed.Body, "2 × Sti/A") {
+		t.Fatalf("failed row = %+v", failed)
+	}
+	if e := h.events("email_sent"); len(e) != 1 || props(t, e[0])["email_id"] != float64(sent.ID) {
+		t.Fatalf("email_sent = %+v", e)
+	}
+	if e := h.events("email_failed"); len(e) != 1 || props(t, e[0])["email_id"] != float64(failed.ID) {
+		t.Fatalf("email_failed = %+v", e)
+	}
+
+	// Admins and review agents can read them; nobody else can.
+	var out struct {
+		Emails []store.SentEmail `json:"emails"`
+	}
+	if code := h.do(h.client(adminEmail), "GET", "/api/admin/emails", nil, &out); code != 200 || len(out.Emails) != 2 || out.Emails[0].ID != failed.ID {
+		t.Fatalf("admin emails = %d %+v", code, out)
+	}
+	if code := h.do(h.client(adminEmail), "GET", "/api/admin/emails?status=failed", nil, &out); code != 200 || len(out.Emails) != 1 {
+		t.Fatalf("admin failed emails = %d %+v", code, out)
+	}
+	if code := h.do(h.client(userEmail), "GET", "/api/admin/emails", nil, nil); code != 403 {
+		t.Fatalf("user reads emails = %d", code)
+	}
+	agent := h.keyClient(h.mkKey("Review agent").Token)
+	if code := h.do(agent, "GET", fmt.Sprintf("/api/agent/emails?request_id=%d", r.ID), nil, &out); code != 200 || len(out.Emails) != 2 {
+		t.Fatalf("agent emails = %d %+v", code, out)
+	}
+	var detail struct {
+		Emails []store.SentEmail `json:"emails"`
+	}
+	if code := h.do(agent, "GET", fmt.Sprintf("/api/agent/requests/%d", r.ID), nil, &detail); code != 200 || len(detail.Emails) != 2 {
+		t.Fatalf("agent request emails = %d %+v", code, detail)
+	}
+}
+
+// Without Loops (dev), emails are still logged as unsent so their wording can be reviewed.
+func TestEmailsLoggedWithoutMailer(t *testing.T) {
+	h := newHarness(t)
+	it := h.mkItem("Sti/A", true)
+	var r store.Request
+	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r)
+	logged, err := h.store.ListEmails(context.Background(), store.EmailFilter{RequestID: r.ID, Limit: 10})
+	if err != nil || len(logged) != 1 || logged[0].Status != "unsent" || !strings.Contains(logged[0].Body, "1 × Sti/A") {
+		t.Fatalf("logged = %+v %v", logged, err)
+	}
+	if len(h.events("email_sent")) != 0 {
+		t.Fatal("unsent email tracked as sent")
+	}
+}

@@ -42,6 +42,20 @@ export type APIKey = {
 	revoked_at: string | null;
 };
 
+// One email the site sent (or tried to), word for word.
+export type SentEmail = {
+	id: number;
+	at: string;
+	kind: 'received' | 'dispatched' | 'rejected';
+	request_id: number | null;
+	to: string;
+	subject: string;
+	preview: string;
+	body: string;
+	status: 'sent' | 'failed' | 'unsent';
+	error: string;
+};
+
 export type Settings = {
 	requests_open: boolean;
 	international_shipping_fee_cents: number;
