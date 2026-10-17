@@ -79,8 +79,10 @@ packages, and you can't undo it.** The requester gets an email that it shipped.
 ```
 
 - `lines` is optional. List only the lines you want to change. Use a line's `sku`, and
-  `quantity` 0 to leave it out. The rest ship as requested. You can only send less of what they
-  asked for: you can't add items or change sizes.
+  `quantity` 0 to leave it out. The rest ship as requested. You can send more of a line than
+  they asked for, and you can add a visible item without sizes that isn't in the request (its
+  item `sku` from `/api/agent/items`, up to its `max_per_request`). You can't change sizes.
+  An added line comes back with `requested_quantity` 0, and the shipped email lists it.
 - `note` is optional and goes in the shipped email to the requester. Say why you sent less.
 - If you send less of a request that was paid by card, the postage is quoted again and the difference
   goes back to the card. Check `warning` in the reply: it describes anything that an admin must fix by hand.

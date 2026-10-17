@@ -453,3 +453,44 @@ func TestEmailsLoggedWithoutMailer(t *testing.T) {
 		t.Fatal("unsent email tracked as sent")
 	}
 }
+
+func TestShipAddsItems(t *testing.T) {
+	h, m := newMailHarness(t)
+	a, b := h.mkItem("Sti/A", true), h.mkItem("Pri/B", true)
+	h.mkItem("Sti/Hidden", false)
+	if _, err := h.store.CreateItem(t.Context(), swag.Item{SKU: "Swa/S", Name: "Shirt", Visible: true, MaxPerRequest: 3,
+		Variants: []swag.Variant{{Label: "M", SKU: "Swa/S/M"}}}); err != nil {
+		t.Fatal(err)
+	}
+	admin := h.client(adminEmail)
+	var r store.Request
+	h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr,
+		"lines": []swag.Line{{ItemID: a.ID, Quantity: 1}}}, &r)
+	path := fmt.Sprintf("/api/admin/requests/%d/dispatch", r.ID)
+
+	for name, body := range map[string]map[string]any{
+		"hidden item":      {"lines": []map[string]any{{"sku": "Sti/Hidden", "quantity": 1}}},
+		"sized item":       {"lines": []map[string]any{{"sku": "Swa/S/M", "quantity": 1}}},
+		"over its maximum": {"lines": []map[string]any{{"sku": "Pri/B", "quantity": 4}}},
+	} {
+		if code := h.do(admin, "POST", path, body, nil); code != 422 {
+			t.Errorf("%s = %d, want 422", name, code)
+		}
+	}
+
+	var got store.Request
+	code := h.do(admin, "POST", path, map[string]any{"lines": []map[string]any{{"sku": "Sti/A", "quantity": 2}, {"sku": "Pri/B", "quantity": 3}}}, &got)
+	if code != 200 || len(got.Lines) != 2 {
+		t.Fatalf("dispatch = %d %+v", code, got)
+	}
+	for _, l := range got.Lines {
+		if l.ItemID == b.ID && (l.Quantity != 3 || l.RequestedQuantity == nil || *l.RequestedQuantity != 0) {
+			t.Errorf("added line = %+v", l)
+		}
+	}
+	if c := h.wh.orders[0].Contents; len(c) != 2 {
+		t.Fatalf("contents = %+v", c)
+	}
+	e := m.emails()[1]
+	mustContain(t, "shipped", e.Body, "- 2 × Sti/A", "- 3 × Pri/B", "Sti/A: you asked for 1, we sent 2", "Pri/B: we added 3")
+}

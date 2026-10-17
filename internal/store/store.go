@@ -293,7 +293,8 @@ type RequestLine struct {
 	Name     string `json:"name"`
 	Variant  string `json:"variant,omitempty"` // size label, e.g. "M"
 	Quantity int    `json:"quantity"`
-	// What was asked for, when an admin shipped a different quantity (0 = removed).
+	// What was asked for, when an admin shipped a different quantity (0 = added
+	// by the admin, not asked for).
 	RequestedQuantity *int `json:"requested_quantity,omitempty"`
 }
 
@@ -533,9 +534,11 @@ func (s *Store) MarkPaidByStripe(ctx context.Context, id int64, paymentIntent st
 }
 
 // ShipChanges is what an admin changed when shipping: new quantities by SKU
-// (0 removes a line) and a note to the requester.
+// (0 removes a line), items added that weren't asked for, and a note to the
+// requester.
 type ShipChanges struct {
 	Quantities map[string]int
+	Added      []swag.Line
 	Note       string
 }
 
@@ -546,6 +549,13 @@ func (s *Store) MarkDispatched(ctx context.Context, id int64, theseusOrderID str
 			if _, err := tx.Exec(ctx, `
 				UPDATE swag_request_items SET requested_quantity = coalesce(requested_quantity, quantity), quantity = $3
 				WHERE request_id = $1 AND sku = $2 AND quantity <> $3`, id, sku, q); err != nil {
+				return err
+			}
+		}
+		for _, l := range ch.Added {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO swag_request_items (request_id, item_id, sku, variant, quantity, requested_quantity)
+				VALUES ($1, $2, $3, '', $4, 0)`, id, l.ItemID, l.SKU, l.Quantity); err != nil {
 				return err
 			}
 		}

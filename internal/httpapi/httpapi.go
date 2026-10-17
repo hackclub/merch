@@ -761,7 +761,8 @@ func (s *server) adminReject(w http.ResponseWriter, r *http.Request, v viewer) {
 // adminDispatch creates the warehouse order in mail.hackclub.com. The
 // idempotency key is derived from the request id, so a retry after a timeout
 // replays the same Theseus order instead of shipping twice. The admin can
-// change quantities first (0 removes a line) and add a note to the requester.
+// change quantities first (0 removes a line), add a visible item the requester
+// didn't ask for (up to its max_per_request), and add a note to the requester.
 func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -799,20 +800,40 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 	}
 	changes := store.ShipChanges{Quantities: map[string]int{}, Note: body.Note}
 	for _, l := range body.Lines {
-		if !slices.ContainsFunc(req.Lines, func(rl store.RequestLine) bool { return rl.SKU == l.SKU }) {
-			writeErr(w, http.StatusUnprocessableEntity, l.SKU+" isn't in this request")
-			return
-		}
 		if l.Quantity < 0 || l.Quantity > 10000 {
 			writeErr(w, http.StatusUnprocessableEntity, "quantities must be between 0 and 10000")
 			return
 		}
-		changes.Quantities[l.SKU] = l.Quantity
+		if slices.ContainsFunc(req.Lines, func(rl store.RequestLine) bool { return rl.SKU == l.SKU }) {
+			changes.Quantities[l.SKU] = l.Quantity
+			continue
+		}
+		if l.Quantity == 0 || slices.ContainsFunc(changes.Added, func(a swag.Line) bool { return a.SKU == l.SKU }) {
+			continue
+		}
+		found, err := s.Store.ItemsBySKU(r.Context(), []string{l.SKU})
+		if err != nil {
+			s.serverErr(w, err)
+			return
+		}
+		if len(found) != 1 || !found[0].Visible || len(found[0].Variants) > 0 {
+			writeErr(w, http.StatusUnprocessableEntity, l.SKU+" isn't in this request, and only a listed item without sizes can be added")
+			return
+		}
+		if it := found[0]; l.Quantity > it.MaxPerRequest || slices.ContainsFunc(req.Lines, func(rl store.RequestLine) bool { return rl.ItemID == it.ID }) {
+			writeErr(w, http.StatusUnprocessableEntity, fmt.Sprintf("can add at most %d of %s", it.MaxPerRequest, l.SKU))
+			return
+		}
+		changes.Added = append(changes.Added, swag.Line{ItemID: found[0].ID, SKU: l.SKU, Quantity: l.Quantity})
 	}
-	lines := make([]swag.Shipped, len(req.Lines))
+	all := slices.Clone(req.Lines)
+	for _, a := range changes.Added {
+		all = append(all, store.RequestLine{ItemID: a.ItemID, SKU: a.SKU, Quantity: a.Quantity})
+	}
+	lines := make([]swag.Shipped, len(all))
 	shipsWith := map[int64][]string{}
 	shipping := 0
-	for i, l := range req.Lines {
+	for i, l := range all {
 		if q, ok := changes.Quantities[l.SKU]; ok {
 			l.Quantity = q
 		}
@@ -860,7 +881,7 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 		return
 	}
 	warning := ""
-	if len(changes.Quantities) > 0 {
+	if len(changes.Quantities) > 0 || len(changes.Added) > 0 {
 		req, warning = s.refundUnusedPostage(r, req)
 	}
 	changed := slices.ContainsFunc(req.Lines, func(l store.RequestLine) bool { return l.RequestedQuantity != nil })

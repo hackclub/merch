@@ -4,6 +4,7 @@ import type { RequestLine } from './types';
 export function lineText(l: RequestLine): string {
 	const name = l.variant ? `${l.name} (${l.variant})` : l.name;
 	if (l.requested_quantity == null) return `${l.quantity} × ${name}`;
+	if (l.requested_quantity === 0) return `${l.quantity} × ${name} (added by Hack Club)`;
 	if (l.quantity === 0) return `${name}: not sent (you asked for ${l.requested_quantity})`;
 	return `${l.quantity} × ${name} (you asked for ${l.requested_quantity})`;
 }

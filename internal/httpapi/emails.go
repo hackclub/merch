@@ -124,6 +124,8 @@ func shippedEmail(req *store.Request, baseURL string) loops.Email {
 		}
 		switch {
 		case l.RequestedQuantity == nil:
+		case *l.RequestedQuantity == 0:
+			changed = append(changed, fmt.Sprintf("- %s: we added %d", lineName(l), l.Quantity))
 		case l.Quantity == 0:
 			changed = append(changed, fmt.Sprintf("- %s: you asked for %d, we couldn't send it", lineName(l), *l.RequestedQuantity))
 		default:

@@ -31,8 +31,8 @@ Items can come in **sizes** (`items.variants`, e.g. the red Hack Club T-shirt `S
 S/M/L/XL → `Swa/Shirt/HC/<size>`). Each size ships its own warehouse SKU; limits count the item as a
 whole. There's no cooldown between requests and no cap on how many different items go in one
 request (each request is reviewed before it ships); how many of each is the item's own `max_per_request`. Request lines store the exact SKU shipped (`swag_request_items.sku`, `variant`). When shipping, an admin
-can change a line's quantity (0 = not sent) and add a note for the requester; `requested_quantity`
-keeps what was asked for, limits count what shipped, and the shipped email lists the changes. A SKU belongs
+can change a line's quantity (0 = not sent), add a visible item without sizes, and add a note for the requester; `requested_quantity`
+keeps what was asked for (0 = added), limits count what shipped, and the shipped email lists the changes. A SKU belongs
 to one item: saving sizes folds any item listed under a size's SKU (e.g. imported per-size shirts)
 into the sized item, history included, and the importer attaches size SKUs to the sized item.
 

@@ -156,7 +156,7 @@ export type ItemStock = {
 	variants: { sku: string; label: string; in_stock: number; unit_cost: string | null }[]; // per size; empty = one size
 };
 
-/** One line of a request; requested_quantity is set when an admin shipped a different quantity (0 = not sent). */
+/** One line of a request; requested_quantity is set when an admin shipped a different quantity (quantity 0 = not sent; requested_quantity 0 = added, not asked for). */
 export interface RequestLine {
 	item_id: number;
 	sku: string;
