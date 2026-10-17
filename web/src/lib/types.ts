@@ -33,8 +33,6 @@ export type Photo = { url: string; caption: string; credit: string };
 
 export type Settings = {
 	requests_open: boolean;
-	max_items_per_request: number;
-	request_cooldown_days: number;
 	international_shipping_fee_cents: number;
 };
 

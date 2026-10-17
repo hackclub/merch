@@ -84,13 +84,12 @@ func TestImportAttachesToExistingUserAndLoginClaimsPlaceholder(t *testing.T) {
 		t.Fatalf("first login should claim the imported placeholder: user=%+v requests=%d", u, len(mine))
 	}
 
-	// Imported history counts toward limits and cooldowns.
-	it := mkItem(t, s, "Sti/A", true)
-	var last *time.Time
-	s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: it.ID, Quantity: 1}}, Status: swag.StatusPending},
-		func(_ map[int64]int, l *time.Time) error { last = l; return errors.New("stop") })
-	if last == nil {
-		t.Error("imported request should count as the user's last request")
+	// Imported history counts toward per-person limits.
+	var prior map[int64]int
+	s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: mkItem(t, s, "Sti/A", true).ID, Quantity: 1}}, Status: swag.StatusPending},
+		func(p map[int64]int) error { prior = p; return errors.New("stop") })
+	if len(prior) == 0 {
+		t.Error("imported request should count toward the user's prior quantities")
 	}
 }
 

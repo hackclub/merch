@@ -480,15 +480,15 @@ func TestDomesticRequestFlow(t *testing.T) {
 		t.Fatalf("create = %d %+v", code, r)
 	}
 
-	// Cooldown blocks an immediate second request.
-	var errBody map[string]string
-	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &errBody); code != 422 || !strings.Contains(errBody["error"], "recently") {
-		t.Fatalf("second request = %d %v", code, errBody)
+	// No cooldown: a second request right away goes through (an agent reviews each one).
+	var second store.Request
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &second); code != 201 {
+		t.Fatalf("second request = %d", code)
 	}
 
 	var mine struct{ Requests []store.Request }
 	h.do(user, "GET", "/api/requests", nil, &mine)
-	if len(mine.Requests) != 1 {
+	if len(mine.Requests) != 2 {
 		t.Fatalf("mine = %+v", mine)
 	}
 
@@ -627,12 +627,12 @@ func TestAdminManagesItemsAndSettings(t *testing.T) {
 		t.Fatalf("update item = %d %+v", code, upd)
 	}
 
-	want := swag.Settings{RequestsOpen: false, MaxItemsPerRequest: 2, RequestCooldownDays: 0, InternationalShippingFeeCents: 2000}
+	want := swag.Settings{RequestsOpen: false, InternationalShippingFeeCents: 2000}
 	var got swag.Settings
 	if code := h.do(admin, "PUT", "/api/admin/settings", want, &got); code != 200 || got != want {
 		t.Fatalf("settings = %d %+v", code, got)
 	}
-	if code := h.do(admin, "PUT", "/api/admin/settings", swag.Settings{MaxItemsPerRequest: -1}, nil); code != 422 {
+	if code := h.do(admin, "PUT", "/api/admin/settings", swag.Settings{InternationalShippingFeeCents: -1}, nil); code != 422 {
 		t.Fatalf("negative settings = %d", code)
 	}
 

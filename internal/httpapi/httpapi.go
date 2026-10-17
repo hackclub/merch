@@ -360,8 +360,6 @@ func (s *server) catalog(w http.ResponseWriter, r *http.Request) {
 		"stock":    s.catalogStock(r.Context(), items),
 		"settings": map[string]any{
 			"requests_open":                    st.RequestsOpen,
-			"max_items_per_request":            st.MaxItemsPerRequest,
-			"request_cooldown_days":            st.RequestCooldownDays,
 			"international_shipping_fee_cents": st.InternationalShippingFeeCents,
 			"stripe_key":                       s.Config.StripePublishableKey,
 		},
@@ -532,9 +530,9 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 	status, fee := swag.InitialStatus(st, body.Address.Country, est)
 	req, err := s.Store.CreateRequest(r.Context(), store.NewRequest{
 		UserID: v.user.ID, Address: body.Address, Purpose: body.Purpose, Lines: body.Lines, Status: status, ShippingFeeCents: fee, Note: body.Note,
-	}, func(prior map[int64]int, last *time.Time) error {
+	}, func(prior map[int64]int) error {
 		return swag.Validate(swag.ValidateInput{
-			Settings: st, Catalog: cat, Purpose: body.Purpose, Reason: body.Note, Lines: body.Lines, Country: body.Address.Country, CustomsOK: body.CustomsOK, PriorQuantities: prior, LastRequestAt: last, Now: s.Now(),
+			Settings: st, Catalog: cat, Purpose: body.Purpose, Reason: body.Note, Lines: body.Lines, Country: body.Address.Country, CustomsOK: body.CustomsOK, PriorQuantities: prior,
 		})
 	})
 	if err != nil {
@@ -561,7 +559,7 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 
 func isRuleErr(err error) bool {
 	for _, e := range []error{swag.ErrRequestsClosed, swag.ErrNoItems, swag.ErrBadQuantity, swag.ErrUnknownItem,
-		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrTooManyItems, swag.ErrCooldown, swag.ErrBadAddress, swag.ErrBadPurpose, swag.ErrNoReason, swag.ErrNoCustoms,
+		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrBadAddress, swag.ErrBadPurpose, swag.ErrNoReason, swag.ErrNoCustoms,
 		swag.ErrWontPack, swag.ErrTooHeavy} {
 		if errors.Is(err, e) {
 			return true
@@ -1159,7 +1157,7 @@ func (s *server) adminUpdateSettings(w http.ResponseWriter, r *http.Request, v v
 	if !readJSON(w, r, &st) {
 		return
 	}
-	if st.MaxItemsPerRequest < 0 || st.RequestCooldownDays < 0 || st.InternationalShippingFeeCents < 0 {
+	if st.InternationalShippingFeeCents < 0 {
 		writeErr(w, http.StatusUnprocessableEntity, "limits can't be negative")
 		return
 	}

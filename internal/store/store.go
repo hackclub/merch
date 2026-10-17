@@ -121,15 +121,14 @@ func (s *Store) DeleteSession(ctx context.Context, tok string) error {
 
 func (s *Store) GetSettings(ctx context.Context) (swag.Settings, error) {
 	var st swag.Settings
-	err := s.pool.QueryRow(ctx, `SELECT requests_open, max_items_per_request, request_cooldown_days, international_shipping_fee_cents FROM settings`).
-		Scan(&st.RequestsOpen, &st.MaxItemsPerRequest, &st.RequestCooldownDays, &st.InternationalShippingFeeCents)
+	err := s.pool.QueryRow(ctx, `SELECT requests_open, international_shipping_fee_cents FROM settings`).
+		Scan(&st.RequestsOpen, &st.InternationalShippingFeeCents)
 	return st, err
 }
 
 func (s *Store) UpdateSettings(ctx context.Context, st swag.Settings) error {
-	_, err := s.pool.Exec(ctx, `UPDATE settings SET requests_open = $1, max_items_per_request = $2,
-		request_cooldown_days = $3, international_shipping_fee_cents = $4, updated_at = now()`,
-		st.RequestsOpen, st.MaxItemsPerRequest, st.RequestCooldownDays, st.InternationalShippingFeeCents)
+	_, err := s.pool.Exec(ctx, `UPDATE settings SET requests_open = $1, international_shipping_fee_cents = $2, updated_at = now()`,
+		st.RequestsOpen, st.InternationalShippingFeeCents)
 	return err
 }
 
@@ -335,9 +334,9 @@ type NewRequest struct {
 	Note             string
 }
 
-// UsageCheck receives the user's prior per-item quantities and most recent
-// request time (both excluding rejected/cancelled requests) and may veto.
-type UsageCheck func(prior map[int64]int, lastRequestAt *time.Time) error
+// UsageCheck receives the user's prior per-item quantities (excluding
+// rejected/cancelled requests) and may veto.
+type UsageCheck func(prior map[int64]int) error
 
 // CreateRequest locks the user row, computes usage, runs check, and inserts —
 // all in one transaction so concurrent requests can't both slip under a limit.
@@ -371,11 +370,7 @@ func (s *Store) CreateRequest(ctx context.Context, nr NewRequest, check UsageChe
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	var last *time.Time
-	if err := tx.QueryRow(ctx, `SELECT max(created_at) FROM swag_requests WHERE user_id = $1 AND status NOT IN ('rejected', 'cancelled')`, nr.UserID).Scan(&last); err != nil {
-		return nil, err
-	}
-	if err := check(prior, last); err != nil {
+	if err := check(prior); err != nil {
 		return nil, err
 	}
 

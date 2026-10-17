@@ -74,7 +74,7 @@
 	// Anyone can fill the bag; signing in only comes at the end, when they send it.
 	const open = $derived(!!catalog?.settings.requests_open);
 	const count = $derived(totalQuantity(cart));
-	const problems = $derived(catalog ? cartErrors(cart, catalog.settings.max_items_per_request, catalog.items, sizes) : []);
+	const problems = $derived(catalog ? cartErrors(cart, catalog.items, sizes) : []);
 	const intl = $derived(isInternational(address.country));
 	// International shipping is paid by card right on the form.
 	const payByCard = $derived(intl && !!quote?.estimate.fee_cents);

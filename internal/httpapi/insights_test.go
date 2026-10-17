@@ -107,7 +107,7 @@ func TestCatalogAndSettingsChangesAreTracked(t *testing.T) {
 
 	var st swag.Settings
 	h.do(admin, "GET", "/api/admin/settings", nil, &st)
-	st.RequestCooldownDays += 7
+	st.InternationalShippingFeeCents += 700
 	if code := h.do(admin, "PUT", "/api/admin/settings", st, nil); code != 200 {
 		t.Fatalf("settings = %d", code)
 	}
@@ -116,7 +116,7 @@ func TestCatalogAndSettingsChangesAreTracked(t *testing.T) {
 		t.Fatalf("settings_updated events = %d", len(evs))
 	}
 	changed, _ = props(t, evs[0])["changed"].(map[string]any)
-	if cd, _ := changed["request_cooldown_days"].(map[string]any); len(changed) != 1 || cd["to"] != float64(st.RequestCooldownDays) {
+	if fee, _ := changed["international_shipping_fee_cents"].(map[string]any); len(changed) != 1 || fee["to"] != float64(st.InternationalShippingFeeCents) {
 		t.Errorf("settings_updated props = %v", props(t, evs[0]))
 	}
 

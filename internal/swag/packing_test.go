@@ -145,13 +145,12 @@ func TestPackUsesASizesWeight(t *testing.T) {
 
 func TestValidateRefusesWhatWontPack(t *testing.T) {
 	st := settings()
-	st.MaxItemsPerRequest = 0
 	cat := shopCatalog()
 	mag := cat[4]
 	mag.MaxPerRequest = 200
 	cat[4] = mag
 	in := ValidateInput{Settings: st, Catalog: cat, Purpose: PurposeClub, Reason: "club",
-		Lines: []Line{{ItemID: 4, Quantity: 110}}, Now: now}
+		Lines: []Line{{ItemID: 4, Quantity: 110}}}
 	if err := Validate(in); !errors.Is(err, ErrWontPack) {
 		t.Fatalf("Validate = %v, want ErrWontPack", err)
 	}

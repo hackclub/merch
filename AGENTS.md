@@ -28,8 +28,8 @@ through the app, not into migrations or seed files. Before every commit, read `g
 
 Items can come in **sizes** (`items.variants`, e.g. the red Hack Club T-shirt `Swa/Shirt/HC` with
 S/M/L/XL → `Swa/Shirt/HC/<size>`). Each size ships its own warehouse SKU; limits count the item as a
-whole. The admin setting `max_items_per_request` caps how many different items (each size counts) go in one
-request; how many of each is the item's own `max_per_request`. Request lines store the exact SKU shipped (`swag_request_items.sku`, `variant`). When shipping, an admin
+whole. There's no cooldown between requests and no cap on how many different items go in one
+request (each request is reviewed before it ships); how many of each is the item's own `max_per_request`. Request lines store the exact SKU shipped (`swag_request_items.sku`, `variant`). When shipping, an admin
 can change a line's quantity (0 = not sent) and add a note for the requester; `requested_quantity`
 keeps what was asked for, limits count what shipped, and the shipped email lists the changes. A SKU belongs
 to one item: saving sizes folds any item listed under a size's SKU (e.g. imported per-size shirts)
@@ -37,14 +37,14 @@ into the sized item, history included, and the importer attaches size SKUs to th
 
 Request status machine (`internal/swag`): `awaiting_payment → pending → dispatched`. From
 `awaiting_payment` or `pending`, a request can also go to `rejected` or `cancelled`. Rejected and
-cancelled requests don't count toward limits or cooldowns.
+cancelled requests don't count toward limits.
 
 ## Layout
 
 ```
 cmd/server/          main: env config → migrate → wire deps → HTTP server
 internal/config/     env-var config (12-factor), no file reads
-internal/swag/       pure business rules: limits, cooldown, intl shipping, status transitions,
+internal/swag/       pure business rules: limits, intl shipping, status transitions,
                      packing (packing.go) and shipping estimates (estimate.go)
 internal/store/      Postgres persistence (pgx); per-user lock around limit check + insert
 internal/db/         pool, embedded goose migrations (internal/db/migrations/*.sql)
@@ -236,7 +236,7 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   "Requestor paid N USD" → `shipping_fee_cents` and `paid_at`.
 - People are matched by email. A person with no account gets a placeholder user (`hca_id NULL`),
   which their first Hack Club Auth sign-in claims. Imported history then counts toward their
-  limits and cooldown.
+  per-person limits.
 - Airtable `internal_notes` (Stripe links, expense codes) go to `internal_note`, which only
   admins see. `admin_note` is shown to the requester.
 - Tracking: the Zenventory `order_number` equals the Airtable record id. Export it from the

@@ -80,10 +80,10 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.RequestsOpen || got.MaxItemsPerRequest != 5 || got.RequestCooldownDays != 30 || got.InternationalShippingFeeCents != 1500 {
+	if !got.RequestsOpen || got.InternationalShippingFeeCents != 1500 {
 		t.Fatalf("defaults = %+v", got)
 	}
-	want := swag.Settings{RequestsOpen: false, MaxItemsPerRequest: 3, RequestCooldownDays: 7, InternationalShippingFeeCents: 999}
+	want := swag.Settings{RequestsOpen: false, InternationalShippingFeeCents: 999}
 	if err := s.UpdateSettings(ctx, want); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestVariantRequestLines(t *testing.T) {
 		t.Fatalf("lines = %+v, want %+v", r.Lines, want)
 	}
 	s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Status: swag.StatusPending, Lines: []swag.Line{{ItemID: shirt.ID, Quantity: 1, SKU: "Swa/Shirt/HC/L"}}},
-		func(prior map[int64]int, _ *time.Time) error {
+		func(prior map[int64]int) error {
 			if prior[shirt.ID] != 1 {
 				t.Errorf("sizes count toward the item's limit: prior = %v", prior)
 			}
@@ -257,7 +257,7 @@ func TestVariantsAbsorbPerSizeItems(t *testing.T) {
 		t.Fatalf("lines = %+v, want %+v", got.Lines, want)
 	}
 	s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Status: swag.StatusPending, Lines: []swag.Line{{ItemID: shirt.ID, Quantity: 1, SKU: "Swa/Shirt/HC/L"}}},
-		func(prior map[int64]int, _ *time.Time) error {
+		func(prior map[int64]int) error {
 			if prior[shirt.ID] != 2 {
 				t.Errorf("absorbed history counts toward the item: prior = %v", prior)
 			}
@@ -271,9 +271,9 @@ func TestCreateRequestPassesUsageToValidator(t *testing.T) {
 	it := mkItem(t, s, "Sti/A", true)
 
 	r1, err := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Purpose: swag.PurposeClub, Lines: []swag.Line{{ItemID: it.ID, Quantity: 2}}, Status: swag.StatusPending},
-		func(prior map[int64]int, last *time.Time) error {
-			if len(prior) != 0 || last != nil {
-				t.Errorf("first request saw prior=%v last=%v", prior, last)
+		func(prior map[int64]int) error {
+			if len(prior) != 0 {
+				t.Errorf("first request saw prior=%v", prior)
 			}
 			return nil
 		})
@@ -285,18 +285,17 @@ func TestCreateRequestPassesUsageToValidator(t *testing.T) {
 	}
 
 	var sawPrior map[int64]int
-	var sawLast *time.Time
 	boom := errors.New("rejected by rules")
 	_, err = s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: it.ID, Quantity: 1}}, Status: swag.StatusPending},
-		func(prior map[int64]int, last *time.Time) error {
-			sawPrior, sawLast = prior, last
+		func(prior map[int64]int) error {
+			sawPrior = prior
 			return boom
 		})
 	if !errors.Is(err, boom) {
 		t.Fatalf("err = %v", err)
 	}
-	if sawPrior[it.ID] != 2 || sawLast == nil {
-		t.Fatalf("prior=%v last=%v", sawPrior, sawLast)
+	if sawPrior[it.ID] != 2 {
+		t.Fatalf("prior=%v", sawPrior)
 	}
 	mine, _ := s.ListRequestsByUser(ctx, u.ID)
 	if len(mine) != 1 {
@@ -308,9 +307,9 @@ func TestCreateRequestPassesUsageToValidator(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: it.ID, Quantity: 1}}, Status: swag.StatusPending},
-		func(prior map[int64]int, last *time.Time) error {
-			if prior[it.ID] != 0 || last != nil {
-				t.Errorf("rejected request counted: prior=%v last=%v", prior, last)
+		func(prior map[int64]int) error {
+			if prior[it.ID] != 0 {
+				t.Errorf("rejected request counted: prior=%v", prior)
 			}
 			return nil
 		})
@@ -377,7 +376,7 @@ func TestSubmissions(t *testing.T) {
 	}
 }
 
-func noCheck(map[int64]int, *time.Time) error { return nil }
+func noCheck(map[int64]int) error { return nil }
 
 func TestUpsertUserKeepsHCAAddress(t *testing.T) {
 	s := newStore(t)
@@ -453,7 +452,7 @@ func TestDispatchWithChanges(t *testing.T) {
 		t.Fatalf("request = %+v", got)
 	}
 	s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: a.ID, Quantity: 1}}, Status: swag.StatusPending},
-		func(prior map[int64]int, _ *time.Time) error {
+		func(prior map[int64]int) error {
 			if prior[a.ID] != 1 || prior[b.ID] != 0 {
 				t.Errorf("prior = %v, want what shipped", prior)
 			}

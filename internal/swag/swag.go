@@ -1,5 +1,5 @@
 // Package swag holds the pure business rules for swag requests: limits,
-// cooldowns, international shipping, and request status transitions. It has no
+// international shipping, and request status transitions. It has no
 // I/O so it can be tested exhaustively.
 package swag
 
@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 )
 
 type Status string
@@ -25,8 +24,6 @@ const (
 // Settings are the admin-managed global limits.
 type Settings struct {
 	RequestsOpen                  bool `json:"requests_open"`
-	MaxItemsPerRequest            int  `json:"max_items_per_request"` // different items (each size counts); 0 = no cap
-	RequestCooldownDays           int  `json:"request_cooldown_days"`
 	InternationalShippingFeeCents int  `json:"international_shipping_fee_cents"`
 }
 
@@ -158,8 +155,6 @@ var (
 	ErrDuplicateItem  = errors.New("item listed twice")
 	ErrBadVariant     = errors.New("pick a size")
 	ErrItemLimit      = errors.New("item limit exceeded")
-	ErrTooManyItems   = errors.New("too many items in one request")
-	ErrCooldown       = errors.New("you requested swag recently; try again later")
 	ErrBadAddress     = errors.New("invalid address")
 	ErrBadPurpose     = errors.New("say what the request is for")
 	ErrNoReason       = errors.New("tell us in a sentence or two how you'll use it")
@@ -183,9 +178,6 @@ type ValidateInput struct {
 	// PriorQuantities is how many of each item the user has already received
 	// or has in flight (non-rejected, non-cancelled requests).
 	PriorQuantities map[int64]int
-	// LastRequestAt is the user's most recent non-rejected, non-cancelled request.
-	LastRequestAt *time.Time
-	Now           time.Time
 }
 
 func Validate(in ValidateInput) error {
@@ -201,12 +193,6 @@ func Validate(in ValidateInput) error {
 	if len(in.Lines) == 0 {
 		return ErrNoItems
 	}
-	if in.LastRequestAt != nil && in.Settings.RequestCooldownDays > 0 {
-		next := in.LastRequestAt.Add(time.Duration(in.Settings.RequestCooldownDays) * 24 * time.Hour)
-		if in.Now.Before(next) {
-			return fmt.Errorf("%w (next request allowed %s)", ErrCooldown, next.Format("2006-01-02"))
-		}
-	}
 	// A sized item can take one line per size; its limits count every size together.
 	type key struct {
 		item int64
@@ -214,7 +200,6 @@ func Validate(in ValidateInput) error {
 	}
 	seen := map[key]bool{}
 	perItem := map[int64]int{}
-	total := 0
 	for _, l := range in.Lines {
 		if l.Quantity < 1 {
 			return ErrBadQuantity
@@ -251,7 +236,6 @@ func Validate(in ValidateInput) error {
 		if item.MaxPerUser != nil && in.PriorQuantities[l.ItemID]+perItem[l.ItemID] > *item.MaxPerUser {
 			return fmt.Errorf("%w: at most %d %s per person", ErrItemLimit, *item.MaxPerUser, item.Name)
 		}
-		total++
 	}
 	for id, q := range perItem {
 		if item := in.Catalog[id]; q < item.MinPerRequest {
@@ -260,9 +244,6 @@ func Validate(in ValidateInput) error {
 	}
 	if _, err := Pack(in.Lines, in.Catalog, in.Country != "" && IsInternational(in.Country)); err != nil {
 		return err
-	}
-	if in.Settings.MaxItemsPerRequest > 0 && total > in.Settings.MaxItemsPerRequest {
-		return fmt.Errorf("%w (max %d)", ErrTooManyItems, in.Settings.MaxItemsPerRequest)
 	}
 	if in.Country != "" && IsInternational(in.Country) && !in.CustomsOK {
 		return ErrNoCustoms

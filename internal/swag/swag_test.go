@@ -13,8 +13,6 @@ var now = time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
 func settings() Settings {
 	return Settings{
 		RequestsOpen:                  true,
-		MaxItemsPerRequest:            5,
-		RequestCooldownDays:           30,
 		InternationalShippingFeeCents: 1500,
 	}
 }
@@ -38,7 +36,6 @@ func TestValidateOK(t *testing.T) {
 		Catalog:  catalog(),
 		Purpose:  PurposePersonal,
 		Lines:    []Line{{ItemID: 1, Quantity: 3}, {ItemID: 2, Quantity: 1}},
-		Now:      now,
 	})
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
@@ -46,8 +43,6 @@ func TestValidateOK(t *testing.T) {
 }
 
 func TestValidateErrors(t *testing.T) {
-	last := now.Add(-10 * 24 * time.Hour)
-	oldEnough := now.Add(-31 * 24 * time.Hour)
 	closed := settings()
 	closed.RequestsOpen = false
 
@@ -64,22 +59,10 @@ func TestValidateErrors(t *testing.T) {
 		{"duplicate line", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}, {ItemID: 1, Quantity: 1}}}, ErrDuplicateItem},
 		{"over per-request", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 4}}}, ErrItemLimit},
 		{"over per-user lifetime", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 2, Quantity: 1}}, PriorQuantities: map[int64]int{2: 1}}, ErrItemLimit},
-		{"over total", func() ValidateInput {
-			s := settings()
-			s.MaxItemsPerRequest = 2
-			return ValidateInput{Settings: s, Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}, {ItemID: 2, Quantity: 1}, {ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}}
-		}(), ErrTooManyItems},
-		{"many of one item count once toward the total", func() ValidateInput {
-			s := settings()
-			s.MaxItemsPerRequest = 2
-			c := catalog()
-			c[1] = Item{ID: 1, SKU: "Pri/Crd/1", Name: "Card", Visible: true, MaxPerRequest: 100, WidthIn: f(6), HeightIn: f(4), ThicknessIn: f(0.016)}
-			return ValidateInput{Settings: s, Catalog: c, Lines: []Line{{ItemID: 1, Quantity: 100}, {ItemID: 2, Quantity: 1}}}
-		}(), nil},
+		{"no cap on different items", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}, {ItemID: 2, Quantity: 1}, {ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}}, nil},
 		{"size missing", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 4, Quantity: 1}}}, ErrBadVariant},
 		{"size unknown", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/XXL"}}}, ErrBadVariant},
 		{"size on sizeless item", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1, SKU: "Swa/Shirt/HC/S"}}}, ErrBadVariant},
-		{"cooldown", ValidateInput{Settings: settings(), Catalog: catalog(), Lines: []Line{{ItemID: 1, Quantity: 1}}, LastRequestAt: &last, Now: now}, ErrCooldown},
 		{"no purpose", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: "none", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrBadPurpose},
 		{"unknown purpose", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: "resale", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrBadPurpose},
 		{"club request without a reason", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposeClub, Reason: "  ", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrNoReason},
@@ -88,9 +71,6 @@ func TestValidateErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.in.Now.IsZero() {
-				tc.in.Now = now
-			}
 			switch tc.in.Purpose {
 			case "":
 				tc.in.Purpose = PurposeClub
@@ -109,13 +89,6 @@ func TestValidateErrors(t *testing.T) {
 			}
 		})
 	}
-
-	t.Run("cooldown elapsed", func(t *testing.T) {
-		err := Validate(ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposeEvent, Reason: "Exhibiting at a maker faire, ~500 people.", Lines: []Line{{ItemID: 1, Quantity: 1}}, LastRequestAt: &oldEnough, Now: now})
-		if err != nil {
-			t.Fatalf("err = %v", err)
-		}
-	})
 }
 
 func TestValidateVariants(t *testing.T) {
@@ -125,7 +98,6 @@ func TestValidateVariants(t *testing.T) {
 		Purpose:  PurposeClub,
 		Reason:   "Shirts for our club officers.",
 		Lines:    []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}, {ItemID: 1, Quantity: 1, SKU: "Sti/Pck/1"}},
-		Now:      now,
 	})
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
@@ -269,7 +241,7 @@ func TestValidatePacks(t *testing.T) {
 	cat[7] = Item{ID: 7, SKU: "Pri/Bok/Mini25/1st", Name: "Mini-Magazine", Visible: true, MaxPerRequest: 100, Packs: "fives",
 		WidthIn: f(6), HeightIn: f(6), ThicknessIn: f(0.04)}
 	in := func(id int64, q int) ValidateInput {
-		return ValidateInput{Settings: settings(), Catalog: cat, Purpose: PurposePersonal, Lines: []Line{{ItemID: id, Quantity: q}, {ItemID: 1, Quantity: 3}}, Now: now}
+		return ValidateInput{Settings: settings(), Catalog: cat, Purpose: PurposePersonal, Lines: []Line{{ItemID: id, Quantity: q}, {ItemID: 1, Quantity: 3}}}
 	}
 	// A pack counts as one item toward the per-request total (5 here).
 	for id, qs := range map[int64][]int{5: {5, 25, 50, 150}, 6: {3, 10, 50, 150}, 7: {5, 10, 15, 30, 100}} {
@@ -328,7 +300,7 @@ func TestValidateSeveralSizes(t *testing.T) {
 	cat[4] = shirt
 	in := func(prior int, lines ...Line) ValidateInput {
 		return ValidateInput{Settings: settings(), Catalog: cat, Purpose: PurposeClub, Reason: "Shirts for our club officers.",
-			Lines: lines, PriorQuantities: map[int64]int{4: prior}, Now: now}
+			Lines: lines, PriorQuantities: map[int64]int{4: prior}}
 	}
 	s := func(size string, q int) Line { return Line{ItemID: 4, Quantity: q, SKU: "Swa/Shirt/HC/" + size} }
 
@@ -356,7 +328,7 @@ func TestValidateMinimum(t *testing.T) {
 	shirt.MinPerRequest, shirt.MaxPerRequest = 2, 5
 	cat[4] = shirt
 	in := func(lines ...Line) ValidateInput {
-		return ValidateInput{Settings: settings(), Catalog: cat, Purpose: PurposeClub, Reason: "For our club.", Lines: lines, Now: now}
+		return ValidateInput{Settings: settings(), Catalog: cat, Purpose: PurposeClub, Reason: "For our club.", Lines: lines}
 	}
 	err := Validate(in(Line{ItemID: 1, Quantity: 1}))
 	if !errors.Is(err, ErrBadQuantity) || !strings.Contains(err.Error(), "at least 2") {
@@ -376,7 +348,7 @@ func TestValidateMinimum(t *testing.T) {
 
 // Abroad, the requester agrees to pay their country's customs fees.
 func TestValidateCustoms(t *testing.T) {
-	in := ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposePersonal, Lines: []Line{{ItemID: 1, Quantity: 1}}, Country: "DE", Now: now}
+	in := ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposePersonal, Lines: []Line{{ItemID: 1, Quantity: 1}}, Country: "DE"}
 	if err := Validate(in); !errors.Is(err, ErrNoCustoms) {
 		t.Fatalf("DE without customs = %v, want ErrNoCustoms", err)
 	}
