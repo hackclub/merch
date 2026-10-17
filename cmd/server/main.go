@@ -116,6 +116,7 @@ func run(log *slog.Logger) error {
 		Static:    static,
 		Log:       log,
 		Warm:      true,
+		RateLimit: true,
 	})
 
 	srv := &http.Server{

@@ -255,10 +255,11 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   `merch` (`44052a13-2fe2-4f4c-94aa-5ec7102b4fd5`), Postgres `merch-db`
   (`4c2c324f-8b8f-4afe-94a5-3c9d1ba4a6f5`, PG 17, daily backup 03:00 UTC). DNS is a CNAME to
   `merch-merch-1aa3b1.k.hackclub.dev` in `hackclub/dns` (`hackclub.com.yaml`).
-- Production is private for now (2026-10-14). `merch.hackclub.com` sits behind Orchard login
-  (protection mode `orchard`; `/healthz` bypasses it), and `ALLOWED_EMAILS=zach@hackclub.com`
-  refuses every other Hack Club Auth sign-in. To open it, set protection to `none` and remove
-  `ALLOWED_EMAILS`.
+- Sign-in is invite-only for now. Since 2026-10-17 the `merch.hackclub.com` ingress has no
+  Orchard login (protection `none`), so anyone can browse the shop, but `ALLOWED_EMAILS` (two
+  addresses) refuses every other Hack Club Auth sign-in. To open it to everyone, remove
+  `ALLOWED_EMAILS` from the deployment. (The auto-generated `*.k.hackclub.dev` host still has
+  Orchard login.)
 - **Every push to `main` builds and deploys to production** (Orchard auto-deploy, about 3
   minutes). Landing on `main` is shipping. Check a rollout with `list_pods` (the image tag) and
   `get_image_history`, not `get_deployment`.
@@ -555,9 +556,9 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   the same emails. Uncertain cases get a `Needs a human:` note and stay `pending`.
   `POST …/refresh` pulls tracking from mail.hackclub.com (the admin refresh handler); nothing
   pulls it automatically, so the review agent refreshes what it shipped on later runs.
-- Production's Orchard login lets `/api/agent` through (the ingress's `bypassPaths`, set
-  2026-10-17), so the key is the only lock there. Keep it in `bypassPaths` if protection
-  changes. The scheduled agent's key ("Review agent") is `MERCH_AGENT_API_KEY` in the shared
+- `merch.hackclub.com` has no Orchard login, so the key is the only lock on `/api/agent`. If
+  protection is ever turned back on, add `/api/agent` to the ingress's `bypassPaths`. The
+  scheduled agent's key ("Review agent") is `MERCH_AGENT_API_KEY` in the shared
   `.env`.
 
 ## External systems
@@ -597,7 +598,7 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   starts a PaymentIntent (USD, the request's `shipping_fee_cents`, `metadata.request_id`;
   reused while it can still be paid) and the browser confirms it (`payShipping` in
   `$lib/payment`). A declined card lands on My requests, where an unpaid request has the same
-  field and a Pay button. There is no webhook (production sits behind Orchard login): loading
+  field and a Pay button. There is no webhook: loading
   My requests or the admin request list checks Stripe, and a PaymentIntent that `succeeded` for
   the full amount moves the request to `pending` (`paid_at`, `stripe_payment_intent`). Pay
   never starts a second payment while the first is processing or Stripe can't be reached.
@@ -684,5 +685,13 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
 - CSRF: mutating `/api/*` calls must be `Content-Type: application/json`, and their `Origin`
   (if present) must be `BASE_URL` or one of `EXTRA_BASE_URLS`. In dev those are the Vite
   origins (`http://localhost:5173`, `http://porygon:5173`).
+- Security headers and rate limits (`internal/httpapi/guard.go`): every response gets
+  `nosniff`, `X-Frame-Options: DENY`, a framing-only CSP and (on https) HSTS. `/api/*` and
+  `/auth/*` calls are rate-limited per client address (the last `X-Forwarded-For` entry, which
+  HAProxy appends): 600 then 10/s overall, and 120 then 2/s on costly routes (address lookups,
+  estimates, sign-in, new requests, payments, submissions). The limits are generous because a
+  whole school can share one address. A refused call is a 429, logged as an `api` event with
+  `status` 429. Production turns this on (`Deps.RateLimit`); tests turn it on only where they
+  test it.
 - The service worker never caches `/api/*` or `/auth/*`. Keep it that way; limits and statuses
   must be live.

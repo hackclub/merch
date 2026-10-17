@@ -65,6 +65,7 @@ type Deps struct {
 	Now       func() time.Time
 	Log       *slog.Logger
 	Warm      bool // load caches (shipping history) in the background at start
+	RateLimit bool // per-client limits on /api and /auth (guard.go)
 }
 
 type server struct {
@@ -155,7 +156,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeErr(w, http.StatusNotFound, "not found") })
 	mux.HandleFunc("/", s.static)
 
-	return s.csrf(s.visitor(s.logAPI(mux)))
+	return s.headers(s.csrf(s.visitor(s.logAPI(s.limit(mux)))))
 }
 
 // ---- middleware ----
@@ -681,6 +682,9 @@ func (s *server) createSubmission(w http.ResponseWriter, r *http.Request, v view
 		return
 	case body.Quantity < 1 || body.Quantity > 100000:
 		writeErr(w, http.StatusUnprocessableEntity, "quantity must be between 1 and 100000")
+		return
+	case len(body.Program) > 200 || len(body.Title) > 200 || len(body.Kind) > 40 || len(body.Description) > 5000 || len(body.FileURL) > 2000:
+		writeErr(w, http.StatusUnprocessableEntity, "program, title, kind, description or file_url is too long")
 		return
 	}
 	body.UserID = v.user.ID
