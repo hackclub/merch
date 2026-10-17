@@ -16,7 +16,7 @@
 	import { session } from '$lib/session.svelte';
 	import { payShipping, payWhere, type CardForm } from '$lib/payment';
 	import CardField from '$lib/CardField.svelte';
-	import { arrivalText, costRows, summaryText, costToYou, worthText, type CostSides, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
+	import { arrivalText, costRows, summaryText, costToYou, usd, worthText, type CostSides, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Haul3D from '$lib/Haul3D.svelte';
 	import QuantityPicker from '$lib/QuantityPicker.svelte';
@@ -372,7 +372,7 @@
 				{/if}
 				{#if intl && quote?.estimate.fee_cents}
 					<p>
-						Shipping is <strong>{formatCents(quote.estimate.fee_cents)}</strong>, what postage for this package usually costs.
+						Shipping is <strong>{usd(quote.estimate.fee_cents)}</strong>, what postage for this package usually costs.
 						{payWhere(payByCard)}
 					</p>
 				{/if}
@@ -413,7 +413,7 @@
 				{#each problems as p}<p class="error">{p}</p>{/each}
 				{#if quoteError}<p class="error">{quoteError}</p>{/if}
 				<button disabled={submitting || problems.length > 0 || !!quoteError || !understood || (intl && !customsOK)}>
-					{submitting ? 'Sending…' : payByCard && quote ? `Submit and pay ${formatCents(quote.estimate.fee_cents)}` : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
+					{submitting ? 'Sending…' : payByCard && quote ? `Submit and pay ${usd(quote.estimate.fee_cents)}` : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
 				</button>
 			</form>
 		{/if}

@@ -64,23 +64,23 @@ describe('costRows', () => {
 	const both = { us: c({}), international: c({ postage_cents: 1400, total_cents: 2655 }) };
 	it('shows only the side the request ships to, labor and packing together', () => {
 		expect(costRows(both, false)).toEqual([
-			['Items', '$9.45'],
-			['Labor + packing', '$3.10'],
-			['Postage (estimated)', '$5.12'],
-			['Total', '$17.67']
+			['Items', '$9.45 USD'],
+			['Labor + packing', '$3.10 USD'],
+			['Postage (estimated)', '$5.12 USD'],
+			['Total', '$17.67 USD']
 		]);
 		expect(costRows(both, true)).toEqual([
-			['Items', '$9.45'],
-			['Labor + packing', '$3.10'],
-			['Postage (estimated)', '$14.00'],
-			['Total', '$26.55']
+			['Items', '$9.45 USD'],
+			['Labor + packing', '$3.10 USD'],
+			['Postage (estimated)', '$14.00 USD'],
+			['Total', '$26.55 USD']
 		]);
 	});
 	it('marks what it has no figure for', () => {
 		const rows = costRows({ us: c({ postage_cents: 0, unpriced_skus: ['Sti/New/1st'] }), international: null }, false);
-		expect(rows[0]).toEqual(['Items', '$9.45 + 1 unpriced']);
+		expect(rows[0]).toEqual(['Items', '$9.45 USD + 1 unpriced']);
 		expect(rows[2]).toEqual(['Postage (estimated)', 'no history']);
-		expect(rows[3]).toEqual(['Total', '$17.67+']);
+		expect(rows[3]).toEqual(['Total', '$17.67+ USD']);
 		expect(costRows({ us: c({}), international: null }, true)).toEqual([
 			['Items', '—'],
 			['Labor + packing', '—'],
@@ -108,9 +108,9 @@ describe('worthText', () => {
 
 describe('costToYou', () => {
 	it('is free in the US, and the shipping fee abroad', () => {
-		expect(costToYou(false, 2149)).toBe('$0');
-		expect(costToYou(true, 2200)).toBe('$22.00 for shipping');
-		expect(costToYou(true, 0)).toBe('$0');
+		expect(costToYou(false, 2149)).toBe('$0 USD');
+		expect(costToYou(true, 2200)).toBe('$22.00 USD for shipping');
+		expect(costToYou(true, 0)).toBe('$0 USD');
 	});
 });
 

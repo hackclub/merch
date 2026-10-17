@@ -82,13 +82,13 @@ export type CostSides = { us: Costs | null; international: Costs | null };
 // The cost table's rows, [label, amount], for where the request ships: the US, or abroad.
 export function costRows(c: CostSides, intl: boolean): [string, string][] {
 	const x = intl ? c.international : c.us;
-	const items = (x: Costs) => formatCents(x.items_cents) + (x.unpriced_skus.length ? ` + ${x.unpriced_skus.length} unpriced` : '');
-	const postage = (x: Costs) => (x.postage_cents ? formatCents(x.postage_cents) : 'no history');
+	const items = (x: Costs) => usd(x.items_cents) + (x.unpriced_skus.length ? ` + ${x.unpriced_skus.length} unpriced` : '');
+	const postage = (x: Costs) => (x.postage_cents ? usd(x.postage_cents) : 'no history');
 	// A total missing an item's cost or the postage is a floor.
-	const total = (x: Costs) => formatCents(x.total_cents) + (x.unpriced_skus.length || !x.postage_cents ? '+' : '');
+	const total = (x: Costs) => formatCents(x.total_cents) + (x.unpriced_skus.length || !x.postage_cents ? '+' : '') + ' USD';
 	return [
 		['Items', x ? items(x) : '—'],
-		['Labor + packing', x ? formatCents(x.labor_cents + x.packing_cents) : '—'],
+		['Labor + packing', x ? usd(x.labor_cents + x.packing_cents) : '—'],
 		['Postage (estimated)', x ? postage(x) : '—'],
 		['Total', x ? total(x) : 'over 3 lb']
 	];
@@ -128,5 +128,10 @@ export function worthText(x: Costs | null): string {
 
 // What the requester pays: nothing in the US, the shipping fee abroad.
 export function costToYou(intl: boolean, feeCents: number): string {
-	return intl && feeCents > 0 ? `${formatCents(feeCents)} for shipping` : '$0';
+	return intl && feeCents > 0 ? `${usd(feeCents)} for shipping` : '$0 USD';
+}
+
+// usd spells out the currency, since people outside the US see these too.
+export function usd(cents: number): string {
+	return `${formatCents(cents)} USD`;
 }
