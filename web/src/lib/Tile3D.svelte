@@ -223,7 +223,7 @@
 	onpointerenter={enter} onpointerleave={leave} onpointerdown={down} onpointermove={move} onpointerup={up}
 	onpointercancel={up} onclickcapture={click} ondragstart={(e) => e.preventDefault()}>
 	{#if model && near}
-		<canvas class:on={modelReady && show3d} bind:this={canvas}></canvas>
+		<canvas class:on={modelReady && show3d} bind:this={canvas} data-gl="shared"></canvas>
 	{/if}
 	{#if clip}
 		{#if isImage(clip)}

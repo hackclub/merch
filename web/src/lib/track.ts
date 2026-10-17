@@ -322,6 +322,7 @@ function closePage(final: boolean) {
 let gpuName: string | undefined;
 // The GPU's name, read off a context the viewer already made (asking first would make one with the wrong settings).
 function gpu(canvas: HTMLCanvasElement): string {
+	if (canvas.dataset.gpu) return (gpuName = squash(canvas.dataset.gpu, 120));
 	if (gpuName !== undefined) return gpuName;
 	try {
 		const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext | null;
@@ -374,7 +375,7 @@ export function meterView(canvas: HTMLCanvasElement, view: string, kind: string)
 				'view3d',
 				{
 					vid: id, view, kind, ...(item ? { item_id: item } : {}), ...stats.props(performance.now()),
-					px: `${canvas.width}x${canvas.height}`, dpr: devicePixelRatio, gpu: gpuLabel, lost, failed, final
+					px: `${canvas.width}x${canvas.height}`, dpr: devicePixelRatio, gl: canvas.dataset.gl ?? 'own', gpu: gpuLabel, lost, failed, final
 				},
 				path
 			);

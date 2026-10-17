@@ -6,6 +6,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { coverCrop, finishInfo, paperHeight, SURFACE_TILE_IN, type FinishInfo } from './paper';
 import { GAP_IN, PHONE } from './scale';
+import { grow, sourceRect, type Size } from './sharedgl';
 
 export type ViewerOptions = {
 	front: string;
@@ -100,12 +101,7 @@ export type Stage = {
 	dispose(): void;
 };
 
-/**
- * A photo studio: renderer, a soft environment, a key light with a contact
- * shadow on an invisible floor, and a camera. Light and shadow are sized for
- * a scene of about sceneW × sceneH inches standing around x = 0.
- */
-export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: number): Stage {
+function createRenderer(canvas: HTMLCanvasElement) {
 	const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 	renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -115,19 +111,60 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 	renderer.shadowMap.enabled = true;
 	// PCF, not VSM: VSM drew stair-step teeth along thin things lying on the floor (a postcard, a phone).
 	renderer.shadowMap.type = THREE.PCFShadowMap;
+	return renderer;
+}
+
+// The soft studio light everything reflects.
+function studioEnvironment(pmrem: THREE.PMREMGenerator) {
+	const room = new RoomEnvironment();
+	const env = pmrem.fromScene(room, 0.04).texture;
+	room.dispose();
+	return env;
+}
+
+// The shop's hover previews come and go as people move down the list. With a
+// renderer each, every one made a WebGL context, compiled its shaders and built
+// its environment from scratch: about 60 long frames per visit. Canvases marked
+// data-gl="shared" draw through this one renderer instead, which compiles each
+// shader once, and copy each frame onto their own 2D canvas.
+let shared: { renderer: THREE.WebGLRenderer; env: THREE.Texture; size: Size; gpu: string } | null = null;
+function sharedRenderer() {
+	if (shared) return shared;
+	const renderer = createRenderer(document.createElement('canvas'));
+	const pmrem = new THREE.PMREMGenerator(renderer);
+	const env = studioEnvironment(pmrem);
+	pmrem.dispose();
+	const ctx = renderer.getContext();
+	const info = ctx.getExtension('WEBGL_debug_renderer_info');
+	const s = { renderer, env, size: { w: 0, h: 0 }, gpu: String(ctx.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : ctx.RENDERER)) };
+	// A lost context takes its textures with it: the next stage starts over.
+	renderer.domElement.addEventListener('webglcontextlost', () => shared === s && (shared = null));
+	return (shared = s);
+}
+
+/**
+ * A photo studio: renderer, a soft environment, a key light with a contact
+ * shadow on an invisible floor, and a camera. Light and shadow are sized for
+ * a scene of about sceneW × sceneH inches standing around x = 0. A canvas
+ * marked data-gl="shared" gets a 2D canvas fed by the shared renderer.
+ */
+export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: number): Stage {
+	const gl = canvas.dataset.gl === 'shared' ? sharedRenderer() : null;
+	const out = gl ? canvas.getContext('2d') : null;
+	if (gl) canvas.dataset.gpu = gl.gpu; // for analytics (view3d), which can't ask a 2D canvas
+	const renderer = gl ? gl.renderer : createRenderer(canvas);
 
 	const scene = new THREE.Scene();
-	const pmrem = new THREE.PMREMGenerator(renderer);
-	const room = new RoomEnvironment();
-	scene.environment = pmrem.fromScene(room, 0.04).texture;
-	room.dispose();
+	const pmrem = gl ? null : new THREE.PMREMGenerator(renderer);
+	scene.environment = gl ? gl.env : studioEnvironment(pmrem!);
 
 	// Soft studio key light from above and slightly in front, so the shadow pools
 	// under things (a contact shadow) instead of stretching across the floor.
 	const key = new THREE.DirectionalLight(0xffffff, 1.1);
 	key.castShadow = true;
-	key.shadow.mapSize.set(2048, 2048);
-	key.shadow.radius = 18;
+	// Shared stages are small tiles: half the shadow map, half the radius (it's in texels), the same blur.
+	key.shadow.mapSize.setScalar(gl ? 1024 : 2048);
+	key.shadow.radius = gl ? 9 : 18;
 	key.shadow.blurSamples = 24;
 	key.shadow.bias = -0.0005;
 	scene.add(key);
@@ -164,7 +201,11 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 			if (width <= 0 || height <= 0 || (width === curW && height === curH)) return;
 			curW = width;
 			curH = height;
-			renderer.setSize(width, height, false);
+			if (gl) {
+				const pr = renderer.getPixelRatio();
+				canvas.width = Math.round(width * pr);
+				canvas.height = Math.round(height * pr);
+			} else renderer.setSize(width, height, false);
 			camera.aspect = width / height;
 			camera.updateProjectionMatrix();
 		},
@@ -199,7 +240,21 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 			return dist;
 		},
 		render() {
+			if (!gl || !out) return renderer.render(scene, camera);
+			if (shared !== gl || !curW || !curH) return; // its context was lost
+			const need = grow(gl.size, { w: curW, h: curH });
+			if (need.w !== gl.size.w || need.h !== gl.size.h) {
+				gl.size = need;
+				renderer.setSize(need.w, need.h, false);
+			}
+			renderer.setViewport(0, 0, curW, curH);
+			renderer.setScissor(0, 0, curW, curH);
+			renderer.setScissorTest(true);
 			renderer.render(scene, camera);
+			const glCanvas = renderer.domElement;
+			out.clearRect(0, 0, canvas.width, canvas.height);
+			const [sx, sy, sw, sh] = sourceRect(glCanvas.height, canvas.width, canvas.height);
+			out.drawImage(glCanvas, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
 		},
 		dispose() {
 			scene.traverse((o) => {
@@ -212,8 +267,10 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 				}
 				if (o instanceof THREE.InstancedMesh) o.dispose();
 			});
+			key.shadow.dispose();
+			if (gl) return; // the shared renderer and its environment stay for the next tile
 			scene.environment?.dispose();
-			pmrem.dispose();
+			pmrem?.dispose();
 			renderer.dispose();
 			// Free the WebGL context now; browsers cap how many a page can hold.
 			renderer.forceContextLoss();

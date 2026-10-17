@@ -218,7 +218,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="stage" class:ready class:table={onTable} bind:this={stage} onpointerdown={down} onpointermove={move} onpointerup={up}
 		onpointercancel={up} onpointerleave={(e) => e.pointerType === 'mouse' && !pointers.size && (tip = null)} onwheel={wheel} oncontextmenu={(e) => e.preventDefault()}>
-		{#if near}<canvas bind:this={canvas} aria-label={onTable ? 'Your whole request in 3D, to scale, on a 6-foot folding table next to a laptop and a phone' : 'Your whole request in 3D, to scale, next to a phone'}></canvas>{/if}
+		{#if near}<canvas bind:this={canvas} data-gl={compact ? 'shared' : undefined} aria-label={onTable ? 'Your whole request in 3D, to scale, on a 6-foot folding table next to a laptop and a phone' : 'Your whole request in 3D, to scale, next to a phone'}></canvas>{/if}
 		{#if !ready}<span class="loading muted">Loading 3D…</span>{/if}
 		{#if tip}<span class="tip" style="left: {tip.x}px; top: {tip.y}px">{tip.text}</span>{/if}
 		<div class="controls">

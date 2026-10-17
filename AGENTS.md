@@ -463,8 +463,8 @@ blocks landing):
   `postcards`, `shirt`, `pin`; the haul's `haul`, `table` or `compact`), `item_id`, `load_ms` (code
   downloaded and scene built), `ready_ms` (images in, drawn for real), `alive_ms`, `draws`,
   `render_p50`/`p95`/`max` (ms of main thread per draw; the GPU's share shows up as slow frames),
-  `fps` and the frame stats above while it's moving, `px` (drawing buffer), `dpr`, `gpu` (the
-  GPU's name), `lost`, `failed`; snapshots, so use the **`usage_view3d`** view). Join them to
+  `fps` and the frame stats above while it's moving, `px` (drawing buffer), `dpr`, `gl` (`shared`
+  or `own` renderer), `gpu` (the GPU's name), `lost`, `failed`; snapshots, so use the **`usage_view3d`** view). Join them to
   `visit_start` on `visit` for the device: `visit_start` also has `cores`, `memory_gb` (Chrome),
   `net`, `save_data` and `reduced_motion`. `scripts/usage-report` has smoothness by page and
   device, 3D views by kind and GPU, and the scripts behind long frames. `/admin` sends only page
@@ -679,7 +679,13 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   1.4" or wider). The product page floats it beside a phone; the haul lays them face up in rows
   of 5.
   Shop grid tiles (`web/src/lib/Tile3D.svelte`) show the same 3D views without the phone, still
-  until touched: hover or drag turns prints and stickers, and booklets flip through on hover.
+  until touched. Tiles and the small request pile (`Haul3D` `compact`) mark their canvas
+  `data-gl="shared"`: `createStage` (`paper3d.ts`) draws them all through one WebGL renderer and
+  copies each frame onto the tile's 2D canvas, so hovering down the list doesn't make a context,
+  compile shaders and build the environment for every row. Measured on 30 hovers: dropped frames
+  went from 18–23% to 7%, and main-thread blocking from 3.1–4.7 s to 0.7–1.0 s. Give any new
+  view that comes and goes with hovers or scrolling the same attribute.
+  Tiles: hover or drag turns prints and stickers, and booklets flip through on hover.
   `clip` (an MP4, GIF or photo URL, set on the admin Items tab) replaces the tile's 3D view with a
   real-world loop that plays on hover, or a still photo; the Mini-Magazine uses a loop, and the red
   T-shirt shows a photo of someone wearing it. A still photo gives way to the item's 3D view on hover
