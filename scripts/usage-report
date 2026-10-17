@@ -126,6 +126,44 @@ select props->>'metric' metric, coalesce(nullif(split_part(path, '/', 2), ''), '
     count(*) filter (where props->>'rating' = 'poor') poor
 from v group by 1, 2 order by 1, 3 desc;
 
+\echo '== Smoothness by page: median fps, dropped frames, janky frames (>50 ms), long animation frames (Chrome)'
+\echo '   (page_perf; touch = phones and tablets; low_end = 4 or fewer cores)'
+$ev, d as (select distinct on (visit) visit, (props->>'touch')::boolean touch, coalesce((props->>'cores')::int, 0) between 1 and 4 low_end
+    from ev where name = 'visit_start' order by visit, at)
+select coalesce(nullif(split_part(p.path, '/', 2), ''), 'home') page, coalesce(d.touch, false) touch, coalesce(d.low_end, false) low_end,
+    count(*) views, count(distinct p.visitor) people,
+    round(percentile_cont(.5) within group (order by p.fps)::numeric, 1) fps_p50,
+    round(percentile_cont(.5) within group (order by p.dropped_pct)::numeric, 1) dropped_pct_p50,
+    round(percentile_cont(.9) within group (order by p.dropped_pct)::numeric, 1) dropped_pct_p90,
+    sum(p.jank) jank, sum(p.loaf) loaf, max(p.views_max) views_max, sum(p.lost) gl_lost
+from usage_page_perf p left join d using (visit)
+where p.page_view in (select props->>'pv' from ev where name = 'page_view') and p.frames > 30
+group by 1, 2, 3 order by 4 desc limit 20;
+
+\echo '== 3D views: load and first-draw time, draw cost (ms of main thread), fps while moving, by view and kind'
+$ev select v.view, v.kind, count(*) views, count(distinct v.visitor) people,
+    percentile_cont(.5) within group (order by v.load_ms) load_p50, percentile_cont(.9) within group (order by v.load_ms) load_p90,
+    percentile_cont(.5) within group (order by v.ready_ms) ready_p50,
+    round(percentile_cont(.5) within group (order by v.render_p95)::numeric, 1) render_p95,
+    round(percentile_cont(.5) within group (order by v.fps)::numeric, 1) fps_p50,
+    round(percentile_cont(.5) within group (order by v.dropped_pct)::numeric, 1) dropped_pct_p50,
+    count(*) filter (where v.lost) gl_lost, count(*) filter (where v.failed) failed
+from usage_view3d v where v.visit in (select visit from ev)
+group by 1, 2 order by 3 desc;
+
+\echo '== 3D smoothness by GPU (moving views only)'
+$ev select left(v.gpu, 60) gpu, count(*) views, count(distinct v.visitor) people,
+    round(percentile_cont(.5) within group (order by v.fps)::numeric, 1) fps_p50,
+    round(percentile_cont(.5) within group (order by v.dropped_pct)::numeric, 1) dropped_pct_p50
+from usage_view3d v where v.visit in (select visit from ev) and v.frames > 30
+group by 1 order by 2 desc limit 15;
+
+\echo '== Scripts behind long animation frames (Chrome)'
+$ev select s->>'src' src, s->>'fn' fn, s->>'invoker' invoker, count(*) pages, sum((s->>'ms')::int) ms
+from usage_page_perf p, jsonb_array_elements(p.loaf_scripts) s
+where p.page_view in (select props->>'pv' from ev where name = 'page_view')
+group by 1, 2, 3 order by 5 desc limit 15;
+
 \echo '== Fields the browser refused at submit'
 $ev select props->>'field' field, props->>'reason' reason, path, count(*), count(distinct visitor) people
 from ev where name = 'field_invalid' group by 1, 2, 3 order by 4 desc limit 15;

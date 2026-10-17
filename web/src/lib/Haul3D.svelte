@@ -10,6 +10,7 @@
 	import { layoutHaul, lineLabel, piles, tall, withIncludes, type HaulLine } from './haul';
 	import type { HaulViewer } from './haul3d';
 	import { clampPan, groundDelta, rotatePan, zoomToward, type Pan } from './haulview';
+	import { meterView } from './track';
 	import type { Item } from './types';
 
 	// table: lay it all out on 6-foot folding tables (for clubs and events), to show how much of one it fills.
@@ -61,17 +62,19 @@
 		let raf = 0;
 		const ro = new ResizeObserver(() => viewer?.resize(stage.clientWidth, stage.clientHeight));
 		ready = false;
+		const meter = meterView(el, 'haul', onTable ? 'table' : compact ? 'compact' : 'haul');
 		import('./haul3d')
 			.then(({ createHaulViewer }) => {
 				if (disposed) return;
-				const v = createHaulViewer(el, table, () => (ready = true));
+				const v = createHaulViewer(el, table, () => ((ready = true), meter.ready()));
+				meter.loaded();
 				v.folding = !still;
 				viewer = v;
 				v.resize(stage.clientWidth, stage.clientHeight);
 				ro.observe(stage);
 				const tick = (now: number) => {
 					raf = requestAnimationFrame(tick);
-					if (document.hidden) return;
+					if (document.hidden) return meter.idle();
 					// A wide table only sways a little, so it stays in frame.
 					const sway = still || touched ? 0 : Math.sin(now / 2400) * (onTable ? 0.1 : 0.35);
 					v.angle = turned + sway;
@@ -80,11 +83,11 @@
 					v.zoom += (zoom - v.zoom) * 0.2;
 					v.pan.x += (pan.x - v.pan.x) * 0.2;
 					v.pan.z += (pan.z - v.pan.z) * 0.2;
-					v.render();
+					meter.draw(() => v.render());
 				};
 				raf = requestAnimationFrame(tick);
 			})
-			.catch(() => {});
+			.catch(() => meter.fail());
 		return () => {
 			disposed = true;
 			cancelAnimationFrame(raf);
@@ -92,6 +95,7 @@
 			viewer?.dispose();
 			viewer = null;
 			ready = false;
+			meter.end();
 		};
 	}
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cartChanges, describeClick, describeField, describeInvalid, nextVisit, PageClock, pageProps, SeenItems, sizeChanges, Tracker, vitalProps } from './track';
+import { cartChanges, describeClick, describeField, describeInvalid, deviceProps, nextVisit, PageClock, pageProps, SeenItems, sizeChanges, Tracker, vitalProps } from './track';
 
 const el = (html: string) => {
 	document.body.innerHTML = html;
@@ -156,5 +156,14 @@ describe('vitalProps', () => {
 		expect(vitalProps({ name: 'CLS', value: 0.123456, rating: 'needs-improvement', navigationType: 'reload' })).toEqual({
 			metric: 'CLS', value: 0.1235, rating: 'needs-improvement', nav: 'reload'
 		});
+	});
+});
+
+describe('deviceProps', () => {
+	it('names what the device can do, leaving out what the browser hides', () => {
+		expect(deviceProps({ hardwareConcurrency: 8, deviceMemory: 4, connection: { effectiveType: '4g', saveData: true } }, false)).toEqual({
+			reduced_motion: false, cores: 8, memory_gb: 4, net: '4g', save_data: true
+		});
+		expect(deviceProps({ hardwareConcurrency: 4 }, true)).toEqual({ reduced_motion: true, cores: 4 }); // Safari
 	});
 });

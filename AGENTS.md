@@ -451,8 +451,24 @@ blocks landing):
   over an item for ≥ 0.5 s), `payment_error` (a card didn't go through: `request_id` and Stripe's `type`,
   `code`, `decline_code`; never the message), `api_error`, `js_error`, `pwa_installed`,
   `web_vital` (Core Web Vitals from the `web-vitals` library, once per page load: `metric` =
-  `LCP`, `INP`, `CLS`, `FCP` or `TTFB`, `value` in ms (CLS unitless), `rating`, `nav`). `/admin` sends only page views and
-  page time.
+  `LCP`, `INP`, `CLS`, `FCP` or `TTFB`, `value` in ms (CLS unitless), `rating`, `nav`),
+  `page_perf` (how smoothly a page view ran, from every animation frame while visible: `pv`,
+  `frames`, `fps`, `hz` (the display's refresh rate), `frame_p50`/`p95`/`p99`/`max` in ms, `jank`
+  (frames over 50 ms), `dropped_pct` (frames missed against `hz`); Chrome's long animation frames
+  `loaf`, `loaf_ms`, `loaf_blocking_ms`, `loaf_max` and the top 3 `loaf_scripts` (`src` path, `fn`,
+  `invoker`, `ms`, `n`); 3D views `views`, `views_max` (at once) and `lost` (WebGL contexts the
+  browser took back); `heap_mb` (Chrome); snapshots like `page_time`, so use the
+  **`usage_page_perf`** view), `view3d` (one 3D view's life, from `meterView` in `$lib/track`:
+  `vid`, `view` = `product`, `tile` or `haul`, `kind` (`sheet`, `book`, `fold`, `stickers`,
+  `postcards`, `shirt`, `pin`; the haul's `haul`, `table` or `compact`), `item_id`, `load_ms` (code
+  downloaded and scene built), `ready_ms` (images in, drawn for real), `alive_ms`, `draws`,
+  `render_p50`/`p95`/`max` (ms of main thread per draw; the GPU's share shows up as slow frames),
+  `fps` and the frame stats above while it's moving, `px` (drawing buffer), `dpr`, `gpu` (the
+  GPU's name), `lost`, `failed`; snapshots, so use the **`usage_view3d`** view). Join them to
+  `visit_start` on `visit` for the device: `visit_start` also has `cores`, `memory_gb` (Chrome),
+  `net`, `save_data` and `reduced_motion`. `scripts/usage-report` has smoothness by page and
+  device, 3D views by kind and GPU, and the scripts behind long frames. `/admin` sends only page
+  views, page time and these performance events.
 - `api`: every `/api/*` and `/auth/*` call (except `/api/events`), logged by middleware: `route`
   (the mux pattern), `url` (the path, never the query), `status`, `ms`, and on a 500 the
   `error` that `serverErr` logged. Use it for errors and slow routes.

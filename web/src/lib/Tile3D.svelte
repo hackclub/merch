@@ -13,11 +13,12 @@
 	import { settle } from './book';
 	import { FOLD_STEPS, foldCycle } from './fold';
 	import type { BookViewer } from './book3d';
-	import { loadPreviewViewer, type Preview3D, type TilePreview } from './items';
+	import { loadPreviewViewer, previewKind, type Preview3D, type TilePreview } from './items';
 	import type { Viewer } from './paper3d';
 	import type { PostcardViewer } from './postcard3d';
 	import type { StickerViewer } from './sticker3d';
 	import { flipStep, hoverTurn, isImage } from './tile';
+	import { meterView } from './track';
 
 	// count: stickers in the bag; rest: the angle it sits at; active: animate as if hovered
 	// (the clip plays, a booklet flips, a print swings), for previews that never get the pointer;
@@ -86,14 +87,16 @@
 		let raf = 0;
 		let last = performance.now();
 		let drawn = false;
+		const meter = meterView(el, 'tile', previewKind(model as Preview3D));
 		const ro = new ResizeObserver(() => {
 			viewer?.resize(stage.clientWidth, stage.clientHeight);
 			drawn = false;
 		});
-		loadPreviewViewer(el, model as Preview3D, count, () => ((modelReady = true), (drawn = false)))
+		loadPreviewViewer(el, model as Preview3D, count, () => ((modelReady = true), (drawn = false), meter.ready()))
 			.then((v) => {
 				if (disposed) return v.dispose();
 				viewer = v;
+				meter.loaded();
 				v.angle = target;
 				if (back && 'flipped' in v) (v as PostcardViewer).flipped = 1;
 				v.resize(stage.clientWidth, stage.clientHeight);
@@ -104,7 +107,7 @@
 					raf = requestAnimationFrame(tick);
 					const dt = Math.min(0.05, (now - last) / 1000);
 					last = now;
-					if (document.hidden) return;
+					if (document.hidden) return meter.idle();
 					let moving = !drawn || now < busyUntil;
 					if (bv) {
 						if (fold && active && !hovering && !dragging && !still) {
@@ -131,13 +134,13 @@
 						moving = true;
 					}
 					if (moving || dragging) {
-						v.render();
+						meter.draw(() => v.render());
 						drawn = true;
-					}
+					} else meter.idle();
 				};
 				raf = requestAnimationFrame(tick);
 			})
-			.catch(() => {}); // the photo stays
+			.catch(() => meter.fail()); // the photo stays
 		return () => {
 			disposed = true;
 			cancelAnimationFrame(raf);
@@ -145,6 +148,7 @@
 			viewer?.dispose();
 			viewer = null;
 			modelReady = false;
+			meter.end();
 		};
 	}
 

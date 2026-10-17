@@ -66,3 +66,36 @@ func TestPageTimesView(t *testing.T) {
 		t.Errorf("page times = %d rows, %d ms; want 2, 5200 (latest snapshot per view)", n, visible)
 	}
 }
+
+func TestPerfViews(t *testing.T) {
+	s := newStore(t)
+	ev := func(name, props string) Event {
+		return Event{Source: "client", Name: name, Visitor: "v", Visit: "s", Path: "/items/3-x", Props: json.RawMessage(props), Release: "r1"}
+	}
+	err := s.RecordEvents(ctx, []Event{
+		ev("page_perf", `{"pv":"a","frames":100,"fps":58.2,"hz":60,"dropped_pct":3.1,"jank":2,"views":1,"views_max":1,"lost":0,"final":false}`),
+		ev("page_perf", `{"pv":"a","frames":900,"fps":41.5,"hz":60,"dropped_pct":30.4,"jank":12,"loaf":3,"loaf_blocking_ms":180,"loaf_scripts":[{"src":"/_app/x.js","ms":200}],"views":1,"views_max":1,"lost":0,"final":true}`),
+		ev("view3d", `{"vid":"t1","view":"product","kind":"shirt","item_id":3,"alive_ms":5000,"draws":200,"frames":190,"fps":40,"dropped_pct":33,"gpu":"Apple GPU","lost":false,"failed":false,"final":false}`),
+		ev("view3d", `{"vid":"t1","view":"product","kind":"shirt","item_id":3,"load_ms":350,"ready_ms":800,"alive_ms":9000,"draws":400,"render_p95":6.5,"frames":390,"fps":38,"dropped_pct":35,"gpu":"Apple GPU","lost":false,"failed":false,"final":true}`),
+		ev("view3d", `{"vid":"t2","view":"tile","kind":"sheet","alive_ms":100,"draws":0,"frames":0,"lost":true,"failed":false,"final":true}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pages, frames, loaf, scripts int
+	var fps float64
+	if err := s.pool.QueryRow(ctx, `SELECT count(*), sum(frames), sum(fps), sum(loaf), sum(jsonb_array_length(loaf_scripts)) FROM usage_page_perf`).Scan(&pages, &frames, &fps, &loaf, &scripts); err != nil {
+		t.Fatal(err)
+	}
+	if pages != 1 || frames != 900 || fps != 41.5 || loaf != 3 || scripts != 1 {
+		t.Errorf("page perf = %d rows, %d frames, %v fps, %d loaf, %d scripts; want the final snapshot", pages, frames, fps, loaf, scripts)
+	}
+	var views, lost, load, draws int
+	var kinds string
+	if err := s.pool.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE lost), sum(load_ms), sum(draws), string_agg(view || ':' || kind, ',' ORDER BY view_id) FROM usage_view3d`).Scan(&views, &lost, &load, &draws, &kinds); err != nil {
+		t.Fatal(err)
+	}
+	if views != 2 || lost != 1 || load != 350 || draws != 400 || kinds != "product:shirt,tile:sheet" {
+		t.Errorf("view3d = %d rows, %d lost, %d load ms, %d draws, %q; want the final snapshot of each", views, lost, load, draws, kinds)
+	}
+}

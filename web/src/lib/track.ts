@@ -4,6 +4,7 @@
 // (never what's typed), cart changes, hovers over items, and errors.
 // Text inside [data-private] (addresses) is never sent.
 import type { Cart, Sizes } from './cart';
+import { FrameStats, LongFrames, ViewStats } from './perf';
 
 type Props = Record<string, unknown>;
 type Batch = { visit: string; release: string; sent: number; events: { name: string; path: string; t: number; props: Props }[] };
@@ -188,6 +189,18 @@ export function vitalProps(m: { name: string; value: number; rating: string; nav
 	return { metric: m.name, value: m.name === 'CLS' ? Math.round(m.value * 10_000) / 10_000 : Math.round(m.value), rating: m.rating, nav: m.navigationType };
 }
 
+type Nav = { hardwareConcurrency?: number; deviceMemory?: number; connection?: { effectiveType?: string; saveData?: boolean } };
+
+/** What the device can do, for telling slow phones from slow code: CPU cores, memory (GB), network, reduced motion. */
+export function deviceProps(nav: Nav, reducedMotion: boolean): Props {
+	const out: Props = { reduced_motion: reducedMotion };
+	if (nav.hardwareConcurrency) out.cores = nav.hardwareConcurrency;
+	if (nav.deviceMemory) out.memory_gb = nav.deviceMemory;
+	if (nav.connection?.effectiveType) out.net = nav.connection.effectiveType;
+	if (nav.connection?.saveData) out.save_data = true;
+	return out;
+}
+
 /** Facts about a page from its path: the item on product pages. */
 export function pageProps(path: string): Props {
 	const m = path.match(/^\/items\/(\d+)/);
@@ -203,7 +216,17 @@ let tracker: Tracker | null = null;
 let visit: Visit | null = null;
 // A visit that started before tracking did (the first API call can come first) is announced once it starts.
 let announce = false;
-let page: { id: string; path: string; clock: PageClock; scroll: number; clicks: number; seen: SeenItems } | null = null;
+type Page = {
+	id: string; path: string; clock: PageClock; scroll: number; clicks: number; seen: SeenItems;
+	frames: FrameStats; loaf: LongFrames; views: number; viewsMax: number; lost: number;
+};
+let page: Page | null = null;
+const newPage = (path: string): Page => ({
+	id: randomId(), path, clock: new PageClock(Date.now()), scroll: 0, clicks: 0, seen: new SeenItems(),
+	frames: new FrameStats(), loaf: new LongFrames(location.origin), views: 0, viewsMax: 0, lost: 0
+});
+// 3D views on screen now, each reporting with page_perf too in case the tab never comes back.
+const liveViews = new Set<{ report: (final: boolean) => void }>();
 let seenObserver: IntersectionObserver | null = null;
 let hover: { id: string; since: number } | null = null;
 
@@ -252,7 +275,8 @@ function visitProps(): Props {
 		tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
 		touch: matchMedia('(pointer: coarse)').matches,
 		standalone: matchMedia('(display-mode: standalone)').matches,
-		automated: !!navigator.webdriver
+		automated: !!navigator.webdriver,
+		...deviceProps(navigator as Nav, matchMedia('(prefers-reduced-motion: reduce)').matches)
 	};
 }
 
@@ -283,6 +307,101 @@ function closePage(final: boolean) {
 		{ pv: page.id, active_ms: page.clock.activeMs, visible_ms: page.clock.visibleMs, scroll_pct: page.scroll, clicks: page.clicks, seen: page.seen.seen(Date.now()), final, ...pageProps(page.path) },
 		page.path
 	);
+	const heap = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
+	tracker.track(
+		'page_perf',
+		{
+			pv: page.id, ...page.frames.props(), ...page.loaf.props(), views: page.views, views_max: page.viewsMax, lost: page.lost,
+			...(heap ? { heap_mb: Math.round(heap / 2 ** 20) } : {}), final, ...pageProps(page.path)
+		},
+		page.path
+	);
+	for (const v of liveViews) v.report(false);
+}
+
+let gpuName: string | undefined;
+// The GPU's name, read off a context the viewer already made (asking first would make one with the wrong settings).
+function gpu(canvas: HTMLCanvasElement): string {
+	if (gpuName !== undefined) return gpuName;
+	try {
+		const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext | null;
+		if (!gl) return '';
+		const ext = gl.getExtension('WEBGL_debug_renderer_info');
+		gpuName = squash(String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER)), 120);
+	} catch {
+		gpuName = '';
+	}
+	return gpuName;
+}
+
+export type Meter = {
+	/** The viewer is built (its code downloaded, its scene made). */
+	loaded(): void;
+	/** Its images are in and it has drawn for real. */
+	ready(): void;
+	/** Draws a frame, timing it. */
+	draw(render: () => void): void;
+	/** A frame with nothing to draw. */
+	idle(): void;
+	/** It couldn't be built (no WebGL, a failed download). */
+	fail(): void;
+	/** It's gone: reports it for the last time. */
+	end(): void;
+};
+
+/** Measures one 3D view (view: product, tile or haul; kind: what it shows) and reports it as view3d when it ends. */
+export function meterView(canvas: HTMLCanvasElement, view: string, kind: string): Meter {
+	const id = randomId();
+	const stats = new ViewStats(performance.now());
+	const path = location.pathname;
+	const item = context(canvas).item_id ?? pageProps(path).item_id;
+	let lost = false;
+	let failed = false;
+	let done = false;
+	let gpuLabel = '';
+	if (page) {
+		page.views++;
+		page.viewsMax = Math.max(page.viewsMax, liveViews.size + 1);
+	}
+	const onLost = () => {
+		lost = true;
+		if (page) page.lost++;
+	};
+	canvas.addEventListener('webglcontextlost', onLost);
+	const live = {
+		report(final: boolean) {
+			tracker?.track(
+				'view3d',
+				{
+					vid: id, view, kind, ...(item ? { item_id: item } : {}), ...stats.props(performance.now()),
+					px: `${canvas.width}x${canvas.height}`, dpr: devicePixelRatio, gpu: gpuLabel, lost, failed, final
+				},
+				path
+			);
+		}
+	};
+	liveViews.add(live);
+	return {
+		loaded() {
+			stats.loaded(performance.now());
+			gpuLabel = gpu(canvas);
+		},
+		ready: () => stats.ready(performance.now()),
+		draw(render) {
+			const t = performance.now();
+			render();
+			stats.rendered(t, performance.now() - t);
+		},
+		idle: () => stats.idle(),
+		fail: () => (failed = true),
+		end() {
+			if (done) return;
+			done = true;
+			canvas.removeEventListener('webglcontextlost', onLost);
+			liveViews.delete(live);
+			live.report(true);
+		}
+	};
 }
 
 /** Starts tracking (once). Call from the root layout. */
@@ -349,6 +468,16 @@ export function startTracking() {
 		new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach(watch))).observe(document.body, { childList: true, subtree: true });
 	}
 
+	// How smoothly pages run: every animation frame's time, and the long ones' scripts (Chrome).
+	const frame = (t: number) => {
+		if (document.visibilityState === 'visible') page?.frames.tick(t);
+		requestAnimationFrame(frame);
+	};
+	requestAnimationFrame(frame);
+	if (typeof PerformanceObserver !== 'undefined' && PerformanceObserver.supportedEntryTypes?.includes('long-animation-frame')) {
+		new PerformanceObserver((list) => list.getEntries().forEach((e) => page?.loaf.add(e as unknown as Parameters<LongFrames['add']>[0]))).observe({ type: 'long-animation-frame', buffered: true });
+	}
+
 	// How fast the site feels on real devices (Core Web Vitals), once per page load.
 	import('web-vitals').then(({ onCLS, onFCP, onINP, onLCP, onTTFB }) => {
 		for (const on of [onCLS, onFCP, onINP, onLCP, onTTFB]) on((m) => track('web_vital', vitalProps(m)));
@@ -361,6 +490,7 @@ export function startTracking() {
 	setInterval(() => page?.clock.tick(Date.now(), document.visibilityState === 'visible'), 1000);
 	setInterval(() => tracker?.flush(), 10_000);
 	document.addEventListener('visibilitychange', () => {
+		page?.frames.gap();
 		if (document.visibilityState === 'hidden') {
 			closePage(false);
 			tracker?.flush();
@@ -384,7 +514,8 @@ export function trackPage(path: string) {
 	const from = page?.path ?? '';
 	endHover(Date.now());
 	closePage(true);
-	page = { id: randomId(), path, clock: new PageClock(Date.now()), scroll: 0, clicks: 0, seen: new SeenItems() };
+	page = newPage(path);
+	page.views = page.viewsMax = liveViews.size; // 3D views already up (they can mount before the first page view)
 	// Items already on screen count for the new page too: re-observing reports where they are now.
 	document.querySelectorAll('[data-item]').forEach((e) => {
 		seenObserver?.unobserve(e);

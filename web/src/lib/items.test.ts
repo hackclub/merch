@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { byFilename, cardSides, formatUnitCost, isBooklet, itemIdFromParam, productPreview, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, previewCount, showsAmountIn3D, tilePreview, thumbnail } from './items';
+import { byFilename, cardSides, formatUnitCost, isBooklet, itemIdFromParam, productPreview, previewKind, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, previewCount, showsAmountIn3D, tilePreview, thumbnail } from './items';
 import type { Item } from './types';
 
 const poster: Item = {
@@ -247,5 +247,12 @@ describe('cardSides', () => {
 		expect(cardSides({ ...card, images: ['https://cdn.example/front.jpg'] })).toBeNull();
 		expect(cardSides({ ...card, images: ['https://cdn.example/a.jpg', 'https://cdn.example/a.jpg'] })).toBeNull();
 		expect(cardSides(poster)).toBeNull();
+	});
+});
+
+describe('previewKind', () => {
+	it('names the kind of 3D view', () => {
+		expect(previewKind({ shirt: {} } as never)).toBe('shirt');
+		expect(previewKind({ book: {} } as never)).toBe('book');
 	});
 });

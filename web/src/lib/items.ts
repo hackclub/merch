@@ -48,6 +48,9 @@ export type Preview3D =
 	| { pin: PinOptions }; // die-struck metal cut out of its photo, enamel between raised gold lines
 
 /** What a shop tile shows instead of its photo; null = just the photo. */
+/** Which kind of 3D view a preview is, for performance analytics (view3d's kind). */
+export const previewKind = (p: Preview3D): string => Object.keys(p)[0];
+
 export type TilePreview =
 	| { clip: string; hover?: Preview3D } // a looping video, GIF or photo of the real thing; a still photo can give way to 3D on hover
 	| Preview3D;

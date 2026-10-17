@@ -11,7 +11,8 @@
 	import { settle, spreadLabel } from './book';
 	import { FOLD_STEPS, foldCycle, foldLabel } from './fold';
 	import type { BookViewer } from './book3d';
-	import { loadPreviewViewer, type Preview3D } from './items';
+	import { loadPreviewViewer, previewKind, type Preview3D } from './items';
+	import { meterView } from './track';
 	import { finishInfo } from './paper';
 	import { sizeLabel } from './scale';
 	import { packLabel } from './stickers';
@@ -112,17 +113,19 @@
 		});
 		ro.observe(stage);
 
-		loadPreviewViewer(canvas!, preview, count, () => (ready = true))
+		const meter = meterView(canvas!, 'product', previewKind(preview));
+		loadPreviewViewer(canvas!, preview, count, () => ((ready = true), meter.ready()))
 			.then((v) => {
 				if (disposed) return v.dispose();
 				viewer = v;
+				meter.loaded();
 				viewer.angle = 'stickers' in preview || 'postcards' in preview ? -0.25 : -0.45;
 				viewer.resize(stage.clientWidth, stage.clientHeight);
 				const tick = (now: number) => {
 					raf = requestAnimationFrame(tick);
 					const dt = Math.min(0.05, (now - last) / 1000);
 					last = now;
-					if (!viewer || !visible || document.hidden) return;
+					if (!viewer || !visible || document.hidden) return meter.idle();
 					const bv = opens ? (viewer as BookViewer) : null;
 					// A trifold left alone opens and folds itself back up.
 					if (fold && spinning && !dragging) goal = foldCycle(now - cycleFrom);
@@ -161,11 +164,12 @@
 						pv.flipped = Math.abs(d) < 0.001 ? cardGoal : pv.flipped + Math.sign(d) * Math.min(Math.abs(d), dt * 2);
 						showingBack = cardGoal === 1;
 					} else showingBack = Math.cos(viewer.angle) < 0;
-					viewer.render();
+					const vr = viewer;
+					meter.draw(() => vr.render());
 				};
 				raf = requestAnimationFrame(tick);
 			})
-			.catch(() => (failed = true));
+			.catch(() => ((failed = true), meter.fail()));
 
 		return () => {
 			disposed = true;
@@ -173,6 +177,7 @@
 			io.disconnect();
 			ro.disconnect();
 			viewer?.dispose();
+			meter.end();
 		};
 	});
 
