@@ -46,7 +46,9 @@ func TestCreateOrder(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	o, err := New(srv.URL, "k", nil).CreateOrder(context.Background(), OrderInput{
+	c := New(srv.URL, "k", nil)
+	c.BillingProfileID = "bp!test"
+	o, err := c.CreateOrder(context.Background(), OrderInput{
 		RecipientEmail: "orpheus@hackclub.com",
 		Title:          "Hack Club swag",
 		IdempotencyKey: "zmr-request-7",
@@ -64,11 +66,15 @@ func TestCreateOrder(t *testing.T) {
 	if wo["recipient_email"] != "orpheus@hackclub.com" || wo["idempotency_key"] != "zmr-request-7" || wo["user_facing_title"] != "Hack Club swag" {
 		t.Errorf("warehouse_order = %v", wo)
 	}
+	// Top level, not inside warehouse_order: Theseus reads params[:billing_profile_id].
+	if body["billing_profile_id"] != "bp!test" {
+		t.Errorf("billing_profile_id = %v", body["billing_profile_id"])
+	}
 	if body["address"].(map[string]any)["line_1"] != "1 St" {
 		t.Errorf("address = %v", body["address"])
 	}
-	c := body["contents"].([]any)[0].(map[string]any)
-	if c["sku"] != "Sti/A" || c["quantity"].(float64) != 2 {
+	line := body["contents"].([]any)[0].(map[string]any)
+	if line["sku"] != "Sti/A" || line["quantity"].(float64) != 2 {
 		t.Errorf("contents = %v", body["contents"])
 	}
 }

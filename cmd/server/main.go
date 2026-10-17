@@ -98,6 +98,8 @@ func run(log *slog.Logger) error {
 		}
 	}
 
+	warehouse := theseus.New(cfg.TheseusBaseURL, cfg.TheseusAPIKey, nil)
+	warehouse.BillingProfileID = cfg.TheseusBillingProfileID
 	h := httpapi.New(httpapi.Deps{
 		Config: cfg,
 		Store:  store.New(pool),
@@ -106,7 +108,7 @@ func run(log *slog.Logger) error {
 			Scopes: cfg.HCAScopes,
 		}),
 		Authors:   dir,
-		Warehouse: theseus.New(cfg.TheseusBaseURL, cfg.TheseusAPIKey, nil),
+		Warehouse: warehouse,
 		Images:    images,
 		Places:    finder,
 		Payments:  payments,

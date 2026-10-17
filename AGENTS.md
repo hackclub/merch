@@ -285,7 +285,7 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
   `restore_database_backup` replaces the live data, and deleting the project deletes its
   backups.
 - Required env: `DATABASE_URL`, `BASE_URL` (public https origin), `SESSION_SECRET`,
-  `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, `THESEUS_API_KEY`, `STRIPE_SECRET_KEY`,
+  `HCA_CLIENT_ID`, `HCA_CLIENT_SECRET`, `THESEUS_API_KEY`, `THESEUS_BILLING_PROFILE_ID`, `STRIPE_SECRET_KEY`,
   `STRIPE_PUBLISHABLE_KEY`, `ADMIN_EMAILS`. Also needed: `AIRTABLE_API_KEY` for authors,
   `HACKCLUB_CDN_API_KEY` for item image uploads, `GOOGLE_PLACES_API_KEY` for address
   autocomplete, and `LOOPS_API_KEY` for request emails.
@@ -584,7 +584,9 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
     dispatches** a real order to the warehouse. Our idempotency key is
     `<THESEUS_ORDER_TAG>-request-<id>`, so retries replay the order instead of shipping twice.
   - International orders need a phone number for customs.
-  - A billing profile is required; it comes from the API key's default.
+  - A billing profile is required. Every order sends `billing_profile_id` from
+    `THESEUS_BILLING_PROFILE_ID` (the Hack Club Merch Requests HCB org; set in the shared `.env` and Orchard), so a
+    change to the key's default can't move the charges. The profile must belong to the key's owner.
   - **Never call CreateOrder outside the admin "Ship" action (`adminDispatch`, which the
     agent API's dispatch also uses). It ships real mail.**
 - **Stripe** (`internal/stripe`, `internal/httpapi/payments.go`, `web/src/lib/CardField.svelte`)

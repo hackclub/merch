@@ -28,6 +28,8 @@ type Config struct {
 	TheseusBaseURL  string
 	TheseusAPIKey   string
 	TheseusOrderTag string
+	// HCB billing profile (bp!…) charged for every warehouse order
+	TheseusBillingProfileID string
 
 	// Unified YSWS Projects DB (Airtable) — source of YSWS authors
 	AirtableAPIKey          string
@@ -82,6 +84,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		TheseusBaseURL:          strings.TrimRight(get("THESEUS_BASE_URL", "https://mail.hackclub.com"), "/"),
 		TheseusAPIKey:           get("THESEUS_API_KEY", ""),
 		TheseusOrderTag:         get("THESEUS_ORDER_TAG", "merch"),
+		TheseusBillingProfileID: get("THESEUS_BILLING_PROFILE_ID", ""),
 		AirtableAPIKey:          get("AIRTABLE_API_KEY", ""),
 		AirtableAuthorsBaseID:   get("AIRTABLE_AUTHORS_BASE_ID", "app3A5kJwYqxMLOgh"),
 		AirtableAuthorsTable:    get("AIRTABLE_AUTHORS_TABLE", "YSWS Authors"),
@@ -123,14 +126,15 @@ func Load(getenv func(string) string) (*Config, error) {
 
 	var missing []string
 	for k, v := range map[string]string{
-		"DATABASE_URL":           c.DatabaseURL,
-		"BASE_URL":               c.BaseURL,
-		"SESSION_SECRET":         c.SessionSecret,
-		"HCA_CLIENT_ID":          c.HCAClientID,
-		"HCA_CLIENT_SECRET":      c.HCAClientSecret,
-		"THESEUS_API_KEY":        c.TheseusAPIKey,
-		"STRIPE_SECRET_KEY":      c.StripeSecretKey,
-		"STRIPE_PUBLISHABLE_KEY": c.StripePublishableKey,
+		"DATABASE_URL":               c.DatabaseURL,
+		"BASE_URL":                   c.BaseURL,
+		"SESSION_SECRET":             c.SessionSecret,
+		"HCA_CLIENT_ID":              c.HCAClientID,
+		"HCA_CLIENT_SECRET":          c.HCAClientSecret,
+		"THESEUS_API_KEY":            c.TheseusAPIKey,
+		"THESEUS_BILLING_PROFILE_ID": c.TheseusBillingProfileID,
+		"STRIPE_SECRET_KEY":          c.StripeSecretKey,
+		"STRIPE_PUBLISHABLE_KEY":     c.StripePublishableKey,
 	} {
 		if v == "" {
 			missing = append(missing, k)

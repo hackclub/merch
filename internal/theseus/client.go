@@ -22,6 +22,10 @@ type Client struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
+
+	// BillingProfileID is the HCB billing profile (bp!…) every order is
+	// charged to. Empty falls back to the API key's default profile.
+	BillingProfileID string
 }
 
 func New(baseURL, apiKey string, hc *http.Client) *Client {
@@ -101,6 +105,9 @@ func (c *Client) CreateOrder(ctx context.Context, in OrderInput) (*Order, error)
 		},
 		"address":  in.Address,
 		"contents": in.Contents,
+	}
+	if c.BillingProfileID != "" {
+		body["billing_profile_id"] = c.BillingProfileID
 	}
 	var out orderResponse
 	if err := c.do(ctx, http.MethodPost, "/api/v1/warehouse_orders", body, &out); err != nil {
