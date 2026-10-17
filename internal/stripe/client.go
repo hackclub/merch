@@ -114,7 +114,47 @@ func (c *Client) Refund(ctx context.Context, paymentID string, amountCents int, 
 	return c.call(ctx, "POST", "/v1/refunds", f, idempotencyKey, nil)
 }
 
-var validID = regexp.MustCompile(`^pi_[A-Za-z0-9_]+$`)
+// Refunded is how much of a payment has gone back to the card, or is on its
+// way (refunds that failed or were cancelled don't count).
+func (c *Client) Refunded(ctx context.Context, paymentID string) (int, error) {
+	if !validID.MatchString(paymentID) {
+		return 0, fmt.Errorf("stripe: bad payment id %q", paymentID)
+	}
+	var list struct {
+		Data []struct {
+			Amount int    `json:"amount"`
+			Status string `json:"status"`
+		} `json:"data"`
+	}
+	q := url.Values{"payment_intent": {paymentID}, "limit": {"100"}}
+	if err := c.call(ctx, "GET", "/v1/refunds?"+q.Encode(), nil, "", &list); err != nil {
+		return 0, err
+	}
+	cents := 0
+	for _, r := range list.Data {
+		if r.Status != "failed" && r.Status != "canceled" {
+			cents += r.Amount
+		}
+	}
+	return cents, nil
+}
+
+// ApprovalError means Stripe is holding the action for someone to approve in
+// the dashboard (the account's approval rules). Once approved, Stripe carries
+// it out by itself.
+type ApprovalError struct {
+	ID      string // apreq_…
+	Message string
+}
+
+func (e *ApprovalError) Error() string {
+	return "stripe: needs approval in the Stripe dashboard (" + e.ID + "): " + e.Message
+}
+
+var (
+	validID    = regexp.MustCompile(`^pi_[A-Za-z0-9_]+$`)
+	approvalID = regexp.MustCompile(`apreq_[A-Za-z0-9]+`)
+)
 
 func (c *Client) call(ctx context.Context, method, path string, form url.Values, idempotencyKey string, out any) error {
 	var body io.Reader
@@ -145,6 +185,9 @@ func (c *Client) call(ctx context.Context, method, path string, form url.Values,
 			} `json:"error"`
 		}
 		json.Unmarshal(data, &e)
+		if id := approvalID.FindString(e.Error.Message); resp.StatusCode == http.StatusForbidden && id != "" {
+			return &ApprovalError{ID: id, Message: e.Error.Message}
+		}
 		return fmt.Errorf("stripe: %d: %s", resp.StatusCode, e.Error.Message)
 	}
 	if out == nil {

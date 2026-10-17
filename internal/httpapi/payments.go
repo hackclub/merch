@@ -19,6 +19,7 @@ type Payments interface {
 	GetPayment(ctx context.Context, id string) (*stripe.Payment, error)
 	CancelPayment(ctx context.Context, id string) error
 	Refund(ctx context.Context, id string, amountCents int, idempotencyKey string) error // 0 refunds all of it
+	Refunded(ctx context.Context, id string) (int, error)                                // cents back to the card so far
 }
 
 // payRequest starts (or picks up) the card payment for a request's shipping
@@ -158,7 +159,9 @@ func (s *server) syncPayments(r *http.Request, rs []*store.Request) {
 // settlePayment squares a request with its payer before it's rejected or
 // cancelled (by "admin" or "requester"): an unpaid payment is closed, and a
 // card payment that went through is refunded. An error means Stripe didn't
-// refund it, so the request should stay as it is.
+// refund it, so the request should stay as it is. A refund already on the
+// payment (one Stripe held for approval and then ran, or one made in the
+// dashboard) counts, so trying again never refunds twice.
 func (s *server) settlePayment(r *http.Request, req *store.Request, by string) (_ *store.Request, refunded bool, err error) {
 	if req.Status == swag.StatusAwaitingPayment {
 		if req = s.syncPayment(r, req); req.Status == swag.StatusAwaitingPayment {
@@ -169,12 +172,22 @@ func (s *server) settlePayment(r *http.Request, req *store.Request, by string) (
 	if req.PaidAt == nil || req.StripePaymentIntent == "" || req.RefundedAt != nil {
 		return req, false, nil
 	}
-	key := s.Config.TheseusOrderTag + "-request-" + strconv.FormatInt(req.ID, 10) + "-refund"
-	if err := s.Payments.Refund(r.Context(), req.StripePaymentIntent, 0, key); err != nil {
-		s.Log.Error("stripe: refund", "request", req.ID, "err", err)
+	ev := map[string]any{"request_id": req.ID, "fee_cents": req.ShippingFeeCents, "refund_cents": req.ShippingFeeCents, "country": req.Address.Country, "by": by}
+	done, err := s.Payments.Refunded(r.Context(), req.StripePaymentIntent)
+	if err != nil {
+		s.Log.Error("stripe: check refunds", "request", req.ID, "err", err)
 		return req, false, err
 	}
-	s.track(r, &store.User{ID: req.UserID}, "payment_refunded", map[string]any{"request_id": req.ID, "fee_cents": req.ShippingFeeCents, "refund_cents": req.ShippingFeeCents, "country": req.Address.Country, "by": by})
+	if done >= req.ShippingFeeCents {
+		ev["existing"] = true
+	} else {
+		key := s.Config.TheseusOrderTag + "-request-" + strconv.FormatInt(req.ID, 10) + "-refund"
+		if err := s.Payments.Refund(r.Context(), req.StripePaymentIntent, 0, key); err != nil {
+			s.Log.Error("stripe: refund", "request", req.ID, "err", err)
+			return req, false, err
+		}
+	}
+	s.track(r, &store.User{ID: req.UserID}, "payment_refunded", ev)
 	return req, true, nil
 }
 

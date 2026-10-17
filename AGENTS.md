@@ -460,7 +460,7 @@ blocks landing):
   `retry`), `payment_completed` (Stripe says it's paid in full; the request moved to `pending`),
   `payment_refunded` (a rejected or cancelled request's card payment went back: `request_id`,
   `fee_cents`, `refund_cents`, `country`, `by` = `admin` or `requester`, `partial` when shipping
-  less made postage cheaper), `email_sent` and `email_failed` (a request email: `kind` = `received`, `dispatched` or `rejected`,
+  less made postage cheaper, `existing` when the refund was already on Stripe, e.g. one held for approval), `email_sent` and `email_failed` (a request email: `kind` = `received`, `dispatched` or `rejected`,
   `request_id`, `email_id` (its `sent_emails` row, with the full text), and Loops' `error`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
   postage, `postage_basis` (the country's rate card, or `international` without one), sample counts, `restock` when a line is backordered, or `error` when it won't pack), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `submission_created`. They carry the page's `visit` (the
@@ -597,7 +597,10 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   the full amount moves the request to `pending` (`paid_at`, `stripe_payment_intent`). Pay
   never starts a second payment while the first is processing or Stripe can't be reached.
   Rejecting or cancelling cancels an unpaid PaymentIntent and refunds a paid one in full
-  (`refunded_at`); if Stripe won't refund, the request stays open so the admin can retry. When an admin ships less of a card-paid request, it's re-quoted on what
+  (`refunded_at`); if Stripe won't refund, the request stays open so the admin can retry. The live
+  account can hold a refund for a person to approve in the Stripe dashboard (403 with an `apreq_…`
+  id, `stripe.ApprovalError`); Stripe runs it once approved, and rejecting again then counts the
+  refund already on the payment instead of making a second one. When an admin ships less of a card-paid request, it's re-quoted on what
   shipped and the difference goes back to the card (`refunded_cents`; the shipped email says so). Card payment is the only way to pay
   (HCB links and "Mark paid" were removed 2026-10-17); the server won't start without
   `STRIPE_SECRET_KEY` and `STRIPE_PUBLISHABLE_KEY`. Dev uses the sandbox (`sk_test_…`/`pk_test_…`, test card

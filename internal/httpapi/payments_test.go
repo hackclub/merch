@@ -21,6 +21,13 @@ type fakeStripe struct {
 	cancelled []string
 	refunds   []fakeRefund
 	refundErr error
+	refunded  map[string]int // what's gone back to each payment's card
+}
+
+func (f *fakeStripe) Refunded(_ context.Context, id string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.refunded[id], nil
 }
 
 type fakeRefund struct {
@@ -35,6 +42,13 @@ func (f *fakeStripe) Refund(_ context.Context, id string, amountCents int, key s
 		return f.refundErr
 	}
 	f.refunds = append(f.refunds, fakeRefund{id, amountCents})
+	if f.refunded == nil {
+		f.refunded = map[string]int{}
+	}
+	if amountCents == 0 {
+		amountCents = f.payments[id].AmountReceived
+	}
+	f.refunded[id] += amountCents
 	return nil
 }
 

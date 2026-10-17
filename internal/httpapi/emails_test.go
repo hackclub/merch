@@ -10,6 +10,7 @@ import (
 	"github.com/hackclub/merch/internal/importer"
 	"github.com/hackclub/merch/internal/loops"
 	"github.com/hackclub/merch/internal/store"
+	"github.com/hackclub/merch/internal/stripe"
 	"github.com/hackclub/merch/internal/swag"
 )
 
@@ -271,6 +272,39 @@ func TestRejectWaitsForRefund(t *testing.T) {
 	got, _ := h.store.GetRequest(context.Background(), r.ID)
 	if got.Status != swag.StatusPending || len(m.emails()) != 1 {
 		t.Fatalf("status %s, emails %d", got.Status, len(m.emails()))
+	}
+}
+
+// Stripe can hold a refund for approval in its dashboard. The request stays
+// open and the admin is told to approve it; once it has gone through, rejecting
+// again finishes without refunding twice.
+func TestRejectAfterRefundApproval(t *testing.T) {
+	h, fs, m := newRefundHarness(t)
+	r := paidIntlRequest(t, h, fs, userEmail)
+	fs.refundErr = &stripe.ApprovalError{ID: "apreq_test", Message: "This action requires human approval"}
+	var e struct{ Error string }
+	if code := h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/requests/%d/reject", r.ID), map[string]any{}, &e); code != 502 {
+		t.Fatalf("reject = %d, want 502", code)
+	}
+	mustContain(t, "error", e.Error, "approve", "apreq_test", dollarsText(r.ShippingFeeCents), "reject it again")
+	if got, _ := h.store.GetRequest(context.Background(), r.ID); got.Status != swag.StatusPending {
+		t.Fatalf("status %s", got.Status)
+	}
+
+	// Approved in Stripe: the held refund ran by itself.
+	fs.refundErr = nil
+	fs.refunded = map[string]int{"pi_1": r.ShippingFeeCents}
+	var got store.Request
+	if code := h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/requests/%d/reject", r.ID), map[string]any{}, &got); code != 200 {
+		t.Fatalf("second reject = %d", code)
+	}
+	if got.Status != swag.StatusRejected || got.RefundedAt == nil || len(fs.refunds) != 0 {
+		t.Fatalf("request %+v, refunds %v", got, fs.refunds)
+	}
+	em := m.emails()
+	mustContain(t, "rejected", em[len(em)-1].Body, "refunded")
+	if ev := h.events("payment_refunded"); len(ev) != 1 || props(t, ev[0])["existing"] != true {
+		t.Fatalf("payment_refunded = %+v", ev)
 	}
 }
 

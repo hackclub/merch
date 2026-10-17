@@ -89,7 +89,8 @@ packages, and you can't undo it.** The requester gets an email that it shipped.
 
 `{"note": "…"}` rejects a `pending` or `awaiting_payment` request. The note goes in the
 email to the requester, so write it to them: kind, short and specific. A card payment is refunded in
-full. If the refund fails, you get a 502 and the request stays open.
+full. If the refund fails, you get a 502 and the request stays open. If Stripe holds the refund
+for a person to approve, the 502 says so: leave a `Needs a human:` note and don't retry until it's approved.
 
 ## Leaving a request for a human
 

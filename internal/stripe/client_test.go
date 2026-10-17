@@ -3,6 +3,7 @@ package stripe
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -110,5 +111,39 @@ func TestRefund(t *testing.T) {
 	}
 	if err := c.Refund(context.Background(), "bogus", 0, ""); err == nil {
 		t.Fatal("bad id refunded")
+	}
+}
+
+// Stripe can hold a refund for a person to approve in the dashboard; it then
+// runs by itself, so callers need to tell that apart from a refusal.
+func TestRefundNeedsApproval(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(403)
+		w.Write([]byte(`{"error":{"message":"This action requires human approval before it can be completed. An approval request has been created and is awaiting review. If approved, it will automatically execute. To check status: GET /v2/core/approval_requests/apreq_61VaTest. To provide context for the reviewer: POST /v2/core/approval_requests/apreq_61VaTest with a reason parameter."}}`))
+	}))
+	defer srv.Close()
+	err := New(srv.URL, "sk_test_x", nil).Refund(context.Background(), "pi_paid", 0, "k")
+	var ae *ApprovalError
+	if !errors.As(err, &ae) || ae.ID != "apreq_61VaTest" {
+		t.Fatalf("err = %#v", err)
+	}
+}
+
+func TestRefunded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/v1/refunds" || r.URL.Query().Get("payment_intent") != "pi_paid" {
+			t.Errorf("%s %s", r.Method, r.URL)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
+			{"id": "re_1", "amount": 300, "status": "succeeded"},
+			{"id": "re_2", "amount": 200, "status": "pending"},
+			{"id": "re_3", "amount": 900, "status": "failed"},
+			{"id": "re_4", "amount": 900, "status": "canceled"},
+		}})
+	}))
+	defer srv.Close()
+	cents, err := New(srv.URL, "sk_test_x", nil).Refunded(context.Background(), "pi_paid")
+	if err != nil || cents != 500 {
+		t.Fatalf("refunded = %d, %v", cents, err)
 	}
 }

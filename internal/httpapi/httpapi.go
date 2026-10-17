@@ -28,6 +28,7 @@ import (
 	"github.com/hackclub/merch/internal/config"
 	"github.com/hackclub/merch/internal/imgprep"
 	"github.com/hackclub/merch/internal/store"
+	"github.com/hackclub/merch/internal/stripe"
 	"github.com/hackclub/merch/internal/swag"
 	"github.com/hackclub/merch/internal/theseus"
 )
@@ -735,6 +736,11 @@ func (s *server) adminReject(w http.ResponseWriter, r *http.Request, v viewer) {
 	}
 	req, refunded, err := s.settlePayment(r, req, "admin")
 	if err != nil {
+		var held *stripe.ApprovalError
+		if errors.As(err, &held) {
+			writeErr(w, http.StatusBadGateway, fmt.Sprintf("Stripe is holding the %s refund until someone approves it in the Stripe dashboard (%s). The request wasn't rejected: once the refund goes through, reject it again.", dollars(req.ShippingFeeCents), held.ID))
+			return
+		}
 		writeErr(w, http.StatusBadGateway, "couldn't refund the card, so the request wasn't rejected: "+err.Error())
 		return
 	}
