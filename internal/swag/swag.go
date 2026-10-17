@@ -27,8 +27,9 @@ type Settings struct {
 	InternationalShippingFeeCents int  `json:"international_shipping_fee_cents"`
 }
 
-// Finishes are the paper surfaces the 3D preview knows how to render.
-var Finishes = map[string]bool{"": true, "matte": true, "gloss": true, "linen": true, "uncoated": true}
+// Finishes are the surfaces the 3D preview knows how to render: paper, and
+// "enamel" for enamel pins (drawn as die-struck metal, not a sheet).
+var Finishes = map[string]bool{"": true, "matte": true, "gloss": true, "linen": true, "uncoated": true, "enamel": true}
 
 // Bindings are how a multi-page printed item is bound, for the 3D flip-through:
 // "" is a single sheet, "staple" is saddle-stitched (folded sheets, stapled on

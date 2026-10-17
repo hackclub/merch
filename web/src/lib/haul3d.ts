@@ -1,6 +1,7 @@
 // Draws layoutHaul's table (haul.ts): every pile at true size — sealed clear zip
 // bags of 50 die-cut stickers, fanned loose stickers, banded postcard bundles,
-// booklet stacks with spines and page edges, shop-folded T-shirts (shirt3d.ts), posters, and
+// booklet stacks with spines and page edges, shop-folded T-shirts (shirt3d.ts), enamel pins
+// lying face up (pin3d.ts), posters, and
 // trifold brochures whose top one opens out flat and folds back up on a loop (fold3d.ts) —
 // next to a phone (and, on folding tables, an open laptop) for scale, seen from
 // above at an angle. Units are inches.
@@ -11,6 +12,8 @@ import { finishInfo } from './paper';
 import { foldCycle } from './fold';
 import { createTrifold, type Trifold } from './fold3d';
 import { createPhone, createStage, edgeColor, loadArt, pageEdges, paperBand, paperEdge, paperFace, PHONE_DEPTH } from './paper3d';
+import { PIN_GAP_IN, pinGrid, POST_IN, BODY_IN } from './pin';
+import { loadPin, type PinModel } from './pin3d';
 import { foldedShirtGeometry, shirtLook, shirtMaterial } from './shirt3d';
 import { BAG_H, createStickerBag, createStickerFan, disposeStickerGroup, loadStickerCutout, type StickerCutout } from './sticker3d';
 
@@ -73,6 +76,7 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 	const texCache = new Map<string, THREE.Texture | null | ((tex: THREE.Texture | null) => void)[]>();
 	const cutoutCache = new Map<string, StickerCutout | null | ((c: StickerCutout | null) => void)[]>();
 	const shirtLooks = new Map<string, ReturnType<typeof shirtLook>>();
+	const pinCache = new Map<string, PinModel | null | ((p: PinModel | null) => void)[]>();
 
 	let generation = 0;
 	let readyFired = false;
@@ -107,6 +111,23 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 			cutoutCache.set(key, c);
 			for (const w of waiters) w(c);
 		});
+	}
+
+	function getPin(url: string, widthIn: number | null, heightIn: number | null, cb: (p: PinModel | null) => void) {
+		const key = `${url}@${widthIn ?? ''}x${heightIn ?? ''}`;
+		const cached = pinCache.get(key);
+		if (cached !== undefined && !Array.isArray(cached)) return cb(cached);
+		if (Array.isArray(cached)) {
+			cached.push(cb);
+			return;
+		}
+		const waiters = [cb];
+		pinCache.set(key, waiters);
+		// A coarser face than the product page's: a table can hold dozens.
+		loadPin(renderer, url, widthIn, heightIn, 110, (p) => {
+			pinCache.set(key, p);
+			for (const w of waiters) w(p);
+		}, true);
 	}
 
 	function clearContents() {
@@ -145,6 +166,39 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 					mesh.traverse((o) => (o.userData.label = label));
 					holder.add(mesh);
 					disposers.push(() => disposeStickerGroup(mesh));
+				}
+				doneOne();
+			});
+			return;
+		}
+
+		if (p.kind === 'pin') {
+			const count = Math.max(1, p.count ?? 1);
+			const label = `${p.label} · ${count === 1 ? 'one pin' : `${count} pins`}`;
+			const hit = new THREE.Mesh(new THREE.BoxGeometry(p.w, p.height, p.d), hitMat);
+			hit.position.set(p.x, p.height / 2, p.z);
+			hit.userData.label = label;
+			contents.add(hit);
+			disposers.push(() => hit.geometry.dispose());
+			if (!p.art) return doneOne();
+			getPin(p.art, p.widthIn ?? null, p.heightIn ?? null, (pin) => {
+				if (gen !== generation) return;
+				if (pin) {
+					// Face up in rows, resting on their posts and clutches, each a little askew.
+					const { cols, rows } = pinGrid(count);
+					const cellW = (p.w - (cols - 1) * PIN_GAP_IN) / cols, cellD = (p.d - (rows - 1) * PIN_GAP_IN) / rows;
+					for (let i = 0; i < count; i++) {
+						const one = pin.group.clone();
+						const col = i % cols, row = Math.floor(i / cols);
+						one.rotation.set(-Math.PI / 2 + 0.12, 0, Math.sin(i * 2.3 + 1) * 0.08); // tipped a little toward you
+						one.position.set(
+							p.x - p.w / 2 + cellW / 2 + col * (cellW + PIN_GAP_IN),
+							BODY_IN + POST_IN,
+							p.z - p.d / 2 + cellD / 2 + row * (cellD + PIN_GAP_IN)
+						);
+						one.traverse((o) => (o.userData.label = label));
+						contents.add(one);
+					}
 				}
 				doneOne();
 			});
@@ -426,6 +480,8 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 			shirtLooks.clear();
 			for (const v of cutoutCache.values()) if (v && !Array.isArray(v)) v.dispose();
 			cutoutCache.clear();
+			for (const v of pinCache.values()) if (v && !Array.isArray(v)) v.dispose();
+			pinCache.clear();
 			stage.dispose();
 		}
 	};

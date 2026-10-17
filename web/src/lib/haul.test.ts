@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bookletStack, LAPTOP, layoutHaul, LOFT, piles, pickedLines, requestHaul, TABLE, tableCover, tall } from './haul';
+import { PIN_GAP_IN, PIN_PILE_H } from './pin';
 import { PHONE } from './scale';
 import type { Item } from './types';
 
@@ -72,6 +73,22 @@ describe('piles', () => {
 			['5 × Magazine 2025', 'booklet', 5],
 			['5 × Intro Card', 'paper', 5]
 		]);
+	});
+});
+
+describe('enamel pins', () => {
+	const pin: Item = { ...base, id: 5, name: 'Pin', images: ['pin.jpg'], width_in: 2, height_in: 1, thickness_in: 0.375, finish: 'enamel' };
+
+	it('lie face up in rows of 5, standing on their posts', () => {
+		const [p] = piles([{ item: pin, quantity: 7 }]);
+		expect(p).toMatchObject({ kind: 'pin', count: 7, art: 'pin.jpg', widthIn: 2, heightIn: 1, height: PIN_PILE_H });
+		expect(p.w).toBeCloseTo(5 * 2 + 4 * PIN_GAP_IN);
+		expect(p.d).toBeCloseTo(2 * 1 + PIN_GAP_IN);
+	});
+
+	it('take about an inch each without measurements', () => {
+		const [p] = piles([{ item: { ...pin, width_in: null, height_in: null }, quantity: 1 }]);
+		expect(p).toMatchObject({ kind: 'pin', w: 1, d: 1 });
 	});
 });
 

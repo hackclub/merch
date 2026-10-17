@@ -2,6 +2,8 @@ import type { BookOptions } from './book3d';
 import type { FoldOptions } from './fold3d';
 import { sheetThickness } from './paper';
 import type { Viewer, ViewerOptions } from './paper3d';
+import { isPin } from './pin';
+import type { PinOptions } from './pin3d';
 import { hasSize } from './scale';
 import type { PostcardOptions } from './postcard3d';
 import type { ShirtOptions } from './shirt3d';
@@ -35,14 +37,15 @@ export const isBooklet = (item: Item) => item.binding !== '' && item.binding !==
 /** A trifold brochure with its outside (images[0]) and inside (images[1]) art folds and unfolds in 3D. */
 export const isTrifold = (item: Item) => item.binding === 'trifold' && item.images.length >= 2;
 
-/** A 3D product preview: booklet flip-through, trifold, printed sheet, sticker packs, postcard bundles, or a T-shirt. */
+/** A 3D product preview: booklet flip-through, trifold, printed sheet, sticker packs, postcard bundles, a T-shirt, or an enamel pin. */
 export type Preview3D =
 	| { book: BookOptions } // a booklet that flips through its pages
 	| { fold: FoldOptions } // a trifold brochure that opens and folds up
 	| { sheet: ViewerOptions } // a sized print, front and back
 	| { stickers: StickerOptions }
 	| { postcards: PostcardOptions } // a stack, or bundles of 50
-	| { shirt: ShirtOptions }; // cut out of its product photos, front and back
+	| { shirt: ShirtOptions } // cut out of its product photos, front and back
+	| { pin: PinOptions }; // die-struck metal cut out of its photo, enamel between raised gold lines
 
 /** What a shop tile shows instead of its photo; null = just the photo. */
 export type TilePreview =
@@ -58,6 +61,9 @@ export function productPreview(item: Item, includes: Item[] = [], phone = true):
 		return item.images.length
 			? { stickers: { kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in, phone } }
 			: null;
+	}
+	if (isPin(item)) {
+		return item.images.length ? { pin: { kind: 'pin', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in, phone } } : null;
 	}
 	if (item.variants.length && !hasSize(item)) {
 		// Sized items are shirts: shown in an M (or the middle size), front and back.
@@ -142,6 +148,7 @@ export function loadPreviewViewer(canvas: HTMLCanvasElement, preview: Preview3D,
 			return v;
 		});
 	}
+	if ('pin' in preview) return import('./pin3d').then((m) => m.createPinViewer(canvas, preview.pin, onReady));
 	if ('shirt' in preview) return import('./shirt3d').then((m) => m.createShirtViewer(canvas, preview.shirt, onReady));
 	return import('./paper3d').then((m) => m.createViewer(canvas, preview.sheet, onReady));
 }

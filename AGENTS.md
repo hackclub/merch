@@ -646,6 +646,11 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   leaves room for the top one, which opens out flat and folds back up on the same loop.
   `ships_with` lists SKUs added to the warehouse order once per unit (the Magazine 2025
   always ships with its intro card, `Pri/M25/4x6/1st`), and the product page shows them.
+  Enamel pins (`finish` = `enamel`; `pin.ts`, `pin3d.ts`) are modeled from images[0], a photo of
+  the face on a plain backdrop: the outline becomes a beveled metal blank, the photo's gold
+  stands proud of glossy enamel, and the back gets a post and butterfly clutch (two on a pin
+  1.4" or wider). The product page floats it beside a phone; the haul lays them face up in rows
+  of 5.
   Shop grid tiles (`web/src/lib/Tile3D.svelte`) show the same 3D views without the phone, still
   until touched: hover or drag turns prints and stickers, and booklets flip through on hover.
   `clip` (an MP4, GIF or photo URL, set on the admin Items tab) replaces the tile's 3D view with a

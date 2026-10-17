@@ -160,6 +160,18 @@ describe('tilePreview', () => {
 });
 
 describe('productPreview', () => {
+	const pin: Item = {
+		...poster, sku: 'Swa/HC/Pin/1st', name: 'Hack Club enamel pin', images: ['https://cdn.example/pin.jpg'],
+		width_in: 2, height_in: 1, thickness_in: 0.375, finish: 'enamel'
+	};
+
+	it('shows an enamel pin as a pin, not a sheet of paper', () => {
+		expect(productPreview(pin)).toEqual({ pin: { kind: 'pin', front: 'https://cdn.example/pin.jpg', widthIn: 2, heightIn: 1, phone: true } });
+		expect(tilePreview(pin)).toEqual({ pin: { kind: 'pin', front: 'https://cdn.example/pin.jpg', widthIn: 2, heightIn: 1, phone: false } });
+		expect(productPreview({ ...pin, width_in: null, height_in: null })).toMatchObject({ pin: { widthIn: null, heightIn: null } });
+		expect(productPreview({ ...pin, images: [] })).toBeNull();
+	});
+
 	it('builds the product-page 3D view with a phone and any ships_with extras, ignoring clips', () => {
 		const card: Item = { ...poster, id: 9, sku: 'Pri/M25/4x6/1st', width_in: 6, height_in: 4, thickness_in: 0.014, weight_oz: null, finish: 'linen' };
 		const mag: Item = { ...poster, images: [], binding: 'perfect', pages: ['p1', 'p2', 'p3', 'p4'], width_in: 5.5, height_in: 8.5, ships_with: ['Pri/M25/4x6/1st'], clip: 'https://cdn.example/flip.mp4' };

@@ -380,9 +380,9 @@
 										oninput={(e) => (it.height_in = e.currentTarget.value === '' ? null : +e.currentTarget.value)} />
 								</span>
 							</label>
-							<label>Paper finish
+							<label>Finish
 								<select bind:value={it.finish}>
-									{#each [['', '—'], ['matte', 'Matte'], ['gloss', 'Gloss'], ['linen', 'Linen'], ['uncoated', 'Uncoated']] as [v, l]}
+									{#each [['', '—'], ['matte', 'Matte'], ['gloss', 'Gloss'], ['linen', 'Linen'], ['uncoated', 'Uncoated'], ['enamel', 'Enamel pin']] as [v, l]}
 										<option value={v}>{l}</option>
 									{/each}
 								</select>

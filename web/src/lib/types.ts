@@ -16,7 +16,7 @@ export type Item = {
 	width_in: number | null; // physical size in inches, for printed items
 	height_in: number | null;
 	variants: Variant[]; // sizes, each its own warehouse SKU; empty = one size
-	finish: string; // '' | 'matte' | 'gloss' | 'linen' | 'uncoated'
+	finish: string; // '' | 'matte' | 'gloss' | 'linen' | 'uncoated' | 'enamel' (an enamel pin)
 	thickness_in: number | null;
 	weight_oz: number | null; // one unit's shipping weight; null = worked out from its paper size
 	photos: Photo[]; // real-world pictures people posted

@@ -828,6 +828,11 @@ func TestItemPrintDetailsAreValidated(t *testing.T) {
 	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || upd.Finish != "matte" || *upd.ThicknessIn != 0.008 || upd.Packs != "sticker" {
 		t.Fatalf("good print details = %d %+v", code, upd)
 	}
+	// Enamel pins render as pins in 3D.
+	it.Finish, it.Packs = "enamel", ""
+	if code := h.do(admin, "PUT", path, it, &upd); code != 200 || upd.Finish != "enamel" {
+		t.Fatalf("enamel finish = %d %+v", code, upd)
+	}
 }
 
 func TestAdminUploadsItemPhotos(t *testing.T) {

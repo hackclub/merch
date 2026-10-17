@@ -6,13 +6,14 @@ import { foldedSize, panelU } from './fold';
 import { isBooklet, isTrifold, shipsWith, thumbnail } from './items';
 import { sheetThickness } from './paper';
 import { CARD_IN, PER_BUNDLE } from './postcards';
+import { isPin, PIN_GAP_IN, PIN_PILE_H, pinGrid } from './pin';
 import { PHONE } from './scale';
 import { PER_BAG, STICKER_THICKNESS_IN } from './stickers';
 import type { Item, RequestLine } from './types';
 
 export type HaulLine = { item: Item; quantity: number; size?: string };
 
-export type PileKind = 'paper' | 'booklet' | 'sticker' | 'shirt' | 'box';
+export type PileKind = 'paper' | 'booklet' | 'sticker' | 'shirt' | 'pin' | 'box';
 
 export type Pile = {
 	key: string;
@@ -131,6 +132,15 @@ function pileOf({ item, quantity, size }: HaulLine): Pile {
 		return {
 			key, label, art, w, d, height: STICKER_THICKNESS_IN * quantity,
 			kind: 'sticker', count: quantity, widthIn: item.width_in, heightIn: item.height_in
+		};
+	}
+	if (isPin(item)) {
+		// Laid out face up in rows, standing on their posts; about an inch each without measurements.
+		const pw = item.width_in ?? 1, ph = item.height_in ?? 1;
+		const { cols, rows } = pinGrid(quantity);
+		return {
+			key, label, art, w: cols * pw + (cols - 1) * PIN_GAP_IN, d: rows * ph + (rows - 1) * PIN_GAP_IN, height: PIN_PILE_H,
+			kind: 'pin', count: quantity, widthIn: item.width_in, heightIn: item.height_in
 		};
 	}
 	if (item.width_in != null && item.height_in != null && isTrifold(item)) {
