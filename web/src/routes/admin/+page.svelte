@@ -10,6 +10,7 @@
 	import { arrivalText, costBreakdown, ozText } from '$lib/shipping';
 	import { lineText, shipBody } from '$lib/ship';
 	import type { APIKey, Item, SentEmail, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
+	import { thumb } from '$lib/thumb';
 
 	type Tab = 'requests' | 'items' | 'settings' | 'submissions' | 'emails' | 'api keys';
 	let tab = $state<Tab>('requests');
@@ -275,7 +276,7 @@
 							<div class="gallery">
 								{#each it.images as src, i (src)}
 									<figure>
-										<img {src} alt="" />
+										<img {...thumb(src, { w: 80, h: 80 })} alt="" />
 										<figcaption>
 											<button class="link" title="Move left" disabled={i === 0} onclick={() => (it.images = moveImage(it.images, i, -1))}>←</button>
 											<button class="link" title="Remove" onclick={() => (it.images = it.images.filter((_, j) => j !== i))}>✕</button>
@@ -315,7 +316,7 @@
 									</select></label>
 								{#if it.pages.length}
 									<div class="pages">
-										{#each it.pages.slice(0, 8) as src, i (src)}<img {src} alt="Page {i + 1}" />{/each}
+										{#each it.pages.slice(0, 8) as src, i (src)}<img {...thumb(src, { h: 48 })} alt="Page {i + 1}" />{/each}
 										{#if it.pages.length > 8}<span class="muted">+{it.pages.length - 8} more</span>{/if}
 									</div>
 								{/if}
@@ -333,7 +334,7 @@
 								<summary>Real-world photos ({it.photos.length})</summary>
 								{#each it.photos as p, i (p.url)}
 									<div class="photo-row">
-										<img src={p.url} alt="" />
+										<img {...thumb(p.url, { w: 64, h: 48, fit: 'cover' })} alt="" />
 										<div>
 											<input bind:value={p.caption} placeholder="caption" aria-label="Photo caption" />
 											<input bind:value={p.credit} placeholder="credit" aria-label="Photo credit" />

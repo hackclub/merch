@@ -22,6 +22,7 @@
 	import Haul3D from '$lib/Haul3D.svelte';
 	import QuantityPicker from '$lib/QuantityPicker.svelte';
 	import Tile3D from '$lib/Tile3D.svelte';
+	import { thumb } from '$lib/thumb';
 	import type { Address, Catalog, Item, Purpose, SwagRequest } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
@@ -80,6 +81,15 @@
 	const payByCard = $derived(intl && !!quote?.estimate.fee_cents);
 	// Two strips of everything under the intro: photos and products on top, magazine pages and backs below.
 	const rows = $derived(catalog ? galleryRows(catalog.items) : null);
+	// Image boxes in CSS pixels, so thumbnails come at the size they show (see .slide and .thumb below):
+	// slides are 11rem tall, products 4:5 with 8% padding; list thumbnails 85% of 3.75rem wide, grid ones of about 7rem
+	// (by width only: portrait ones grow taller than the square);
+	// the hover peek 85% of an 18rem-wide 4:3 box.
+	const SLIDE = { h: 176 };
+	const SLIDE_PRODUCT = { w: 120, h: 154 };
+	const LINE_THUMB = { w: 52 };
+	const CELL_THUMB = { w: 96 };
+	const PEEK = { w: 245, h: 184 };
 	// What's coming, line by line (one per size), for the 3D preview: beside the sheet on wide screens, above Submit otherwise.
 	const haul = $derived(
 		cartLines(cart, shown, sizes).map((l) => {
@@ -205,7 +215,7 @@
 							{#each row as s, i (i)}
 								<a href={s.href} class="slide" class:real={s.real} class:page={s.page} class:sticker={s.sticker}
 									aria-hidden={copy === 1} tabindex={copy === 1 ? -1 : undefined}>
-									<img src={s.src} alt={copy === 1 ? '' : s.alt} decoding="async" />
+									<img {...thumb(s.src, s.real || s.page ? SLIDE : SLIDE_PRODUCT)} alt={copy === 1 ? '' : s.alt} decoding="async" />
 								</a>
 							{/each}
 						{/each}
@@ -253,14 +263,14 @@
 					<!-- Cards show both sides in 3D: the stack as it comes, then turned over. -->
 					{#each sides as src, i (i)}
 						<div class="peek-img side" class:portrait={(item.height_in ?? 0) > (item.width_in ?? 0)}>
-							<img {src} alt="" />
+							<img {...thumb(src, PEEK)} alt="" />
 							<Tile3D {preview} active back={i === 1} count={previewCount(item, cart[item.id] ?? 0)} rest={-0.45} />
 							<span class="side-label">{i ? 'Back' : 'Front'}</span>
 						</div>
 					{/each}
 				{:else if thumbnail(item) || preview}
 					<div class="peek-img" class:sticker={item.packs === 'sticker'}>
-						{#if thumbnail(item)}<img src={thumbnail(item)} alt="" />{/if}
+						{#if thumbnail(item)}<img {...thumb(thumbnail(item), PEEK)} alt="" />{/if}
 						{#if preview}<Tile3D {preview} active count={previewCount(item, cart[item.id] ?? 0)} rest={'stickers' in preview ? -0.25 : -0.45} />{/if}
 					</div>
 				{/if}
@@ -291,7 +301,7 @@
 					<div class="line" data-item={item.id} class:picked={cart[item.id]} class:sized={open && expanded(item)}
 						onmouseenter={() => (peek = item.id)} onmouseleave={() => (peek = null)}>
 						<a href={itemPath(item)} class="thumb" class:sticker={item.packs === 'sticker'} tabindex="-1" aria-hidden="true">
-							{#if thumbnail(item)}<img src={thumbnail(item)} alt="" loading="lazy" />{/if}
+							{#if thumbnail(item)}<img {...thumb(thumbnail(item), LINE_THUMB)} alt="" loading="lazy" />{/if}
 						</a>
 						<div class="what">
 							<a href={itemPath(item)}>{item.name}</a>
@@ -311,7 +321,7 @@
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<div class="cell" data-item={item.id} class:picked={cart[item.id]} onmouseenter={() => (peek = item.id)} onmouseleave={() => (peek = null)}>
 								<a href={itemPath(item)} class="thumb" class:sticker={item.packs === 'sticker'} tabindex="-1" aria-hidden="true">
-									{#if thumbnail(item)}<img src={thumbnail(item)} alt="" loading="lazy" />{/if}
+									{#if thumbnail(item)}<img {...thumb(thumbnail(item), CELL_THUMB)} alt="" loading="lazy" />{/if}
 								</a>
 								<a href={itemPath(item)} class="name">{item.name}</a>
 								{#if backorderNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="backorder">{backorderNote(item, catalog.stock, cart, sizes)}</span>{/if}

@@ -650,7 +650,9 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   (the greeting): it's personal data, so never copy rows into the repo.
 - **cdn.hackclub.com** hosts item images. Admins upload them on the admin Items tab; the
   server re-encodes them as ≤1600px JPEGs (print PNGs are ~9 MB) and stores the CDN URLs in
-  `items.images` (ordered; the first is the thumbnail). Each item has a product page at
+  `items.images` (ordered; the first is the thumbnail). Thumbnails and the
+  home page strips load them through Cloudflare Image Transformations on cdn.hackclub.com
+  (`/cdn-cgi/image/…`, `$lib/thumb`): sized for their box at 1x/2x/3x, AVIF or WebP. Each item has a product page at
   `/items/<id>-<slug>`. Printed items with `width_in`/`height_in` set open on a 3D view
   (`web/src/lib/Product3D.svelte` + `paper3d.ts`, three.js, lazy-loaded): images[0] and
   images[1] are the front and back of a sheet with real thickness (`thickness_in`) and paper

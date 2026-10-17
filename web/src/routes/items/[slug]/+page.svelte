@@ -13,9 +13,12 @@
 	import { session } from '$lib/session.svelte';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
 	import Stepper from '$lib/Stepper.svelte';
+	import { thumb } from '$lib/thumb';
 	import type { Catalog, ItemStock } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
+	// The image picker's tiles: 4.5rem less 0.3rem padding (see .thumb below).
+	const THUMB = { w: 62, h: 62 };
 	let error = $state('');
 	// Gallery selection: '3d' or an image index; null = the default (3D when available).
 	let picked = $state<'3d' | number | null>(null);
@@ -101,13 +104,13 @@
 						{#if has3D}
 							<button type="button" class="thumb three-thumb" class:active={shown === '3d'}
 								aria-label={booklet ? 'Flip through it in 3D' : fold ? 'Unfold it in 3D' : 'Show it in 3D, to scale'} onclick={() => (picked = '3d')}>
-								<img src={thumbnail(item)} alt="" loading="lazy" />
+								<img {...thumb(thumbnail(item), THUMB)} alt="" loading="lazy" />
 								<span>3D</span>
 							</button>
 						{/if}
 						{#each item.images as src, i (src)}
 							<button type="button" class="thumb" class:active={i === shown} aria-label="Show image {i + 1}" onclick={() => (picked = i)}>
-								<img {src} alt="" loading="lazy" />
+								<img {...thumb(src, THUMB)} alt="" loading="lazy" />
 							</button>
 						{/each}
 					</div>
@@ -156,7 +159,7 @@
 			{#if comesWith.length}
 				<div class="comes-with">
 					{#each comesWith as extra (extra.id)}
-						{#if thumbnail(extra)}<img src={thumbnail(extra)} alt="" />{/if}
+						{#if thumbnail(extra)}<img {...thumb(thumbnail(extra), { w: 72, h: 48, fit: 'cover' })} alt="" />{/if}
 						<p>
 							<strong>Comes with the {extra.name}</strong><br />
 							<span class="muted">One in the envelope with every copy{extra.visible ? '' : ', no need to add it'}.
@@ -205,7 +208,7 @@
 			<div class="photos">
 				{#each item.photos as p (p.url)}
 					<figure>
-						<a href={p.url} target="_blank" rel="noreferrer"><img src={p.url} alt={p.caption || `${item.name}, photo by ${p.credit}`} loading="lazy" /></a>
+						<a href={p.url} target="_blank" rel="noreferrer"><img {...thumb(p.url, { w: 480, h: 360, fit: 'cover' })} alt={p.caption || `${item.name}, photo by ${p.credit}`} loading="lazy" /></a>
 						<figcaption>
 							{#if p.caption}<span>{p.caption}</span>{/if}
 							{#if p.credit}<span class="muted">📷 {p.credit}</span>{/if}
