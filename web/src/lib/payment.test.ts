@@ -8,6 +8,7 @@ function fakeCard(result: Awaited<ReturnType<CardForm['confirm']>>) {
 	const calls: string[] = [];
 	const card: CardForm = {
 		check: async () => null,
+		method: () => 'card',
 		setAmount: (c) => void calls.push(`amount ${c}`),
 		confirm: async (secret, returnUrl) => {
 			calls.push(`confirm ${secret} ${returnUrl}`);
@@ -43,7 +44,15 @@ describe('payment', () => {
 		const events: unknown[] = [];
 		const err = await payShipping(card, 7, async () => ({ client_secret: 's', amount_cents: 900 }), 'http://app.test', (n, p) => events.push([n, p]));
 		expect(err).toBe('Your card has insufficient funds.');
-		expect(events).toEqual([['payment_error', { request_id: 7, type: 'card_error', code: 'card_declined', decline_code: 'insufficient_funds' }]]);
+		expect(events).toEqual([['payment_error', { request_id: 7, method: 'card', type: 'card_error', code: 'card_declined', decline_code: 'insufficient_funds' }]]);
+	});
+
+	it('records whether a failed payment was Apple Pay', async () => {
+		const { card } = fakeCard({ error: { type: 'card_error', code: 'card_declined' } });
+		card.method = () => 'apple_pay';
+		const events: [string, Record<string, unknown>][] = [];
+		await payShipping(card, 7, async () => ({ client_secret: 's', amount_cents: 900 }), 'http://app.test', (n, p) => events.push([n, p]));
+		expect(events[0][1].method).toBe('apple_pay');
 	});
 
 	it('passes on the server refusing to start a payment', async () => {

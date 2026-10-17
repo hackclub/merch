@@ -1,6 +1,8 @@
-<!-- The card field: Stripe's Payment Element, cards only, styled like the form around it.
-	 Card numbers go from Stripe's iframe straight to Stripe. The billing address is the
-	 shipping address, so it asks for just the number, expiry and CVC. -->
+<!-- The card field: Stripe's Payment Element, styled like the form around it. It takes a
+	 card, or Apple Pay in browsers that have it (Safari with a card in Wallet; Stripe shows
+	 it only on domains registered with it, see stripe.RegisterDomain). Card numbers go from
+	 Stripe's iframe straight to Stripe. The billing address is the shipping address, so it
+	 asks for just the number, expiry and CVC. -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { loadStripe, type Stripe, type StripeElements } from '@stripe/stripe-js';
@@ -13,6 +15,7 @@
 	let stripe: Stripe | null = null;
 	let elements = $state.raw<StripeElements | null>(null);
 	let loadError = $state('');
+	let chosen = 'card'; // the tab picked: 'card' or 'apple_pay'
 
 	onMount(() => {
 		let destroyed = false;
@@ -25,7 +28,7 @@
 					mode: 'payment',
 					amount: amountCents,
 					currency: 'usd',
-					allowedPaymentMethodTypes: ['card'], // the PaymentIntent the server makes says the same
+					allowedPaymentMethodTypes: ['card'], // Apple Pay pays by card too; the server's PaymentIntent says the same
 					fonts: [{ family: 'Phantom Sans', src: 'url(https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Regular.woff2)', weight: '400' }],
 					appearance: {
 						theme: 'stripe',
@@ -39,16 +42,17 @@
 					}
 				});
 				const pe = els.create('payment', {
-					layout: 'tabs', // with one method, just its fields
+					layout: 'tabs', // Card and, where there is one, Apple Pay
 					fields: { billingDetails: { address: 'never' } },
-					// Just the card: no wallets, and no Link (its bank and Klarna options ride on cards).
-					wallets: { applePay: 'never', googlePay: 'never', link: 'never' },
+					// Apple Pay, but no Google Pay or Link (Link's bank and Klarna options ride on cards).
+					wallets: { applePay: 'auto', googlePay: 'never', link: 'never' },
 					terms: { card: 'never' }
 				});
 				pe.on('loaderror', (e) => {
 					console.error('stripe payment element', e.error);
 					loadError = "The card form didn't load. Reload the page to try again.";
 				});
+				pe.on('change', (e) => (chosen = e.value.type));
 				pe.mount(box);
 				field = pe;
 				elements = els;
@@ -68,6 +72,10 @@
 		if (!elements) return loadError || 'The card form is still loading.';
 		const { error } = await elements.submit();
 		return error ? error.message || 'Check your card details.' : null;
+	}
+
+	export function method() {
+		return chosen;
 	}
 
 	export function setAmount(cents: number) {

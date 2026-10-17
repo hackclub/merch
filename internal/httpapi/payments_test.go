@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -196,13 +197,14 @@ func TestCardPaymentForInternationalShipping(t *testing.T) {
 
 	// Once the card goes through, the request moves to review the next time it's looked at.
 	fs.set("pi_1", "succeeded", 1500)
+	fs.payments["pi_1"].LatestCharge = json.RawMessage(`{"payment_method_details":{"card":{"wallet":{"type":"apple_pay"}}}}`)
 	var mine struct{ Requests []viewed }
 	h.do(h.client(userEmail), "GET", "/api/requests", nil, &mine)
 	got := mine.Requests[0]
 	if got.Status != swag.StatusPending || got.PaidAt == nil || got.StripePaymentIntent != "pi_1" || got.StripeKey != "" {
 		t.Fatalf("after paying = %+v", got)
 	}
-	if ev := h.events("payment_completed"); len(ev) != 1 || props(t, ev[0])["request_id"] != float64(r.ID) || ev[0].UserID == nil {
+	if ev := h.events("payment_completed"); len(ev) != 1 || props(t, ev[0])["request_id"] != float64(r.ID) || props(t, ev[0])["wallet"] != "apple_pay" || ev[0].UserID == nil {
 		t.Fatalf("payment_completed = %+v", ev)
 	}
 	h.do(h.client(userEmail), "GET", "/api/requests", nil, &mine)

@@ -22,7 +22,7 @@ through the app, not into migrations or seed files. Before every commit, read `g
 
 | Who | How we know | What they do |
 | --- | --- | --- |
-| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card on the form (Stripe) before we ship (see "Shipping estimates and packing"). |
+| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card or Apple Pay on the form (Stripe) before we ship (see "Shipping estimates and packing"). |
 | YSWS author | Their HCA email matches `Hack Club Auth Email` in the **YSWS Authors** table of the Unified YSWS Projects DB (Airtable `app3A5kJwYqxMLOgh`) | Submit print-ready material (stickers, posters…) to be printed and stocked in the warehouse. |
 | Admin | Email is in `ADMIN_EMAILS` (admins are also authors) | Manage global limits, list warehouse SKUs as items, set visibility and order, review requests (ship → tracking), and review author submissions. |
 | Review agent | An API key an admin made (`Authorization: Bearer merch_…`) | Read pending requests, the requester and their history, add notes, ship (with changes) or reject. See "Agent API". |
@@ -448,7 +448,7 @@ blocks landing):
   selects, only `chars` for typed text), `field_invalid` (the browser blocked a submit: `field`,
   `type`, `reason` such as `valueMissing` or `patternMismatch`; never the value), `cart` and `cart_size` (`item_id`, `sku`, `from`, `to`; from
   every page, since all cart changes go through `$lib/bag.svelte`), `purpose`, `item_hover` (mouse
-  over an item for ≥ 0.5 s), `payment_error` (a card didn't go through: `request_id` and Stripe's `type`,
+  over an item for ≥ 0.5 s), `payment_error` (a card didn't go through: `request_id`, `method` = `card` or `apple_pay`, and Stripe's `type`,
   `code`, `decline_code`; never the message), `api_error`, `js_error`, `pwa_installed`,
   `web_vital` (Core Web Vitals from the `web-vitals` library, once per page load: `metric` =
   `LCP`, `INP`, `CLS`, `FCP` or `TTFB`, `value` in ms (CLS unitless), `rating`, `nav`),
@@ -474,7 +474,7 @@ blocks landing):
   `error` that `serverErr` logged. Use it for errors and slow routes.
 - Server events (`s.track` in `internal/httpapi`): `login_start`, `sign_in`, `sign_in_refused`,
   `sign_out`, `payment_started` (the card form is about to charge: `request_id`, `fee_cents`, `country`,
-  `retry`), `payment_completed` (Stripe says it's paid in full; the request moved to `pending`),
+  `retry`), `payment_completed` (Stripe says it's paid in full; the request moved to `pending`; `wallet` = `apple_pay` when paid that way),
   `payment_refunded` (a rejected or cancelled request's card payment went back: `request_id`,
   `fee_cents`, `refund_cents`, `country`, `by` = `admin` or `requester`, `partial` when shipping
   less made postage cheaper, `existing` when the refund was already on Stripe, e.g. one held for approval), `email_sent` and `email_failed` (a request email: `kind` = `received`, `dispatched` or `rejected`,
@@ -608,9 +608,13 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
     agent API's dispatch also uses). It ships real mail.**
 - **Stripe** (`internal/stripe`, `internal/httpapi/payments.go`, `web/src/lib/CardField.svelte`)
   takes international shipping payments with a card field right on the request form: Stripe's
-  Payment Element, cards only, no wallets. It asks for just the number, expiry and CVC (the
-  shipping address is the billing address), and its iframe sends card numbers straight to
-  Stripe. Submit checks the card, creates the request, then `POST /api/requests/{id}/pay`
+  Payment Element, a card or Apple Pay (no Google Pay or Link). It asks for just the number,
+  expiry and CVC (the shipping address is the billing address), and its iframe sends card
+  numbers straight to Stripe. Apple Pay is a card payment to Stripe (`allowed_payment_method_types`
+  stays `card`) and shows only in Safari with a card in Wallet, on https domains registered with
+  Stripe: the server registers `BASE_URL` and `EXTRA_BASE_URLS` hosts at startup
+  (`stripe.RegisterDomain`; no Apple file to host). Registering in live mode covers sandboxes, and
+  plain-http dev origins never show it. Submit checks the card, creates the request, then `POST /api/requests/{id}/pay`
   starts a PaymentIntent (USD, the request's `shipping_fee_cents`, `metadata.request_id`;
   reused while it can still be paid) and the browser confirms it (`payShipping` in
   `$lib/payment`). A declined card lands on My requests, where an unpaid request has the same

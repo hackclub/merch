@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -81,6 +82,20 @@ func run(log *slog.Logger) error {
 	if strings.HasPrefix(cfg.StripeSecretKey, "sk_test_") {
 		log.Warn("STRIPE_SECRET_KEY is a sandbox key: card payments are test payments")
 	}
+	// Apple Pay shows only on https domains registered with Stripe.
+	go func() {
+		for _, origin := range append([]string{cfg.BaseURL}, cfg.ExtraBaseURLs...) {
+			u, err := url.Parse(origin)
+			if err != nil || u.Scheme != "https" {
+				continue
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := payments.RegisterDomain(ctx, u.Hostname()); err != nil {
+				log.Warn("stripe: register domain for Apple Pay", "domain", u.Hostname(), "err", err)
+			}
+			cancel()
+		}
+	}()
 
 	var mailer httpapi.Mailer
 	if cfg.LoopsAPIKey != "" {

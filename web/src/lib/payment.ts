@@ -19,9 +19,11 @@ export function billingDetails(a: Address) {
 
 export type PayError = { type?: string; code?: string; decline_code?: string; message?: string };
 
-// CardForm is the card field on the page (CardField.svelte, Stripe's Payment Element).
+// CardForm is the card field on the page (CardField.svelte, Stripe's Payment Element):
+// a card, or Apple Pay where the browser has it.
 export type CardForm = {
 	check(): Promise<string | null>; // what's wrong with what they typed, or null
+	method(): string; // what they chose to pay with: 'card' or 'apple_pay'
 	setAmount(cents: number): void;
 	confirm(clientSecret: string, returnUrl: string): Promise<{ error?: PayError }>;
 };
@@ -47,7 +49,7 @@ export async function payShipping(
 	// send people away and back to My requests.
 	const { error } = await card.confirm(intent.client_secret, `${origin}/requests?paid=${requestId}`);
 	if (!error) return '';
-	report('payment_error', { request_id: requestId, type: error.type, code: error.code, decline_code: error.decline_code });
+	report('payment_error', { request_id: requestId, method: card.method(), type: error.type, code: error.code, decline_code: error.decline_code });
 	return error.message || "Your card didn't go through.";
 }
 

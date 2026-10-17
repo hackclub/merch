@@ -1,6 +1,6 @@
-// Package stripe takes international shipping payments by card. The card form
-// is Stripe's Payment Element inside our page, so card details go straight to
-// Stripe and never touch our server.
+// Package stripe takes international shipping payments by card or Apple Pay.
+// The card form is Stripe's Payment Element inside our page, so card details
+// go straight to Stripe and never touch our server.
 // Docs: https://docs.stripe.com/api/payment_intents
 package stripe
 
@@ -48,6 +48,25 @@ type Payment struct {
 	AmountReceived int               `json:"amount_received"`
 	Currency       string            `json:"currency"`
 	Metadata       map[string]string `json:"metadata"`
+	LatestCharge   json.RawMessage   `json:"latest_charge"` // an id, or the charge when expanded (GetPayment)
+}
+
+// Wallet is the wallet the card came from ("apple_pay"), or "" for a card
+// typed in. Apple Pay payments are card payments with a wallet.
+func (p *Payment) Wallet() string {
+	var ch struct {
+		PaymentMethodDetails struct {
+			Card struct {
+				Wallet struct {
+					Type string `json:"type"`
+				} `json:"wallet"`
+			} `json:"card"`
+		} `json:"payment_method_details"`
+	}
+	if json.Unmarshal(p.LatestCharge, &ch) != nil {
+		return ""
+	}
+	return ch.PaymentMethodDetails.Card.Wallet.Type
 }
 
 // Paid reports whether the money has been collected.
@@ -90,7 +109,32 @@ func (c *Client) GetPayment(ctx context.Context, id string) (*Payment, error) {
 		return nil, fmt.Errorf("stripe: bad payment id %q", id)
 	}
 	var p Payment
-	return &p, c.call(ctx, "GET", "/v1/payment_intents/"+id, nil, "", &p)
+	return &p, c.call(ctx, "GET", "/v1/payment_intents/"+id+"?expand[]=latest_charge", nil, "", &p)
+}
+
+// RegisterDomain makes sure Apple Pay can show on pages served from domain
+// (https://docs.stripe.com/payments/payment-methods/pmd-registration). Stripe
+// does Apple's merchant validation itself, so there's no file to host.
+func (c *Client) RegisterDomain(ctx context.Context, domain string) error {
+	type pmd struct {
+		ID       string `json:"id"`
+		ApplePay struct {
+			Status string `json:"status"`
+		} `json:"apple_pay"`
+	}
+	var list struct {
+		Data []pmd `json:"data"`
+	}
+	if err := c.call(ctx, "GET", "/v1/payment_method_domains?"+url.Values{"domain_name": {domain}}.Encode(), nil, "", &list); err != nil {
+		return err
+	}
+	if len(list.Data) == 0 {
+		return c.call(ctx, "POST", "/v1/payment_method_domains", url.Values{"domain_name": {domain}}, "", nil)
+	}
+	if d := list.Data[0]; d.ApplePay.Status != "active" {
+		return c.call(ctx, "POST", "/v1/payment_method_domains/"+url.PathEscape(d.ID)+"/validate", url.Values{}, "", nil)
+	}
+	return nil
 }
 
 // CancelPayment stops an unpaid payment so it can't be paid any more.

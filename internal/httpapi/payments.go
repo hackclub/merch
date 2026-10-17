@@ -145,7 +145,7 @@ func (s *server) syncPayment(r *http.Request, req *store.Request) *store.Request
 		s.Log.Warn("stripe: mark paid", "request", req.ID, "err", err)
 		return req
 	}
-	s.track(r, &store.User{ID: req.UserID}, "payment_completed", map[string]any{"request_id": req.ID, "fee_cents": req.ShippingFeeCents, "country": req.Address.Country})
+	s.track(r, &store.User{ID: req.UserID}, "payment_completed", map[string]any{"request_id": req.ID, "fee_cents": req.ShippingFeeCents, "country": req.Address.Country, "wallet": p.Wallet()})
 	s.emailRequest(r, paid, "received")
 	return paid
 }

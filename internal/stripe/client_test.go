@@ -147,3 +147,62 @@ func TestRefunded(t *testing.T) {
 		t.Fatalf("refunded = %d, %v", cents, err)
 	}
 }
+
+// A payment made with Apple Pay is a card payment whose card came from the
+// wallet; Wallet says so.
+func TestGetPaymentWallet(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("expand[]") != "latest_charge" {
+			t.Errorf("query = %q", r.URL.RawQuery)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"id": "pi_ap", "status": "succeeded", "latest_charge": map[string]any{
+			"id": "ch_1", "payment_method_details": map[string]any{"type": "card", "card": map[string]any{"wallet": map[string]any{"type": "apple_pay"}}}}})
+	}))
+	defer srv.Close()
+	p, err := New(srv.URL, "sk_test_x", nil).GetPayment(context.Background(), "pi_ap")
+	if err != nil || p.Wallet() != "apple_pay" {
+		t.Fatalf("wallet = %q, %v", p.Wallet(), err)
+	}
+	if (&Payment{}).Wallet() != "" {
+		t.Fatal("no charge, no wallet")
+	}
+}
+
+// Apple Pay shows only on domains registered with Stripe.
+func TestRegisterDomain(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		list   []map[string]any
+		wantOp string
+	}{
+		{"new", nil, "POST /v1/payment_method_domains domain_name=merch.hackclub.com"},
+		{"inactive", []map[string]any{{"id": "pmd_1", "domain_name": "merch.hackclub.com", "apple_pay": map[string]any{"status": "inactive"}}}, "POST /v1/payment_method_domains/pmd_1/validate"},
+		{"active", []map[string]any{{"id": "pmd_1", "domain_name": "merch.hackclub.com", "apple_pay": map[string]any{"status": "active"}}}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var op string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == "GET" {
+					if r.URL.Path != "/v1/payment_method_domains" || r.URL.Query().Get("domain_name") != "merch.hackclub.com" {
+						t.Errorf("list %s", r.URL)
+					}
+					json.NewEncoder(w).Encode(map[string]any{"data": tc.list})
+					return
+				}
+				r.ParseForm()
+				op = r.Method + " " + r.URL.Path
+				if d := r.PostForm.Get("domain_name"); d != "" {
+					op += " domain_name=" + d
+				}
+				json.NewEncoder(w).Encode(map[string]any{"id": "pmd_1", "apple_pay": map[string]any{"status": "active"}})
+			}))
+			defer srv.Close()
+			if err := New(srv.URL, "sk_test_x", nil).RegisterDomain(context.Background(), "merch.hackclub.com"); err != nil {
+				t.Fatal(err)
+			}
+			if op != tc.wantOp {
+				t.Fatalf("op = %q, want %q", op, tc.wantOp)
+			}
+		})
+	}
+}
