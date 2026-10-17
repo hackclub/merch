@@ -1298,6 +1298,10 @@ func (s *server) static(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(p, "_app/immutable/"):
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	}
+	if p == "index.html" {
+		s.serveIndex(w, r)
+		return
+	}
 	http.ServeFileFS(w, r, s.Static, p)
 }
 

@@ -662,6 +662,11 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   real-world loop that plays on hover, or a still photo; the Mini-Magazine uses a loop, and the red
   T-shirt shows a photo of someone wearing it. A still photo gives way to the item's 3D view on hover
   (the shop's hover peek shows the T-shirts in 3D).
+- **Link previews** (Slack, iMessage, X): `web/src/app.html` holds the site's share tags between
+  `<!-- share -->` markers. `og.gif` (900x473, the Mini-Magazine clip beside "Free swag, mailed
+  to you.") animates where unfurlers allow it; `og.jpg` (1200x630, its first frame) is the X
+  card. On `/items/<id>-…` the server swaps the block for that visible item's name, description
+  and first image (`internal/httpapi/share.go`), since the SPA renders nothing server-side.
 - **Print source files** for warehouse SKUs: the Marketing warehouse Airtable
   (`appK53aN0fz3sgJ4w`, table `warehouse_skus`) has `re_order_instructions`, e.g. "Order
   VP_MJR069GX on zach@hackclub.com Vistaprint". The Vistaprint order-confirmation email links a
