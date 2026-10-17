@@ -7,9 +7,9 @@ const REASON =
 /** What a request is for. The request form asks this first, like the old Fillout forms. Mirrors swag.Purposes.
  * Clubs and events say how they'll use it (reason, with an example); personal requests don't. */
 export const PURPOSES: { value: Purpose; label: string; short: string; reason: string; example: string }[] = [
-	{ value: 'personal', label: 'Personal / to share with friends', short: 'Personal', reason: '', example: '' },
+	{ value: 'personal', label: 'To share with friends (or at school, etc)', short: 'Personal', reason: '', example: '' },
 	{
-		value: 'event', label: 'Hackathon / event', short: 'Event',
+		value: 'event', label: "I'm running a hackathon or exhibiting at an event", short: 'Event',
 		reason: REASON,
 		example: 'e.g. Running https://example-hacks.dev on Nov 8, about 120 hackers expected.'
 	},
