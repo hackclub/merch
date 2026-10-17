@@ -553,6 +553,8 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
 - `POST …/notes` appends a signed paragraph to `internal_note`; it never replaces it.
   `POST …/dispatch` and `…/reject` are the admin handlers, so they ship real mail and send
   the same emails. Uncertain cases get a `Needs a human:` note and stay `pending`.
+  `POST …/refresh` pulls tracking from mail.hackclub.com (the admin refresh handler); nothing
+  pulls it automatically, so the review agent refreshes what it shipped on later runs.
 - Production's Orchard login lets `/api/agent` through (the ingress's `bypassPaths`, set
   2026-10-17), so the key is the only lock there. Keep it in `bypassPaths` if protection
   changes. The scheduled agent's key ("Review agent") is `MERCH_AGENT_API_KEY` in the shared

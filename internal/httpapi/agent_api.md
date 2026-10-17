@@ -93,6 +93,13 @@ email to the requester, so write it to them: kind, short and specific. A card pa
 full. If the refund fails, you get a 502 and the request stays open. If Stripe holds the refund
 for a person to approve, the 502 says so: leave a `Needs a human:` note and don't retry until it's approved.
 
+### `POST /api/agent/requests/{id}/refresh`
+
+`{}` asks mail.hackclub.com for a `dispatched` request's tracking and saves its
+`tracking_number` and `carrier` (empty until the warehouse mails it). Returns the request. A 409
+means it hasn't been dispatched. Nothing pulls tracking on its own, so check what you shipped
+on later runs until it has a tracking number.
+
 ## Leaving a request for a human
 
 If you aren't sure, don't ship or reject it. Add a note that starts with `Needs a human:`

@@ -182,6 +182,13 @@ func TestAgentReviewsRequests(t *testing.T) {
 	if len(h.wh.orders) != 1 || h.wh.orders[0].Contents[0].Quantity != 2 {
 		t.Fatalf("warehouse orders = %+v", h.wh.orders)
 	}
+	// The agent pulls tracking for what it shipped.
+	if code := h.do(agent, "POST", fmt.Sprintf("/api/agent/requests/%d/refresh", first.ID), map[string]any{}, &r); code != 200 || r.TrackingNumber != "9400" || r.Carrier != "USPS" {
+		t.Fatalf("refresh = %d %+v", code, r)
+	}
+	if code := h.do(agent, "POST", fmt.Sprintf("/api/agent/requests/%d/refresh", twin.ID), map[string]any{}, nil); code != 409 {
+		t.Errorf("refresh before dispatch = %d", code)
+	}
 	if code := h.do(agent, "POST", fmt.Sprintf("/api/agent/requests/%d/reject", twin.ID), map[string]any{"note": "One package per household."}, &r); code != 200 || r.Status != swag.StatusRejected {
 		t.Fatalf("reject = %d %+v", code, r)
 	}
@@ -222,7 +229,7 @@ func TestAgentAPIDocs(t *testing.T) {
 	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/markdown") {
 		t.Fatalf("docs = %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
-	for _, want := range []string{"Authorization: Bearer", "/api/agent/requests/{id}/dispatch", "/api/agent/requests/{id}/reject", "/api/agent/requests/{id}/notes", "same_address"} {
+	for _, want := range []string{"Authorization: Bearer", "/api/agent/requests/{id}/dispatch", "/api/agent/requests/{id}/reject", "/api/agent/requests/{id}/notes", "/api/agent/requests/{id}/refresh", "same_address"} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("docs don't mention %q", want)
 		}
