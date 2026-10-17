@@ -65,6 +65,7 @@
 
 <svelte:head><title>My requests · Hack Club Merch Request</title></svelte:head>
 
+<p class="back label"><a href="/" data-track="back-to-request">← Request swag</a></p>
 <h1>My requests</h1>
 {#if !session.me?.user}
 	<p><a class="button" href="/auth/login" data-sveltekit-reload>Sign in with Hack Club</a></p>
@@ -109,6 +110,9 @@
 {/if}
 
 <style>
+	.back { margin: 0 0 1rem; }
+	.back a { text-decoration: none; color: var(--muted); }
+	.back a:hover { color: var(--dark); }
 	.request { margin-bottom: 1rem; }
 	.with-3d { display: grid; grid-template-columns: minmax(0, 26rem) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
 	@media (max-width: 700px) {
