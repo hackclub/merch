@@ -207,11 +207,14 @@ func newRateCard(cs []cardShipment) *rateCard {
 	c := &rateCard{prices: prices}
 	c.perOz, c.sloped = c.slope()
 	if len(prices) >= 3 {
-		// Drop prices far off the line (more than 25% or $1.50).
+		// Drop prices far off the line (more than 25% or $1.50), but keep
+		// the heaviest when it's under the line: that's where a card bends,
+		// if it does (see heavySlope). Other services cost more.
 		base := median(mapPrices(prices, func(p cardPrice) float64 { return p.p50 - c.perOz*float64(p.oz) }))
+		heaviest := prices[len(prices)-1].oz
 		c.prices = slices.DeleteFunc(c.prices, func(p cardPrice) bool {
 			fit := base + c.perOz*float64(p.oz)
-			return math.Abs(p.p50-fit) > max(0.25*fit, 150)
+			return !(p.oz == heaviest && p.p50 < fit) && math.Abs(p.p50-fit) > max(0.25*fit, 150)
 		})
 		c.perOz, c.sloped = c.slope()
 	}
@@ -240,6 +243,26 @@ func (c *rateCard) slope() (float64, bool) {
 		}
 	}
 	return median(slopes), ps[len(ps)-1].oz-ps[0].oz >= 3
+}
+
+// heavySlope is the card's rate per ounce over its heavier half (or its two
+// heaviest weights), for weights past the heaviest. Most countries' prices stay
+// on one line to 3 lb, but the dearest bend: Mexico costs $1.79 an ounce up to
+// 11 oz, then 39¢ an ounce from 16 to 23 oz and 29¢ to 36 oz, and Colombia
+// $1.45 an ounce from 8 to 20 oz, then almost nothing more to 39 oz.
+func (c *rateCard) heavySlope() float64 {
+	ps := c.prices
+	var heavy []cardPrice
+	for _, p := range ps {
+		if 2*p.oz >= ps[len(ps)-1].oz {
+			heavy = append(heavy, p)
+		}
+	}
+	if len(heavy) < 2 {
+		heavy = ps[len(ps)-2:]
+	}
+	s, _ := (&rateCard{prices: heavy}).slope()
+	return max(s, 0)
 }
 
 // classPerOz is the typical rate per ounce across countries' cards, for
@@ -308,7 +331,15 @@ func (c *rateCard) at(w int, classPerOz float64) ([3]float64, int) {
 		return [3]float64{mix(lo.p20, hi.p20), mix(lo.p50, hi.p50), mix(lo.p80, hi.p80)}, lo.n + hi.n
 	}
 	perOz := classPerOz
-	if c.sloped {
+	switch {
+	case c.sloped && i == len(ps):
+		// Prices are rounded to the cent, so a straight card's heavier half
+		// can come out a hair flatter; only a real bend counts.
+		perOz = c.perOz
+		if s := c.heavySlope(); s < 0.9*c.perOz {
+			perOz = s
+		}
+	case c.sloped:
 		perOz = c.perOz
 	}
 	nearest := ps[0]

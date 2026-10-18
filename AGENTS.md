@@ -326,15 +326,21 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   of about the same packed weight (US parcels are also priced by ZIP zone, which isn't known), from
   the last 180 days of history first (postage rises every
   year: a 5-9 oz US parcel went from $4.71 in early 2025 to $7.27 in mid-2026), then older history.
-  Boxes over about 12 lb have too few like them, so they take the 10 US parcels nearest in weight
-  (basis `US, nearest weights`); before 2026-10-18 they got $0.
+  Boxes over about 10 lb go UPS Ground, which the history left out until 2026-10-18 (big boxes got
+  $0, then about $8.50 whatever their weight; with it, 20 lb is about $16 and 40 lb $34). Without 10
+  parcels of about the same weight, postage takes the 10 nearest in weight (basis `US, nearest weights`).
   **Abroad, postage comes off rate cards** (`internal/swag/ratecard.go`): Asendia and USPS price
   each country by the whole ounce, base + per ounce, to the cent (Canada 2026: $8.90 + $0.414/oz;
   India $6.51 + $0.508/oz; letters $1.93 up to 1 oz, $3.85 up to 2 oz). A price index chained
   month to month brings old prices to today's rates (Asendia rose 5.3% in January 2025 and 15%
   in January 2026, France 28%), each country's card is read at the packed weight rounded up to
   the ounce, in-between weights read off the line, and countries with fewer than 3 packages use
-  all international ones of that weight. Backtested on 2025-26 parcels: 87-93% within 25¢ of
+  all international ones of that weight. Past a card's heaviest weight, it follows the slope of
+  its heavier half when that's flatter: most countries stay on one line to 3 lb (Kenya's 7 oz card
+  priced a 24 oz parcel to 5¢), but the dearest bend over a pound (Mexico, Colombia, Egypt), and
+  following the whole line quoted Colombia $90 for 3 lb (now $47). Backtest any change with
+  `MERCH_BACKTEST_CSV=<history export> go test ./internal/swag -run Backtest -v`, which prices each
+  month's labels from the history before it. Backtested on 2025-26 parcels: 87-93% within 25¢ of
   the label (median-by-weight, used before 2026-10-17: 2-29%, undercharging about $2 on
   average). Ranges are shown only to admins (everyone sees the typical
   postage in the cost table). The shop intro, the request form, My requests and the admin

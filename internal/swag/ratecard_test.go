@@ -111,3 +111,21 @@ func TestEstimateRateCardFallsBackToAllInternational(t *testing.T) {
 		t.Fatalf("got %+v", e)
 	}
 }
+
+// The dearest countries' prices bend over a pound: Colombia went up $1.45 an
+// ounce to 20 oz, then hardly at all to 39 oz. Past the heaviest weight, a card
+// follows its heavier half, so a 3 lb parcel there isn't priced off the steep
+// light end ($90 on 2026-10-18, against a 39 oz label of about $45).
+func TestEstimateFollowsWhereTheCardBends(t *testing.T) {
+	h := card("CO", aug, 700, 160, 1, 2, 5, 8, 9, 20)
+	h = append(h, card("CO", aug, 3900, 10, 39)...)
+	e := EstimateShipping(h, "CO", packedAt(48), now)
+	if e.PostageTypicalCents < 3900 || e.PostageTypicalCents > 4500 {
+		t.Fatalf("48 oz to CO = %d, want about the 39 oz price (4290) and a little more", e.PostageTypicalCents)
+	}
+	// A straight card carries on at its own rate.
+	h = card("IN", aug, 650, 51, 1, 2, 4, 8, 12, 20)
+	if e := EstimateShipping(h, "IN", packedAt(40), now); e.PostageTypicalCents != 650+51*40 {
+		t.Fatalf("40 oz to IN = %d, want %d", e.PostageTypicalCents, 650+51*40)
+	}
+}

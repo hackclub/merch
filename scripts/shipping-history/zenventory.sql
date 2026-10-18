@@ -2,7 +2,8 @@
 -- source,country,class,weight_oz,postage_cents,ordered_on,shipped_on,delivered_on,tracking
 -- class: "letter" = USPS First Class Mail (stickers in an envelope, domestic or
 -- international); "parcel" = everything else we ship by default: USPS Ground
--- Advantage, UPS SurePost or FedEx in the US, Asendia abroad (up to 3 lb).
+-- Advantage, UPS SurePost, UPS Ground or FedEx in the US, Asendia abroad (up to 3 lb).
+-- Boxes over about 10 lb go UPS Ground (2025-26: 87 of 108 US parcels of 10-40 lb).
 -- Expedited and freight shipments are left out. delivered_on is filled in later
 -- (Asendia, USPS and UPS tracking); tracking is dropped before import. ordered_on is left
 -- empty: handling time comes from theseus-orders.sql, the orders placed the way
@@ -33,7 +34,8 @@ where s.shipped_date >= '2025-01-01'
   and (
     s.service ilike 'USPS First Class Mail%'
     or (s.country <> 'US' and s.carrier = 'Asendia' and s.weight <= 3)
-    or (s.country = 'US' and (s.service in ('USPS Ground Advantage', 'UPS SurePost 1 lb or Greater', 'UPS SurePost Less than 1 lb')
+    or (s.country = 'US' and (s.service in ('USPS Ground Advantage', 'UPS SurePost 1 lb or Greater', 'UPS SurePost Less than 1 lb',
+                                            'UPS Ground', 'FedEx Ground', 'FedEx Home Delivery')
                               or (s.carrier = 'FedEx' and s.service is null)))
   )
 order by s.shipped_date
