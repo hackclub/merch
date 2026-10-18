@@ -39,7 +39,8 @@ ev="with skip as (
 sql=$(cat <<SQL
 \pset footer off
 \echo '== Overview: last $days days, $who'
-$ev select count(distinct visitor) visitors, count(distinct nullif(visit, '')) visits,
+\echo '   (visitors = browsers that viewed a page; scripts and agents calling the API without a cookie get a new id per call)'
+$ev select count(distinct visitor) filter (where name = 'page_view') visitors, count(distinct nullif(visit, '')) visits,
     count(distinct user_id) signed_in_users,
     count(*) filter (where name = 'page_view') page_views,
     count(*) filter (where name = 'cart') cart_changes,
@@ -48,7 +49,7 @@ $ev select count(distinct visitor) visitors, count(distinct nullif(visit, '')) v
 from ev;
 
 \echo '== Funnel (visitors): visited -> picked something -> signed in -> sent a request'
-$ev select count(distinct visitor) visited,
+$ev select count(distinct visitor) filter (where name = 'page_view') visited,
     count(distinct visitor) filter (where name = 'cart') picked,
     count(distinct visitor) filter (where name = 'sign_in') signed_in,
     count(distinct visitor) filter (where name = 'request_created') requested
@@ -101,7 +102,7 @@ $ev select path, props->>'el' el, props->>'area' area, props->>'item_id' item_id
 from ev where name = 'click' and props->>'dead' = 'true' group by 1, 2, 3, 4 order by 5 desc limit 15;
 
 \echo '== Releases (web build time): visitors, picks and requests per build'
-$ev select nullif(release, '') release, min(at)::date first_day, count(distinct visitor) visitors,
+$ev select nullif(release, '') release, min(at)::date first_day, count(distinct visitor) filter (where name = 'page_view') visitors,
     count(distinct visitor) filter (where name = 'cart') picked,
     count(distinct visitor) filter (where name = 'request_created') requested,
     count(*) filter (where name = 'shipping_estimate' and props ? 'error') refused_estimates,

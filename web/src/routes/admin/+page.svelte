@@ -285,7 +285,7 @@
 							<input bind:value={it.name} /><div class="muted">{it.sku}{#if it.visible}&nbsp;· <a href={itemPath(it)}>view page</a>{/if}</div>
 							<textarea bind:value={it.description} rows="4" placeholder="description (shown on the product page)"></textarea>
 							<div class="gallery">
-								{#each it.images as src, i (src)}
+								{#each it.images as src, i (i + src)}
 									<figure>
 										<img {...thumb(src, { w: 80, h: 80 })} alt="" />
 										<figcaption>
@@ -327,7 +327,7 @@
 									</select></label>
 								{#if it.pages.length}
 									<div class="pages">
-										{#each it.pages.slice(0, 8) as src, i (src)}<img {...thumb(src, { h: 48 })} alt="Page {i + 1}" />{/each}
+										{#each it.pages.slice(0, 8) as src, i (i + src)}<img {...thumb(src, { h: 48 })} alt="Page {i + 1}" />{/each}
 										{#if it.pages.length > 8}<span class="muted">+{it.pages.length - 8} more</span>{/if}
 									</div>
 								{/if}

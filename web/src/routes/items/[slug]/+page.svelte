@@ -108,7 +108,7 @@
 								<span>3D</span>
 							</button>
 						{/if}
-						{#each item.images as src, i (src)}
+						{#each item.images as src, i (i + src)}
 							<button type="button" class="thumb" class:active={i === shown} aria-label="Show image {i + 1}" onclick={() => (picked = i)}>
 								<img {...thumb(src, THUMB)} alt="" loading="lazy" />
 							</button>
