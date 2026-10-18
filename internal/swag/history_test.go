@@ -1,6 +1,7 @@
 package swag
 
 import (
+	"cmp"
 	"math"
 	"math/rand/v2"
 	"reflect"
@@ -81,6 +82,37 @@ func scanEstimate(history []PastShipment, country string, p Packing, now time.Ti
 			e.PostageCents = [2]int{int(math.Round(percentile(postage, 0.2))), int(math.Round(percentile(postage, 0.8)))}
 			e.PostageTypicalCents = int(math.Round(percentile(postage, 0.5)))
 			e.PostageBasis, e.PostageSamples = basis, len(postage)
+		} else {
+			// The MinSamples nearest in weight, lighter ones first on ties.
+			for _, keep := range []func(PastShipment) bool{func(s PastShipment) bool { return sameScope(s) && recent(s) }, sameScope} {
+				var ws []weighed
+				for _, s := range history {
+					if keep(s) && s.WeightOz > 0 && s.PostageCents > 0 {
+						ws = append(ws, weighed{s.WeightOz, float64(s.PostageCents)})
+					}
+				}
+				if len(ws) < MinSamples {
+					continue
+				}
+				slices.SortFunc(ws, func(a, b weighed) int { return cmp.Or(cmp.Compare(a.oz, b.oz), cmp.Compare(a.cents, b.cents)) })
+				lo, hi := 0, len(ws)
+				for hi-lo > MinSamples {
+					if p.WeightOz-ws[lo].oz > ws[hi-1].oz-p.WeightOz {
+						lo++
+					} else {
+						hi--
+					}
+				}
+				var postage []float64
+				for _, w := range ws[lo:hi] {
+					postage = append(postage, w.cents)
+				}
+				slices.Sort(postage)
+				e.PostageCents = [2]int{int(math.Round(percentile(postage, 0.2))), int(math.Round(percentile(postage, 0.8)))}
+				e.PostageTypicalCents = int(math.Round(percentile(postage, 0.5)))
+				e.PostageBasis, e.PostageSamples = scope+", nearest weights", len(postage)
+				break
+			}
 		}
 	}
 	handling, _ := pick(func(s PastShipment) (float64, bool) {

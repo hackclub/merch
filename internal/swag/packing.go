@@ -230,7 +230,8 @@ func Pack(lines []Line, catalog map[int64]Item, international bool) (Packing, er
 			add(extra, l.Quantity)
 		}
 	}
-	tooHeavy := false
+	// The lightest package it would go in, if that's over 3 lb abroad.
+	var tooHeavy *Package
 	for _, p := range Packages {
 		if !p.fits(shapes) {
 			continue
@@ -240,13 +241,16 @@ func Pack(lines []Line, catalog map[int64]Item, international bool) (Packing, er
 			continue
 		}
 		if international && oz > MaxInternationalOz {
-			tooHeavy = true
+			if tooHeavy == nil || p.TareOz < tooHeavy.TareOz {
+				tooHeavy = &p
+			}
 			continue
 		}
 		return Packing{Package: p, WeightOz: oz, ContentsOz: contentOz, UnknownWeight: !known}, nil
 	}
-	if tooHeavy {
-		return Packing{}, fmt.Errorf("%w; this is about %.1f lb", ErrTooHeavy, contentOz/16)
+	if tooHeavy != nil {
+		return Packing{}, fmt.Errorf("%w; this is about %.1f lb packed (%.1f lb of swag in a %g oz %s)",
+			ErrTooHeavy, (contentOz+tooHeavy.TareOz)/16, contentOz/16, tooHeavy.TareOz, tooHeavy.Name)
 	}
 	// Name the big print the rest won't go in with, if there is one.
 	for _, s := range shapes {

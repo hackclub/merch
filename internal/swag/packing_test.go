@@ -3,6 +3,7 @@ package swag
 import (
 	"errors"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -161,5 +162,19 @@ func TestValidateRefusesWhatWontPack(t *testing.T) {
 	in.Country = "CA"
 	if err := Validate(in); !errors.Is(err, ErrTooHeavy) {
 		t.Fatalf("5 magazines to Canada = %v, want ErrTooHeavy", err)
+	}
+}
+
+// The 3 lb limit counts the packaging, so the refusal gives the packed weight.
+// From 2026-10-17 it gave the contents alone: 26 people abroad were told "at
+// most 3 lb; this is about 2.2 lb" for swag in a 14.8 oz carton.
+func TestTooHeavySaysThePackedWeight(t *testing.T) {
+	lines := []Line{{ItemID: 1, Quantity: 1}, {ItemID: 4, Quantity: 3}, {ItemID: 2, Quantity: 10}}
+	_, err := Pack(lines, shopCatalog(), true)
+	if !errors.Is(err, ErrTooHeavy) {
+		t.Fatalf("err = %v, want ErrTooHeavy", err)
+	}
+	if want := "this is about 3.1 lb packed (2.2 lb of swag in a 14.8 oz 18x12x6 box)"; !strings.Contains(err.Error(), want) {
+		t.Fatalf("err = %q, want it to say %q", err, want)
 	}
 }

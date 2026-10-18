@@ -199,7 +199,7 @@ func NewHistory(ships []PastShipment) *History {
 		slices.Sort(xs)
 	}
 	for _, ws := range h.postage {
-		slices.SortFunc(ws, func(a, b weighed) int { return cmp.Compare(a.oz, b.oz) })
+		slices.SortFunc(ws, func(a, b weighed) int { return cmp.Or(cmp.Compare(a.oz, b.oz), cmp.Compare(a.cents, b.cents)) })
 	}
 	h.cards = newRateCards(ships)
 	return h
@@ -294,7 +294,33 @@ func (e *Estimate) estimateUSPostage(h *History, country string, p Packing, clas
 		e.PostageCents = [2]int{int(math.Round(percentile(postage, 0.2))), int(math.Round(percentile(postage, 0.8)))}
 		e.PostageTypicalCents = int(math.Round(percentile(postage, 0.5)))
 		e.PostageBasis, e.PostageSamples = l.basis, len(postage)
-		break
+		return
+	}
+	// Big boxes are rare (a few a month over 12 lb), so without enough of
+	// about the same weight, take the MinSamples nearest in weight.
+	for _, g := range []group{recentGroup(scopeGroup(intl, class)), scopeGroup(intl, class)} {
+		ws := h.postage[g]
+		if len(ws) < MinSamples {
+			continue
+		}
+		hi, _ := slices.BinarySearchFunc(ws, p.WeightOz, func(w weighed, oz float64) int { return cmp.Compare(w.oz, oz) })
+		lo := hi
+		for hi-lo < MinSamples {
+			if lo > 0 && (hi == len(ws) || p.WeightOz-ws[lo-1].oz <= ws[hi].oz-p.WeightOz) {
+				lo--
+			} else {
+				hi++
+			}
+		}
+		var postage []float64
+		for _, w := range ws[lo:hi] {
+			postage = append(postage, w.cents)
+		}
+		slices.Sort(postage)
+		e.PostageCents = [2]int{int(math.Round(percentile(postage, 0.2))), int(math.Round(percentile(postage, 0.8)))}
+		e.PostageTypicalCents = int(math.Round(percentile(postage, 0.5)))
+		e.PostageBasis, e.PostageSamples = scope+", nearest weights", len(postage)
+		return
 	}
 }
 

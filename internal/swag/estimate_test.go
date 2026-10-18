@@ -207,3 +207,24 @@ func TestEstimateAfterRestock(t *testing.T) {
 		t.Fatalf("handling %v -> %v, transit %v", e.HandlingDays, r.HandlingDays, r.TransitDays)
 	}
 }
+
+// Big US boxes are rare: on 2026-10-18 production had fewer than 10 parcels
+// within a quarter of 12 lb or more, so boxes like requests #468, #478 and
+// #480 got no postage at all and cost $0. Without enough packages of about
+// the same weight, postage comes from the MinSamples nearest in weight.
+func TestEstimatePostageForBigUSBoxes(t *testing.T) {
+	var h []PastShipment
+	h = append(h, past(40, "US", ClassParcel, 10, [2]float64{1, 1}, [2]float64{3, 5}, [2]float64{500, 600})...)
+	h = append(h, past(4, "US", ClassParcel, 160, [2]float64{1, 1}, [2]float64{3, 5}, [2]float64{900, 1000})...)
+	h = append(h, past(4, "US", ClassParcel, 240, [2]float64{1, 1}, [2]float64{3, 5}, [2]float64{1500, 1700})...)
+	h = append(h, past(2, "US", ClassParcel, 320, [2]float64{1, 1}, [2]float64{3, 5}, [2]float64{1800, 1800})...)
+	box := Packing{Package: Package{Name: "18x12x6 box", Class: ClassParcel}, WeightOz: 400, ContentsOz: 380}
+	e := EstimateShipping(h, "US", box, now)
+	if e.PostageSamples != MinSamples || e.PostageBasis != "US, nearest weights" {
+		t.Fatalf("got %d samples (%q), want the %d nearest in weight", e.PostageSamples, e.PostageBasis, MinSamples)
+	}
+	// The 10 nearest are the 320, 240 and 160 oz boxes, not the 10 oz mailers.
+	if e.PostageTypicalCents < 1500 || e.PostageCents[0] < 900 {
+		t.Fatalf("postage = %v (typical %d), want the heavy boxes' 900-1800", e.PostageCents, e.PostageTypicalCents)
+	}
+}

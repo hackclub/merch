@@ -326,6 +326,8 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   of about the same packed weight (US parcels are also priced by ZIP zone, which isn't known), from
   the last 180 days of history first (postage rises every
   year: a 5-9 oz US parcel went from $4.71 in early 2025 to $7.27 in mid-2026), then older history.
+  Boxes over about 12 lb have too few like them, so they take the 10 US parcels nearest in weight
+  (basis `US, nearest weights`); before 2026-10-18 they got $0.
   **Abroad, postage comes off rate cards** (`internal/swag/ratecard.go`): Asendia and USPS price
   each country by the whole ounce, base + per ounce, to the cent (Canada 2026: $8.90 + $0.414/oz;
   India $6.51 + $0.508/oz; letters $1.93 up to 1 oz, $3.85 up to 2 oz). A price index chained
