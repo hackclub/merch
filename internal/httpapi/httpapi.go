@@ -304,6 +304,13 @@ func (s *server) callback(w http.ResponseWriter, r *http.Request) {
 	id, err := s.Provider.Exchange(r.Context(), r.URL.Query().Get("code"), s.origin(r)+"/auth/callback")
 	if err != nil {
 		s.Log.Warn("hca exchange failed", "err", err)
+		if s.currentUser(r) != nil { // a second load of a callback that already signed them in
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+		if sw, ok := w.(*statusWriter); ok {
+			sw.err = err
+		}
 		http.Error(w, "couldn't sign you in with Hack Club Auth", http.StatusBadGateway)
 		return
 	}

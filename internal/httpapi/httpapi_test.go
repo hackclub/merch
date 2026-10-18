@@ -1370,3 +1370,47 @@ func TestStaticServesPrecompressed(t *testing.T) {
 		t.Errorf("direct .br fetch: %q", body)
 	}
 }
+
+// A callback whose code Hack Club Auth won't take (a second load of the same callback, after
+// the first signed the person in) sends someone who is already signed in home, not to an error
+// page. Otherwise the failure is logged on the api event so it can be diagnosed.
+func TestCallbackExchangeFailure(t *testing.T) {
+	h := newHarness(t)
+	c := &http.Client{Jar: newJar(), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	callback := func(code string) *http.Response {
+		t.Helper()
+		resp, err := c.Get(h.srv.URL + "/auth/login")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		loc, _ := url.Parse(resp.Header.Get("Location"))
+		resp, err = c.Get(h.srv.URL + "/auth/callback?code=" + code + "&state=" + url.QueryEscape(loc.Query().Get("state")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+
+	if resp := callback("used-code"); resp.StatusCode != http.StatusBadGateway {
+		t.Fatalf("signed out, bad code -> %d", resp.StatusCode)
+	}
+	var logged bool
+	for _, e := range h.events("api") {
+		if p := props(t, e); p["url"] == "/auth/callback" && p["status"] == float64(502) {
+			logged = strings.Contains(fmt.Sprint(p["error"]), "bad code")
+		}
+	}
+	if !logged {
+		t.Error("the exchange error isn't on the callback's api event")
+	}
+
+	if resp := callback("code-user"); resp.StatusCode != http.StatusFound {
+		t.Fatalf("sign in -> %d", resp.StatusCode)
+	}
+	resp := callback("used-code")
+	if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/" {
+		t.Fatalf("signed in, bad code -> %d %s, want 302 /", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
