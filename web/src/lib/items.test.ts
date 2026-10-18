@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { byFilename, cardSides, formatUnitCost, isBooklet, itemIdFromParam, productPreview, previewKind, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, previewCount, showsAmountIn3D, tilePreview, thumbnail } from './items';
+import { byFilename, printFileText, cardSides, formatUnitCost, isBooklet, itemIdFromParam, productPreview, previewKind, shipsWith, sizeStockLabel, unitCostLabel, itemPath, moveImage, previewCount, showsAmountIn3D, tilePreview, thumbnail } from './items';
 import type { Item } from './types';
 
 const poster: Item = {
 	id: 681, sku: 'Pri/HPd/11x/1st', name: '11x17 Hackpad Poster (Double-Sided)', description: '',
 	images: ['https://cdn.example/front.jpg', 'https://cdn.example/back.jpg'],
-	visible: true, sort_order: 1, max_per_request: 1, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, weight_oz: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: ''
+	visible: true, sort_order: 1, max_per_request: 1, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: ''
 };
 
 describe('item URLs', () => {
@@ -254,5 +254,12 @@ describe('previewKind', () => {
 	it('names the kind of 3D view', () => {
 		expect(previewKind({ shirt: {} } as never)).toBe('shirt');
 		expect(previewKind({ book: {} } as never)).toBe('book');
+	});
+});
+
+describe('print files', () => {
+	it('names the file, its type and its size', () => {
+		expect(printFileText({ url: 'https://cdn.example/1/front.pdf', label: 'Front', bytes: 4_400_000 })).toBe('Front · PDF · 4.2 MB');
+		expect(printFileText({ url: 'https://cdn.example/1/back.png', label: '', bytes: 800_000 })).toBe('back.png · PNG · 781 KB');
 	});
 });

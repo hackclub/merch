@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { sectionize, tileFact } from './sections';
 import type { Item } from './types';
 
-const base: Item = { id: 0, sku: '', name: '', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, weight_oz: null, photos: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: '' };
+const base: Item = { id: 0, sku: '', name: '', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, clip: '' };
 const item = (id: number, sku: string, sort_order = id): Item => ({ ...base, id, sku, name: sku, sort_order });
 
 const mag = { ...item(1, 'Pri/Bok/M25/1st'), binding: 'perfect' };

@@ -10,7 +10,7 @@ import type { ShirtOptions } from './shirt3d';
 import type { StickerOptions } from './sticker3d';
 import { PER_BAG } from './stickers';
 import { isImage } from './tile';
-import type { Item, ItemStock } from './types';
+import type { Item, ItemStock, PrintFile } from './types';
 
 const slugify = (s: string) =>
 	s
@@ -211,3 +211,12 @@ export function unitCostLabel(stock: ItemStock): string {
 /** "S 92 · M 95 · L 123", for items that come in sizes; "" otherwise. */
 export const sizeStockLabel = (stock: ItemStock): string =>
 	stock.variants.map((v) => `${v.label} ${v.in_stock.toLocaleString('en-US')}`).join(' · ');
+
+/** A print file's link text: its label (or file name), type and size, e.g. "Front · PDF · 4.2 MB". */
+export function printFileText(f: PrintFile): string {
+	const name = decodeURIComponent(f.url.split('/').pop() ?? '');
+	const type = (name.split('.').pop() ?? '').toUpperCase();
+	const mb = f.bytes / 1024 / 1024;
+	const size = mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(f.bytes / 1024)} KB`;
+	return [f.label || name, type, size].filter(Boolean).join(' · ');
+}

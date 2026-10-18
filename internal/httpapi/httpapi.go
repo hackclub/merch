@@ -4,6 +4,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -131,6 +132,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("PUT /api/admin/items/{id}", s.requireAdmin(s.adminUpdateItem))
 	mux.Handle("POST /api/admin/items/{id}/images", s.requireAdmin(s.adminUploadItemImage))
 	mux.Handle("POST /api/admin/items/{id}/photos", s.requireAdmin(s.adminUploadItemPhoto))
+	mux.Handle("POST /api/admin/items/{id}/print-files", s.requireAdmin(s.adminUploadPrintFile))
 	mux.Handle("POST /api/admin/items/{id}/pages", s.requireAdmin(s.adminUploadItemPage))
 	mux.Handle("GET /api/admin/warehouse/skus", s.requireAdmin(s.adminSKUs))
 	mux.Handle("GET /api/admin/settings", s.requireAdmin(s.adminSettings))
@@ -1019,6 +1021,14 @@ func validItem(it swag.Item) string {
 			return "images must be http(s) URLs"
 		}
 	}
+	for _, f := range it.PrintFiles {
+		switch {
+		case !isHTTPURL(f.URL):
+			return "print file urls must be http(s) URLs"
+		case len(f.Label) > 100:
+			return "a print file's label is too long"
+		}
+	}
 	labels, skus := map[string]bool{}, map[string]bool{}
 	for _, v := range it.Variants {
 		switch {
@@ -1139,11 +1149,65 @@ func (s *server) adminUploadItemPhoto(w http.ResponseWriter, r *http.Request, v 
 	s.respondItem(w)(s.Store.AddItemPhoto(r.Context(), id, p))
 }
 
+// maxPrintFile caps a source print file (a print-ready PDF or full-size image).
+const maxPrintFile = 60 << 20
+
+// printFileTypes are the print files people can download, by sniffed type.
+var printFileTypes = map[string]string{"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg", "image/tiff": ".tif"}
+
+// adminUploadPrintFile stores an item's original print file on the CDN as is
+// (not shrunk like gallery images), for its product page's "Print your own".
+func (s *server) adminUploadPrintFile(w http.ResponseWriter, r *http.Request, v viewer) {
+	if s.Images == nil {
+		writeErr(w, http.StatusServiceUnavailable, "uploads are off: set HACKCLUB_CDN_API_KEY")
+		return
+	}
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var body imageUpload
+	if !readJSONLimit(w, r, &body, maxPrintFile*4/3+4096) {
+		return
+	}
+	label := strings.TrimSpace(body.Label)
+	ctype := http.DetectContentType(body.Data)
+	if bytes.HasPrefix(body.Data, []byte("II*\x00")) || bytes.HasPrefix(body.Data, []byte("MM\x00*")) {
+		ctype = "image/tiff"
+	}
+	ext, known := printFileTypes[ctype]
+	switch {
+	case !known:
+		writeErr(w, http.StatusUnprocessableEntity, "upload a PDF, PNG, JPEG or TIFF print file")
+		return
+	case len(label) > 100:
+		writeErr(w, http.StatusUnprocessableEntity, "a print file's label is too long")
+		return
+	}
+	if _, err := s.Store.GetItem(r.Context(), id); errors.Is(err, store.ErrNotFound) {
+		writeErr(w, http.StatusNotFound, "item not found")
+		return
+	} else if err != nil {
+		s.serverErr(w, err)
+		return
+	}
+	name := strings.TrimSuffix(imageName(body.Filename), ".jpg") + ext
+	url, err := s.Images.Upload(r.Context(), name, ctype, body.Data)
+	if err != nil {
+		s.Log.Error("cdn upload failed", "item_id", id, "err", err)
+		writeErr(w, http.StatusBadGateway, "cdn.hackclub.com refused the file: "+err.Error())
+		return
+	}
+	s.trackAdmin(r, v, "item_media_added", map[string]any{"item_id": id, "kind": "print_file"})
+	s.respondItem(w)(s.Store.AddItemPrintFile(r.Context(), id, swag.PrintFile{URL: url, Label: label, Bytes: int64(len(body.Data))}))
+}
+
 type imageUpload struct {
 	Filename string `json:"filename"`
 	Data     []byte `json:"data"` // base64
 	Caption  string `json:"caption"`
 	Credit   string `json:"credit"`
+	Label    string `json:"label"` // print files
 }
 
 // uploadItemImage reads an image upload for the item in the path, shrinks it to

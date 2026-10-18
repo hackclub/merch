@@ -20,6 +20,7 @@ export type Item = {
 	thickness_in: number | null;
 	weight_oz: number | null; // one unit's shipping weight; null = worked out from its paper size
 	photos: Photo[]; // real-world pictures people posted
+	print_files: PrintFile[]; // source print files, for printing your own
 	packs: string; // '' (any quantity) | 'fives' (5, 10, 15…) | 'postcard' (5, 10…25) | 'sticker' (3, 10), then multiples of 50
 	binding: string; // '' (a single sheet) | 'staple' | 'perfect': booklets open in 3D | 'trifold': a sheet folded in thirds
 	pages: string[]; // a booklet's page images in reading order, front cover first
@@ -30,6 +31,7 @@ export type Item = {
 
 export type Variant = { label: string; sku: string; weight_oz?: number | null }; // weight_oz: one unit of this size; null = the item's
 export type Photo = { url: string; caption: string; credit: string };
+export type PrintFile = { url: string; label: string; bytes: number }; // label: e.g. 'Front'
 
 /** A key an agent uses to review requests (/api/agent). The token is shown only when it's made. */
 export type APIKey = {

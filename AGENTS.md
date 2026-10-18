@@ -498,7 +498,7 @@ blocks landing):
   `has_tracking`), `internal_note_updated` (admins' Markdown note on a request: `has_note`, `chars`,
   `from_chars`; never the text). Catalog and limits, with the admin's `user_id`: `item_created` (`item_id`,
   `sku`, `visible`), `item_updated` (`changed`: `{field: {from, to}}`, lists as their lengths),
-  `item_media_added` (`kind` = `image`, `page` or `photo`), `settings_updated` (`changed`),
+  `item_media_added` (`kind` = `image`, `page`, `photo` or `print_file`), `settings_updated` (`changed`),
   `submission_updated` (`from`, `to`, `kind`, `has_sku`), `api_key_created` and `api_key_revoked`
   (`api_key_id`). Notes are never logged, only `has_note`. What an agent does with an API key
   (see "Agent API") logs the same events with `api_key_id` added; its notes are
@@ -671,6 +671,10 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   surface (`finish`: matte, gloss, linen, uncoated), next to a phone at the same scale.
   `photos` holds real-world pictures people posted (`{url, caption, credit}`), shown as
   "In the wild" on the product page.
+  `print_files` (`{url, label, bytes}`) are the item's original print files (PDF, PNG, JPEG or
+  TIFF, up to 60 MB), uploaded untouched to the CDN from the admin Items tab and listed on the
+  product page as "Print your own" (postcards, posters), so people can print their own. Clicks
+  log as `click` with `area` = `print_file`.
   Booklets (`binding` = `staple` or `perfect`) open in the 3D view and flip through
   `items.pages` (page images, front cover first; `web/src/lib/book3d.ts`). The magazines'
   pages come from the public PDFs on magazine.hackclub.com, split into single pages.

@@ -45,6 +45,14 @@ type Photo struct {
 	Credit  string `json:"credit"`
 }
 
+// PrintFile is an item's original print artwork (a PDF or full-size image),
+// offered on its product page so people can print their own.
+type PrintFile struct {
+	URL   string `json:"url"`
+	Label string `json:"label"` // e.g. "Front", "Back"
+	Bytes int64  `json:"bytes"`
+}
+
 // Item is a listed catalog item backed by a warehouse SKU.
 type Item struct {
 	ID            int64    `json:"id"`
@@ -69,6 +77,8 @@ type Item struct {
 	WeightOz *float64 `json:"weight_oz"`
 	// Real-world photos people have posted of it.
 	Photos []Photo `json:"photos"`
+	// PrintFiles are its source print files, for printing your own.
+	PrintFiles []PrintFile `json:"print_files"`
 	// Packs names how the item is packed (see Packs; "" = any quantity).
 	// Quantities are limited to PackQuantity steps.
 	Packs string `json:"packs"`

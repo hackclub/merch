@@ -170,6 +170,18 @@ func TestItemImages(t *testing.T) {
 	if fresh := mkItem(t, s, "Pri/New", true); fresh.Photos == nil {
 		t.Fatal("new item photos should be an empty list, not null")
 	}
+	it.Photos = upd.Photos
+	it.PrintFiles = []swag.PrintFile{{URL: "https://cdn.example/front.pdf", Label: "Front", Bytes: 1200}}
+	if upd, err = s.UpdateItem(ctx, it); err != nil || len(upd.PrintFiles) != 1 || upd.PrintFiles[0] != it.PrintFiles[0] {
+		t.Fatalf("UpdateItem print files = %+v, %v", upd.PrintFiles, err)
+	}
+	upd, err = s.AddItemPrintFile(ctx, it.ID, swag.PrintFile{URL: "https://cdn.example/back.pdf", Label: "Back", Bytes: 900})
+	if err != nil || len(upd.PrintFiles) != 2 || upd.PrintFiles[1].Label != "Back" {
+		t.Fatalf("AddItemPrintFile = %+v, %v", upd.PrintFiles, err)
+	}
+	if fresh := mkItem(t, s, "Pri/Newer", true); fresh.PrintFiles == nil {
+		t.Fatal("new item print files should be an empty list, not null")
+	}
 
 	if _, err := s.AddItemImage(ctx, 999, "https://cdn.example/x.jpg"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing item err = %v", err)

@@ -5,7 +5,7 @@
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
 	import { pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
 	import { itemsFor, offered } from '$lib/purpose';
-	import { isBooklet, itemIdFromParam, itemPath, previewCount, productPreview, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
+	import { isBooklet, itemIdFromParam, itemPath, previewCount, printFileText, productPreview, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
 	import { sheetThickness, finishInfo } from '$lib/paper';
 	import { programFor } from '$lib/programs';
 	import { sizeLabel } from '$lib/scale';
@@ -201,6 +201,18 @@
 		</div>
 	</div>
 
+	{#if item.print_files.length}
+		<section class="community print-files">
+			<h2>Print your own</h2>
+			<p class="muted">The same files we send to the printer. Print as many as you like.</p>
+			<ul>
+				{#each item.print_files as f (f.url)}
+					<li><a href={f.url} target="_blank" rel="noreferrer" download data-track="print_file">↓ {printFileText(f)}</a></li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
+
 	{#if item.photos.length}
 		<section class="community">
 			<h2>In the wild</h2>
@@ -242,6 +254,10 @@
 	.main.three { cursor: default; padding: 0; }
 	.community { margin-top: 3.5rem; }
 	.community h2 { margin-bottom: 0.25rem; }
+	.print-files ul { list-style: none; padding: 0; margin: 1rem 0 0; border-top: 1px solid var(--smoke); }
+	.print-files li { border-bottom: 1px solid var(--smoke); }
+	.print-files a { display: block; padding: 0.65rem 0; font-family: var(--mono); font-size: 0.8rem; text-transform: uppercase; text-decoration: none; color: var(--dark); }
+	.print-files a:hover { color: var(--red); }
 	.photos { display: grid; gap: 0.5rem; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); margin-top: 1rem; }
 	.photos figure { margin: 0; }
 	.photos img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }

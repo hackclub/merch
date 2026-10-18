@@ -818,6 +818,8 @@ func TestItemPrintDetailsAreValidated(t *testing.T) {
 		"unknown packs":   {Packs: "crate"},
 		"photo url":       {Photos: []swag.Photo{{URL: "javascript:alert(1)"}}},
 		"long caption":    {Photos: []swag.Photo{{URL: "https://cdn.example/a.jpg", Caption: strings.Repeat("x", 301)}}},
+		"print file url":  {PrintFiles: []swag.PrintFile{{URL: "javascript:alert(1)", Label: "Front"}}},
+		"long file label": {PrintFiles: []swag.PrintFile{{URL: "https://cdn.example/a.pdf", Label: strings.Repeat("x", 101)}}},
 	} {
 		bad.SKU, bad.Name, bad.MaxPerRequest = it.SKU, it.Name, it.MaxPerRequest
 		if code := h.do(admin, "PUT", path, bad, nil); code != 422 {
@@ -854,6 +856,45 @@ func TestAdminUploadsItemPhotos(t *testing.T) {
 	}
 	if code := h.do(h.client(userEmail), "POST", fmt.Sprintf("/api/admin/items/%d/photos", it.ID), body, nil); code != 403 {
 		t.Fatalf("non-admin photo upload = %d", code)
+	}
+}
+
+// Print files are the originals people can print themselves, so they go to
+// the CDN untouched (not shrunk like gallery images).
+func TestAdminUploadsPrintFiles(t *testing.T) {
+	h := newHarness(t)
+	it := h.mkItem("Pri/A", true)
+	path := fmt.Sprintf("/api/admin/items/%d/print-files", it.ID)
+	pdf := []byte("%PDF-1.7\n" + strings.Repeat("x", 2000))
+	body := map[string]string{"filename": "postcard front.pdf", "data": base64.StdEncoding.EncodeToString(pdf), "label": " Front "}
+
+	var upd swag.Item
+	if code := h.do(h.client(adminEmail), "POST", path, body, &upd); code != 200 {
+		t.Fatalf("print file upload = %d", code)
+	}
+	want := swag.PrintFile{URL: "https://cdn.example/1/postcard-front.pdf", Label: "Front", Bytes: int64(len(pdf))}
+	if len(upd.PrintFiles) != 1 || upd.PrintFiles[0] != want || len(upd.Images) != 0 {
+		t.Fatalf("print files = %+v images = %v", upd.PrintFiles, upd.Images)
+	}
+	if up := h.cdn.uploads[0]; up.contentType != "application/pdf" || !bytes.Equal(up.data, pdf) {
+		t.Fatalf("uploaded %s, %d bytes", up.contentType, len(up.data))
+	}
+	if e := h.events("item_media_added"); len(e) != 1 || props(t, e[0])["kind"] != "print_file" {
+		t.Fatalf("events = %+v", e)
+	}
+	// The public catalog carries them, for the product page.
+	var cat struct{ Items []swag.Item }
+	h.do(h.client(userEmail), "GET", "/api/catalog", nil, &cat)
+	if len(cat.Items) != 1 || len(cat.Items[0].PrintFiles) != 1 {
+		t.Fatalf("catalog print files = %+v", cat.Items)
+	}
+
+	body["filename"], body["data"] = "notes.txt", base64.StdEncoding.EncodeToString([]byte("hello"))
+	if code := h.do(h.client(adminEmail), "POST", path, body, nil); code != 422 {
+		t.Fatalf("text file upload = %d, want 422", code)
+	}
+	if code := h.do(h.client(userEmail), "POST", path, body, nil); code != 403 {
+		t.Fatalf("non-admin print file upload = %d", code)
 	}
 }
 

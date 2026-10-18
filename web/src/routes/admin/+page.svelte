@@ -4,7 +4,7 @@
 	import { parseQuickPicks } from '$lib/cart';
 	import { linkify } from '$lib/markdown';
 	import { purposeLabel } from '$lib/purpose';
-	import { byFilename, itemPath, moveImage } from '$lib/items';
+	import { byFilename, itemPath, moveImage, printFileText } from '$lib/items';
 	import InternalNote from '$lib/InternalNote.svelte';
 	import { session } from '$lib/session.svelte';
 	import { arrivalText, costBreakdown, ozText } from '$lib/shipping';
@@ -164,6 +164,17 @@
 			const upd = await api.post<Item>(`/api/admin/items/${it.id}/photos`, { filename: f.name, data: await fileToBase64(f), caption, credit });
 			it.photos = upd.photos;
 		}, `Added a photo to ${it.name}`);
+		uploading = null;
+	}
+	async function uploadPrintFile(it: Item, files: FileList | null) {
+		const f = files?.[0];
+		if (!f) return;
+		const label = prompt('Label (e.g. Front, Back):') ?? '';
+		uploading = it.id;
+		await guard(async () => {
+			const upd = await api.post<Item>(`/api/admin/items/${it.id}/print-files`, { filename: f.name, data: await fileToBase64(f), label });
+			it.print_files = upd.print_files;
+		}, `Added a print file to ${it.name}`);
 		uploading = null;
 	}
 	const listSKU = (s: WarehouseSKU) =>
@@ -347,6 +358,22 @@
 									<input type="file" accept="image/png,image/jpeg,image/webp" hidden disabled={uploading !== null}
 										onchange={(e) => { uploadPhoto(it, e.currentTarget.files); e.currentTarget.value = ''; }} />
 								</label>
+							</details>
+							<details class="photos-edit" open={it.print_files.length > 0}>
+								<summary>Print files ({it.print_files.length})</summary>
+								{#each it.print_files as f, i (f.url)}
+									<div class="file-row">
+										<input bind:value={f.label} placeholder="label, e.g. Front" aria-label="Print file label" />
+										<a href={f.url} target="_blank" rel="noreferrer">{printFileText(f)}</a>
+										<button class="link" title="Remove print file" onclick={() => (it.print_files = it.print_files.filter((_, j) => j !== i))}>✕</button>
+									</div>
+								{/each}
+								<label class="button small-btn" class:busy={uploading === it.id}>
+									{uploading === it.id ? 'Uploading…' : '+ Print file'}
+									<input type="file" accept="application/pdf,image/png,image/jpeg,image/tiff" hidden disabled={uploading !== null}
+										onchange={(e) => { uploadPrintFile(it, e.currentTarget.files); e.currentTarget.value = ''; }} />
+								</label>
+								<div class="muted">The original PDFs or full-size images, shown on the product page as "Print your own". Edit labels or remove, then Save.</div>
 							</details>
 						</td>
 						<td>
@@ -536,6 +563,7 @@
 	.pages img { height: 3rem; border-radius: 2px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); }
 	.photos-edit summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
 	.photo-row { display: grid; grid-template-columns: 4rem 1fr auto; gap: 0.5rem; align-items: center; margin: 0.4rem 0; }
+	.file-row { display: grid; grid-template-columns: 9rem 1fr auto; gap: 0.5rem; align-items: center; margin: 0.4rem 0; font-size: 0.85rem; }
 	.photo-row img { width: 4rem; height: 3rem; object-fit: cover; border-radius: 4px; }
 	.photo-row div { display: grid; gap: 0.25rem; }
 	.email-body { white-space: pre-wrap; font-family: inherit; margin: 0.5rem 0 0; }
