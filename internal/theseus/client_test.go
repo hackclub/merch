@@ -96,15 +96,25 @@ func TestGetOrder(t *testing.T) {
 		if r.URL.Path != "/api/v1/warehouse_orders/pkg!abc" {
 			t.Errorf("path = %s", r.URL.Path)
 		}
-		w.Write([]byte(`{"warehouse_order":{"id":"pkg!abc","status":"mailed","tracking_number":"9400","carrier":"USPS"}}`))
+		w.Write([]byte(`{"warehouse_order":{"id":"pkg!abc","status":"mailed","tracking_number":"9400","carrier":"USPS",
+			"mailed_at":"2026-10-17T20:01:02.000Z","contents_cost":"12.15","labor_cost":5.6000000000000005,"postage_cost":"4.71"}}`))
 	}))
 	defer srv.Close()
 	o, err := New(srv.URL, "k", nil).GetOrder(context.Background(), "pkg!abc")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if o.TrackingNumber != "9400" || o.Carrier != "USPS" || o.Status != "mailed" {
+	if o.TrackingNumber != "9400" || o.Carrier != "USPS" || o.Status != "mailed" || o.MailedAt == nil || o.MailedAt.Day() != 17 {
 		t.Fatalf("order = %+v", o)
+	}
+	// Rails sends decimals as strings or floats; costs are in cents.
+	c := o.Costs()
+	if c.ContentsCents == nil || *c.ContentsCents != 1215 || c.LaborCents == nil || *c.LaborCents != 560 || c.PostageCents == nil || *c.PostageCents != 471 {
+		t.Fatalf("costs = %+v", c)
+	}
+	// Before it's mailed, there's no postage yet.
+	if c := (&Order{LaborCost: 3.0}).Costs(); c.PostageCents != nil || c.ContentsCents != nil || *c.LaborCents != 300 {
+		t.Fatalf("unmailed costs = %+v", c)
 	}
 }
 

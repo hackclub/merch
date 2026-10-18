@@ -10,6 +10,7 @@ import (
 	"github.com/hackclub/merch/internal/auth"
 	"github.com/hackclub/merch/internal/db/dbtest"
 	"github.com/hackclub/merch/internal/swag"
+	"github.com/hackclub/merch/internal/theseus"
 )
 
 var ctx = context.Background()
@@ -487,5 +488,46 @@ func TestCloseRequestRecordsRefund(t *testing.T) {
 	}
 	if got, err := s.RecordRefund(ctx, r2.ID, 300); err != nil || got.RefundedCents != 300 || got.RefundedAt == nil {
 		t.Fatalf("RecordRefund = %+v, %v", got, err)
+	}
+}
+
+func TestDispatchTimeAndWarehouseCosts(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "ident!1", "a@x.com")
+	it := mkItem(t, s, "Sti/A", true)
+	r, _ := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: it.ID, Quantity: 1}}, Status: swag.StatusPending}, noCheck)
+	if r.DispatchedAt != nil || r.WarehouseCosts != (theseus.Costs{}) {
+		t.Fatalf("new request = %+v", r)
+	}
+	got, err := s.MarkDispatched(ctx, r.ID, "pkg!1", ShipChanges{})
+	if err != nil || got.DispatchedAt == nil || time.Since(*got.DispatchedAt) > time.Minute {
+		t.Fatalf("dispatched = %+v, %v", got, err)
+	}
+
+	// The warehouse charges contents and labor when it takes the order, and postage once it's mailed.
+	labor, contents, postage := 300, 1215, 471
+	got, err = s.SetWarehouseCosts(ctx, r.ID, theseus.Costs{ContentsCents: &contents, LaborCents: &labor}, nil)
+	if err != nil || *got.WarehouseCosts.LaborCents != 300 || got.WarehouseCosts.PostageCents != nil || got.MailedAt != nil {
+		t.Fatalf("before mailing = %+v, %v", got.WarehouseCosts, err)
+	}
+	mailed := time.Date(2026, 10, 17, 20, 0, 0, 0, time.UTC)
+	got, _ = s.SetWarehouseCosts(ctx, r.ID, theseus.Costs{ContentsCents: &contents, LaborCents: &labor, PostageCents: &postage}, &mailed)
+	if *got.WarehouseCosts.PostageCents != 471 || !got.MailedAt.Equal(mailed) {
+		t.Fatalf("mailed = %+v %v", got.WarehouseCosts, got.MailedAt)
+	}
+	// A later refresh that's missing a figure keeps the one it had.
+	got, _ = s.SetWarehouseCosts(ctx, r.ID, theseus.Costs{}, nil)
+	if got.WarehouseCosts.PostageCents == nil || got.MailedAt == nil {
+		t.Fatalf("kept = %+v %v", got.WarehouseCosts, got.MailedAt)
+	}
+	if _, err := s.SetWarehouseCosts(ctx, 9999, theseus.Costs{}, nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing request err = %v", err)
+	}
+
+	pending, _ := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Lines: []swag.Line{{ItemID: it.ID, Quantity: 1}}, Status: swag.StatusPending}, noCheck)
+	since, _ := s.ListDispatchedSince(ctx, time.Now().Add(-time.Hour))
+	later, _ := s.ListDispatchedSince(ctx, time.Now().Add(time.Hour))
+	if len(since) != 1 || since[0].ID != r.ID || since[0].ID == pending.ID || len(since[0].Lines) != 1 || len(later) != 0 {
+		t.Fatalf("since = %+v, later = %+v", since, later)
 	}
 }

@@ -74,13 +74,46 @@ type OrderInput struct {
 }
 
 type Order struct {
-	ID             string   `json:"id"`
-	Status         string   `json:"status"`
-	Tags           []string `json:"tags"`
-	TrackingNumber string   `json:"tracking_number"`
-	Carrier        string   `json:"carrier"`
-	Service        string   `json:"service"`
-	PostageCost    any      `json:"postage_cost"`
+	ID             string     `json:"id"`
+	Status         string     `json:"status"`
+	Tags           []string   `json:"tags"`
+	TrackingNumber string     `json:"tracking_number"`
+	Carrier        string     `json:"carrier"`
+	Service        string     `json:"service"`
+	MailedAt       *time.Time `json:"mailed_at"`
+	ContentsCost   any        `json:"contents_cost"` // dollars, as a string or a number
+	LaborCost      any        `json:"labor_cost"`
+	PostageCost    any        `json:"postage_cost"` // set once it's mailed
+}
+
+// Costs is what the warehouse charged for an order, in cents; nil where it
+// hasn't said yet (postage comes when it's mailed).
+type Costs struct {
+	ContentsCents *int `json:"contents_cents"`
+	LaborCents    *int `json:"labor_cents"`
+	PostageCents  *int `json:"postage_cents"`
+}
+
+func (o *Order) Costs() Costs {
+	return Costs{cents(o.ContentsCost), cents(o.LaborCost), cents(o.PostageCost)}
+}
+
+func cents(v any) *int {
+	var d float64
+	switch x := v.(type) {
+	case float64:
+		d = x
+	case string:
+		f, err := strconv.ParseFloat(x, 64)
+		if err != nil {
+			return nil
+		}
+		d = f
+	default:
+		return nil
+	}
+	c := int(math.Round(d * 100))
+	return &c
 }
 
 // ListSKUs returns enabled, in-inventory SKUs.

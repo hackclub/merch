@@ -98,7 +98,9 @@ for a person to approve, the 502 says so: leave a `Needs a human:` note and don'
 ### `POST /api/agent/requests/{id}/refresh`
 
 `{}` asks mail.hackclub.com for a `dispatched` request's tracking and saves its
-`tracking_number` and `carrier` (empty until the warehouse mails it). Returns the request. A 409
+`tracking_number` and `carrier` (empty until the warehouse mails it), `mailed_at`, and what the
+warehouse charged (`warehouse_costs`: `contents_cents`, `labor_cents`, and `postage_cents` once
+it's mailed). Returns the request. A 409
 means it hasn't been dispatched. Nothing pulls tracking on its own, so check what you shipped
 on later runs until it has a tracking number.
 

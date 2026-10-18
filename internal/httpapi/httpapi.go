@@ -123,6 +123,8 @@ func New(d Deps) http.Handler {
 
 	// admin
 	mux.Handle("GET /api/admin/requests", s.requireAdmin(s.adminRequests))
+	mux.Handle("GET /api/admin/dashboard", s.requireAdmin(s.adminDashboard))
+	mux.Handle("POST /api/admin/requests/refresh", s.requireAdmin(s.adminRefreshAll))
 	mux.Handle("POST /api/admin/requests/{id}/dispatch", s.requireAdmin(s.adminDispatch))
 	mux.Handle("POST /api/admin/requests/{id}/reject", s.requireAdmin(s.adminReject))
 	mux.Handle("POST /api/admin/requests/{id}/refresh", s.requireAdmin(s.adminRefresh))
@@ -882,6 +884,11 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 		s.respondRequest(w, nil, err)
 		return
 	}
+	if withCosts, err := s.Store.SetWarehouseCosts(r.Context(), id, order.Costs(), order.MailedAt); err != nil {
+		s.Log.Error("saving warehouse costs failed", "request_id", id, "err", err)
+	} else {
+		req = withCosts
+	}
 	warning := ""
 	if len(changes.Quantities) > 0 || len(changes.Added) > 0 {
 		req, warning = s.refundUnusedPostage(r, req)
@@ -934,16 +941,13 @@ func (s *server) adminRefresh(w http.ResponseWriter, r *http.Request, v viewer) 
 		writeErr(w, http.StatusConflict, "request has not been dispatched")
 		return
 	}
-	o, err := s.Warehouse.GetOrder(r.Context(), req.TheseusOrderID)
+	req, mailed, err := s.pullOrder(r.Context(), req)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	req, err = s.Store.SetTracking(r.Context(), id, o.TrackingNumber, o.Carrier)
-	if err == nil {
-		s.trackRequest(r, v, "tracking_updated", req, map[string]any{"carrier": o.Carrier, "has_tracking": o.TrackingNumber != ""})
-	}
-	s.respondRequest(w, req, err)
+	s.trackRequest(r, v, "tracking_updated", req, map[string]any{"carrier": req.Carrier, "has_tracking": req.TrackingNumber != "", "has_postage": mailed})
+	s.respondRequest(w, req, nil)
 }
 
 func (s *server) respond(w http.ResponseWriter) func(*store.Request, error) {

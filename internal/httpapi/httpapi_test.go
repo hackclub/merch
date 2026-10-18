@@ -60,6 +60,7 @@ type fakeWarehouse struct {
 	fail     error
 	skuCalls int
 	skuFail  error
+	gets     int
 }
 
 func (f *fakeWarehouse) ListSKUs(context.Context) ([]theseus.SKU, error) {
@@ -91,11 +92,18 @@ func (f *fakeWarehouse) CreateOrder(_ context.Context, in theseus.OrderInput) (*
 		return nil, f.fail
 	}
 	f.orders = append(f.orders, in)
-	return &theseus.Order{ID: fmt.Sprintf("pkg!%d", len(f.orders)), Status: "dispatched"}, nil
+	// Theseus charges contents and labor when it takes the order.
+	return &theseus.Order{ID: fmt.Sprintf("pkg!%d", len(f.orders)), Status: "dispatched", ContentsCost: "0.50", LaborCost: 2.2}, nil
 }
 
+// GetOrder: every order has been mailed, for $4.71.
 func (f *fakeWarehouse) GetOrder(_ context.Context, id string) (*theseus.Order, error) {
-	return &theseus.Order{ID: id, Status: "mailed", TrackingNumber: "9400", Carrier: "USPS"}, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.gets++
+	mailed := time.Date(2026, 10, 17, 20, 0, 0, 0, time.UTC)
+	return &theseus.Order{ID: id, Status: "mailed", TrackingNumber: "9400", Carrier: "USPS", MailedAt: &mailed,
+		ContentsCost: "0.50", LaborCost: 2.2, PostageCost: "4.71"}, nil
 }
 
 type fakeCDN struct {

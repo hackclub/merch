@@ -19,6 +19,7 @@ import (
 
 	"github.com/hackclub/merch/internal/auth"
 	"github.com/hackclub/merch/internal/swag"
+	"github.com/hackclub/merch/internal/theseus"
 )
 
 var (
@@ -333,6 +334,8 @@ type Request struct {
 	TrackingNumber   string        `json:"tracking_number"`
 	Carrier          string        `json:"carrier"`
 	MailedAt         *time.Time    `json:"mailed_at"`
+	DispatchedAt     *time.Time    `json:"dispatched_at"`
+	WarehouseCosts   theseus.Costs `json:"warehouse_costs"` // what mail.hackclub.com charged, as far as it's said
 	Source           string        `json:"source"`
 	AirtableRecordID string        `json:"airtable_record_id,omitempty"`
 	CreatedAt        time.Time     `json:"created_at"`
@@ -424,7 +427,8 @@ const requestSelect = `
 	SELECT r.id, r.user_id, u.email, r.status, r.purpose, r.first_name, r.last_name, r.line_1, r.line_2, r.city, r.state,
 		r.postal_code, r.country, r.phone_number, r.shipping_fee_cents, r.paid_at, r.note, r.admin_note, r.internal_note,
 		coalesce(r.theseus_order_id, ''), r.tracking_number, r.carrier, r.mailed_at, r.source, r.airtable_record_id,
-		r.stripe_payment_intent, r.refunded_at, r.refunded_cents, r.created_at
+		r.stripe_payment_intent, r.refunded_at, r.refunded_cents, r.created_at,
+		r.dispatched_at, r.warehouse_contents_cents, r.warehouse_labor_cents, r.warehouse_postage_cents
 	FROM swag_requests r JOIN users u ON u.id = r.user_id`
 
 func scanRequest(row pgx.Row) (*Request, error) {
@@ -433,7 +437,8 @@ func scanRequest(row pgx.Row) (*Request, error) {
 	err := row.Scan(&r.ID, &r.UserID, &r.UserEmail, &r.Status, &r.Purpose, &a.FirstName, &a.LastName, &a.Line1, &a.Line2, &a.City, &a.State,
 		&a.PostalCode, &a.Country, &a.Phone, &r.ShippingFeeCents, &r.PaidAt, &r.Note, &r.AdminNote, &r.InternalNote,
 		&r.TheseusOrderID, &r.TrackingNumber, &r.Carrier, &r.MailedAt, &r.Source, &r.AirtableRecordID,
-		&r.StripePaymentIntent, &r.RefundedAt, &r.RefundedCents, &r.CreatedAt)
+		&r.StripePaymentIntent, &r.RefundedAt, &r.RefundedCents, &r.CreatedAt,
+		&r.DispatchedAt, &r.WarehouseCosts.ContentsCents, &r.WarehouseCosts.LaborCents, &r.WarehouseCosts.PostageCents)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -454,7 +459,12 @@ func (s *Store) ListRequestsByUser(ctx context.Context, userID int64) ([]*Reques
 
 // ListRequests lists all requests, optionally filtered by status ("" = all).
 func (s *Store) ListRequests(ctx context.Context, status swag.Status) ([]*Request, error) {
-	return s.listRequests(ctx, requestSelect+` WHERE $1 = '' OR r.status = $1 ORDER BY r.created_at DESC LIMIT 500`, string(status))
+	return s.listRequests(ctx, requestSelect+` WHERE $1 = '' OR r.status = $1 ORDER BY r.created_at DESC LIMIT 5000`, string(status))
+}
+
+// ListDispatchedSince is every request shipped at or after since, oldest first.
+func (s *Store) ListDispatchedSince(ctx context.Context, since time.Time) ([]*Request, error) {
+	return s.listRequests(ctx, requestSelect+` WHERE r.status = 'dispatched' AND r.dispatched_at >= $1 ORDER BY r.dispatched_at`, since)
 }
 
 func (s *Store) listRequests(ctx context.Context, q string, args ...any) ([]*Request, error) {
@@ -577,7 +587,7 @@ func (s *Store) MarkDispatched(ctx context.Context, id int64, theseusOrderID str
 			}
 		}
 		return nil
-	}, `theseus_order_id = $3, admin_note = CASE WHEN $4 = '' THEN admin_note ELSE $4 END`, theseusOrderID, strings.TrimSpace(ch.Note))
+	}, `dispatched_at = now(), theseus_order_id = $3, admin_note = CASE WHEN $4 = '' THEN admin_note ELSE $4 END`, theseusOrderID, strings.TrimSpace(ch.Note))
 }
 
 // transition's set clause gets args as $3, $4…
@@ -612,6 +622,23 @@ func (s *Store) transitionTx(ctx context.Context, id int64, to swag.Status, also
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
+	}
+	return s.GetRequest(ctx, id)
+}
+
+// SetWarehouseCosts records what mail.hackclub.com charged for a request, and
+// when it was mailed. A figure it hasn't given (nil) keeps the one stored.
+func (s *Store) SetWarehouseCosts(ctx context.Context, id int64, c theseus.Costs, mailedAt *time.Time) (*Request, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE swag_requests SET warehouse_contents_cents = coalesce($2, warehouse_contents_cents),
+			warehouse_labor_cents = coalesce($3, warehouse_labor_cents), warehouse_postage_cents = coalesce($4, warehouse_postage_cents),
+			mailed_at = coalesce($5, mailed_at), updated_at = now()
+		WHERE id = $1`, id, c.ContentsCents, c.LaborCents, c.PostageCents, mailedAt)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrNotFound
 	}
 	return s.GetRequest(ctx, id)
 }

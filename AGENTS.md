@@ -369,6 +369,17 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
     says what makes the request worth it, for the destination's side: under $30, the hours one
     new teen ships ("ship 6 hours of work"); from $30, how many teens each ship a weighted
     project. Both round up. Judge swag, limits and shipping rules by this number.
+- **Spend dashboard** (top of the Admin page's requests tab; `GET /api/admin/dashboard?days=`,
+  `internal/httpapi/dashboard.go`, `swag.SummarizeSpend`): shipped requests' cost by day (New York,
+  by `dispatched_at`; imports by `mailed_at`) as items, labor, packing and postage; the month so
+  far plus the last 7 days' daily average for each day left; what's waiting to ship; and whether
+  international requesters' payments (paid less refunded) cover their postage, by country. Each
+  request uses mail.hackclub.com's own charges where it has them (`warehouse_*_cents`: contents and
+  labor when it takes the order, postage once mailed; its labor runs higher than the AGH rates in
+  `costs.go`), else `CostToShip` estimates. Nothing pulls charges on its own: the dashboard's "Pull
+  costs from warehouse" (`POST /api/admin/requests/refresh`, up to 60 orders a click) and each
+  request's refresh fetch them. The request list below loads every request once and filters in the
+  browser (`$lib/dashboard`).
 - **History** (`shipping_history`, no names or addresses) comes from the Hack Club data warehouse:
   - `scripts/shipping-history/zenventory.sql`: AGH shipments, for postage and Asendia tracking.
   - `theseus-orders.sql`: orders placed through mail.hackclub.com, for handling time.
@@ -495,12 +506,13 @@ blocks landing):
   `lines`, `items_requested`, `items_shipped`, `fee_cents`, `wait_h` (hours since the request was
   made), `since_paid_h` and `refunded_cents`: `request_dispatched` (`changed` when quantities changed, `has_note`, `warning`),
   `request_rejected` (`from`, `has_note`, `refunded`), `tracking_updated` (`carrier`,
-  `has_tracking`), `internal_note_updated` (admins' Markdown note on a request: `has_note`, `chars`,
+  `has_tracking`, `has_postage` once the warehouse has priced the label), `internal_note_updated` (admins' Markdown note on a request: `has_note`, `chars`,
   `from_chars`; never the text). Catalog and limits, with the admin's `user_id`: `item_created` (`item_id`,
   `sku`, `visible`), `item_updated` (`changed`: `{field: {from, to}}`, lists as their lengths),
   `item_media_added` (`kind` = `image`, `page`, `photo` or `print_file`), `settings_updated` (`changed`),
   `submission_updated` (`from`, `to`, `kind`, `has_sku`), `api_key_created` and `api_key_revoked`
-  (`api_key_id`). Notes are never logged, only `has_note`. What an agent does with an API key
+  (`api_key_id`), `requests_refreshed` (the dashboard pulled tracking and charges from
+  mail.hackclub.com: `checked`, `updated`, `mailed`, `failed`, `left`). Notes are never logged, only `has_note`. What an agent does with an API key
   (see "Agent API") logs the same events with `api_key_id` added; its notes are
   `internal_note_updated` with `appended`.
 - **Never log what people type or where they live.** No addresses, names, notes, search text,

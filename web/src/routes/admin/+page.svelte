@@ -6,6 +6,8 @@
 	import { purposeLabel } from '$lib/purpose';
 	import { byFilename, itemPath, moveImage, printFileText } from '$lib/items';
 	import InternalNote from '$lib/InternalNote.svelte';
+	import SpendDashboard from '$lib/SpendDashboard.svelte';
+	import { filterRequests, shippedBreakdown, statusCounts, type Dashboard, type Filter } from '$lib/dashboard';
 	import { session } from '$lib/session.svelte';
 	import { arrivalText, costBreakdown, ozText } from '$lib/shipping';
 	import { lineText, shipBody } from '$lib/ship';
@@ -17,8 +19,15 @@
 	let error = $state('');
 	let flash = $state('');
 
-	let statusFilter = $state('pending');
 	let requests = $state<SwagRequest[]>([]);
+	let filter = $state<Filter>({ status: 'open', q: '', region: '', source: '', purpose: '', sort: 'newest' });
+	const PAGE = 100;
+	let shown = $state(PAGE);
+	const filtered = $derived(filterRequests(requests, filter));
+	const counts = $derived(statusCounts(requests));
+	let dashboard = $state<Dashboard | null>(null);
+	let days = $state(30);
+	let refreshing = $state(false);
 	let items = $state<Item[]>([]);
 	let skus = $state<WarehouseSKU[]>([]);
 	let settings = $state<Settings | null>(null);
@@ -39,11 +48,27 @@
 		}
 	}
 
+	// Every request comes down once; the filters work in the browser.
 	const loadRequests = () =>
 		guard(async () => {
-			const q = statusFilter ? `?status=${statusFilter}` : '';
-			requests = (await api.get<{ requests: SwagRequest[] }>(`/api/admin/requests${q}`)).requests;
+			requests = (await api.get<{ requests: SwagRequest[] }>('/api/admin/requests')).requests;
 		});
+	const loadDashboard = (d: number) =>
+		guard(async () => {
+			dashboard = await api.get<Dashboard>(`/api/admin/dashboard?days=${d}`);
+		});
+	$effect(() => {
+		if (session.me?.roles.admin) loadDashboard(days);
+	});
+	async function pullCosts() {
+		refreshing = true;
+		await guard(async () => {
+			const r = await api.post<{ checked: number; updated: number; mailed: number; failed: number; left: number }>('/api/admin/requests/refresh');
+			await Promise.all([loadDashboard(days), loadRequests()]);
+			flash = `Asked the warehouse about ${r.checked} shipped request${r.checked === 1 ? '' : 's'}: ${r.mailed} mailed with postage${r.failed ? `, ${r.failed} failed` : ''}${r.left ? `, ${r.left} left (pull again)` : ''}.`;
+		});
+		refreshing = false;
+	}
 	const loadItems = () =>
 		guard(async () => {
 			items = (await api.get<{ items: Item[] }>('/api/admin/items')).items;
@@ -99,7 +124,7 @@
 	const act = (id: number, action: string, body: object = {}) =>
 		guard(async () => {
 			await api.post(`/api/admin/requests/${id}/${action}`, body);
-			await loadRequests();
+			await Promise.all([loadRequests(), loadDashboard(days)]);
 		}, `Request #${id}: ${action} done`);
 
 	// Before shipping, an admin can change quantities (0 = don't send) and write a note for the shipped email.
@@ -108,7 +133,7 @@
 	const ship = (r: SwagRequest) =>
 		guard(async () => {
 			const res = await api.post<{ warning?: string }>(`/api/admin/requests/${r.id}/dispatch`, shipBody(r.lines, shipQty[r.id] ?? {}, shipNote[r.id] ?? ''));
-			await loadRequests();
+			await Promise.all([loadRequests(), loadDashboard(days)]);
 			if (res.warning) throw new Error(`Request #${r.id}: ${res.warning}`);
 		}, `Request #${r.id}: shipped`);
 
@@ -210,18 +235,33 @@
 	{#if flash}<p class="ok">{flash}</p>{/if}
 
 	{#if tab === 'requests'}
-		<div class="row">
-			<select bind:value={statusFilter} onchange={loadRequests} style="width: auto">
-				<option value="">All</option>
-				{#each ['pending', 'awaiting_payment', 'dispatched', 'rejected', 'cancelled'] as s}
-					<option value={s}>{statusLabel[s]}</option>
-				{/each}
+		{#if dashboard}<SpendDashboard data={dashboard} bind:days onrefresh={pullCosts} {refreshing} />{/if}
+		<div class="row statuses" data-track="request_status_filter">
+			{#each [['open', 'Needs action'], ['pending', statusLabel.pending], ['awaiting_payment', 'Awaiting payment'], ['dispatched', statusLabel.dispatched], ['rejected', statusLabel.rejected], ['cancelled', statusLabel.cancelled], ['', 'All']] as [s, label]}
+				<button class="chip" class:on={filter.status === s} onclick={() => { filter.status = s; shown = PAGE; }}>{label} <span class="n">{counts[s] ?? 0}</span></button>
+			{/each}
+		</div>
+		<div class="filters" data-track="request_filters">
+			<input type="search" placeholder="Search #id, email, name, city, item, SKU, tracking" bind:value={filter.q} oninput={() => (shown = PAGE)} />
+			<select bind:value={filter.region} aria-label="Where to">
+				<option value="">US + international</option><option value="us">US</option><option value="intl">International</option>
+			</select>
+			<select bind:value={filter.purpose} aria-label="Purpose">
+				<option value="">Any purpose</option>
+				{#each ['personal', 'club', 'event'] as p}<option value={p}>{purposeLabel(p)}</option>{/each}
+			</select>
+			<select bind:value={filter.source} aria-label="Source">
+				<option value="">App + imported</option><option value="app">App</option><option value="imported">Imported (Fillout)</option>
+			</select>
+			<select bind:value={filter.sort} aria-label="Sort">
+				<option value="newest">Newest first</option><option value="oldest">Oldest first</option>
 			</select>
 		</div>
+		<p class="muted">{filtered.length} request{filtered.length === 1 ? '' : 's'}{filtered.length > shown ? `, showing ${shown}` : ''}</p>
 		<table>
 			<thead><tr><th>#</th><th>Who</th><th>Items</th><th>Ship to</th><th>Status</th><th></th></tr></thead>
 			<tbody>
-				{#each requests as r (r.id)}
+				{#each filtered.slice(0, shown) as r (r.id)}
 					<tr>
 						<td>{r.id}<div class="muted">{new Date(r.created_at).toLocaleDateString()}</div>
 							{#if r.source !== 'app'}<span class="badge" title={r.airtable_record_id}>imported · {r.source}</span>{/if}</td>
@@ -246,6 +286,7 @@
 						<td>
 							<span class="badge {r.status}">{statusLabel[r.status]}</span>
 							{#if r.shipping_fee_cents}<div class="muted">fee {formatCents(r.shipping_fee_cents)}{r.paid_at ? ' (paid)' : ''}{r.refunded_cents ? `, ${formatCents(r.refunded_cents)} refunded` : ''}</div>{/if}
+							{#if r.dispatched_at && r.source === 'app'}<div class="muted">shipped {new Date(r.dispatched_at).toLocaleDateString()}</div>{/if}
 							{#if r.mailed_at}<div class="muted">mailed {new Date(r.mailed_at).toLocaleDateString()}</div>{/if}
 							{#if r.tracking_number}<div class="muted">{r.carrier} {r.tracking_number}</div>{/if}
 							{#if r.estimate}
@@ -255,7 +296,14 @@
 									{#if arrivalText(r.estimate)}<br />{arrivalText(r.estimate)}{/if}
 								</div>
 							{/if}
-							{#if r.costs}
+							{#if dashboard?.costs[r.id]}
+								{@const c = dashboard.costs[r.id]}
+								<table class="cost" data-track="request_costs" title="What it cost Hack Club. Actual from mail.hackclub.com: {c.actual.join(', ') || 'nothing yet'}; the rest estimated">
+									<tbody>
+										{#each shippedBreakdown(c) as [label, amount]}<tr><td>{label}</td><td>{amount}</td></tr>{/each}
+									</tbody>
+								</table>
+							{:else if r.costs}
 								<table class="cost" data-track="request_costs" title="What it costs Hack Club: warehouse unit costs, AGH labor ($1.80 + $0.20 a SKU), the package, and typical postage of past packages like it">
 									<tbody>
 										{#each costBreakdown(r.costs) as [label, amount]}<tr><td>{label}</td><td>{amount}</td></tr>{/each}
@@ -270,10 +318,11 @@
 						</td>
 					</tr>
 				{:else}
-					<tr><td colspan="6" class="muted">No requests.</td></tr>
+					<tr><td colspan="6" class="muted">No requests match.</td></tr>
 				{/each}
 			</tbody>
 		</table>
+		{#if filtered.length > shown}<button class="secondary" onclick={() => (shown += PAGE)}>Show {Math.min(PAGE, filtered.length - shown)} more</button>{/if}
 	{:else if tab === 'items'}
 		<h2>Listed items</h2>
 		<table>
@@ -538,6 +587,12 @@
 {/if}
 
 <style>
+	.statuses { margin-bottom: 0.6rem; flex-wrap: wrap; }
+	.chip { background: white; color: var(--dark); border: 1.5px solid var(--smoke); padding: 0.4rem 0.75rem; font-size: 0.75rem; }
+	.chip.on { background: var(--dark); color: white; border-color: var(--dark); }
+	.chip .n { font-family: var(--mono); opacity: 0.6; margin-left: 0.25rem; }
+	.filters { display: grid; grid-template-columns: minmax(16rem, 2fr) repeat(4, minmax(8rem, 1fr)); gap: 0.5rem; }
+	@media (max-width: 900px) { .filters { grid-template-columns: 1fr 1fr; } .filters input { grid-column: 1 / -1; } }
 	.wrote { margin: 0 0 0.6rem; padding: 0.4rem 0.6rem; border-left: 3px solid var(--red); background: var(--snow); white-space: pre-wrap; overflow-wrap: anywhere; max-width: 32rem; }
 	.wrote .label { display: block; color: var(--muted); }
 	.cost { width: auto; margin-top: 0.4rem; font-size: 0.85em; }
