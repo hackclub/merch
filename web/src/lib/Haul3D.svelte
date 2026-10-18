@@ -87,7 +87,7 @@
 				};
 				raf = requestAnimationFrame(tick);
 			})
-			.catch(() => meter.fail());
+			.catch((e) => meter.fail(e));
 		return () => {
 			disposed = true;
 			cancelAnimationFrame(raf);

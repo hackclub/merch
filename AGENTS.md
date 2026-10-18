@@ -483,7 +483,7 @@ blocks landing):
   downloaded and scene built), `ready_ms` (images in, drawn for real), `alive_ms`, `draws`,
   `render_p50`/`p95`/`max` (ms of main thread per draw; the GPU's share shows up as slow frames),
   `fps` and the frame stats above while it's moving, `px` (drawing buffer), `dpr`, `gl` (`shared`
-  or `own` renderer), `gpu` (the GPU's name), `lost`, `failed`; snapshots, so use the **`usage_view3d`** view). Join them to
+  or `own` renderer), `gpu` (the GPU's name), `lost`, `failed` (with `error`: why, as the error's name and message, no query strings); snapshots, so use the **`usage_view3d`** view). Join them to
   `visit_start` on `visit` for the device: `visit_start` also has `cores`, `memory_gb` (Chrome),
   `net`, `save_data` and `reduced_motion`. `scripts/usage-report` has smoothness by page and
   device, 3D views by kind and GPU, and the scripts behind long frames. `/admin` sends only page

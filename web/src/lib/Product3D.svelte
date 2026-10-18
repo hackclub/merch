@@ -169,7 +169,7 @@
 				};
 				raf = requestAnimationFrame(tick);
 			})
-			.catch(() => ((failed = true), meter.fail()));
+			.catch((e) => ((failed = true), meter.fail(e)));
 
 		return () => {
 			disposed = true;

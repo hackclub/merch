@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cartChanges, describeClick, describeField, describeInvalid, deviceProps, nextVisit, PageClock, pageProps, SeenItems, sizeChanges, Tracker, vitalProps } from './track';
+import { cartChanges, describeClick, describeField, describeInvalid, deviceProps, failReason, nextVisit, PageClock, pageProps, SeenItems, sizeChanges, Tracker, vitalProps } from './track';
 
 const el = (html: string) => {
 	document.body.innerHTML = html;
@@ -165,5 +165,20 @@ describe('deviceProps', () => {
 			reduced_motion: false, cores: 8, memory_gb: 4, net: '4g', save_data: true
 		});
 		expect(deviceProps({ hardwareConcurrency: 4 }, true)).toEqual({ reduced_motion: true, cores: 4 }); // Safari
+	});
+});
+
+describe('failReason', () => {
+	it('names the error and keeps its message short', () => {
+		expect(failReason(new TypeError('NetworkError when attempting to fetch resource.'))).toBe('TypeError: NetworkError when attempting to fetch resource.');
+		expect(failReason(new Error('x'.repeat(300)))).toHaveLength(120);
+	});
+	it('drops query strings, which can carry signatures', () => {
+		expect(failReason(new Error('failed to load https://cdn.hackclub.com/a/b.jpg?signature=abc'))).toBe('Error: failed to load https://cdn.hackclub.com/a/b.jpg');
+	});
+	it('handles things that are not errors', () => {
+		expect(failReason('no webgl')).toBe('no webgl');
+		expect(failReason(undefined)).toBe('unknown');
+		expect(failReason(new Event('error'))).toBe('Event: error');
 	});
 });

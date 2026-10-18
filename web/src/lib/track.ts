@@ -344,11 +344,21 @@ export type Meter = {
 	draw(render: () => void): void;
 	/** A frame with nothing to draw. */
 	idle(): void;
-	/** It couldn't be built (no WebGL, a failed download). */
-	fail(): void;
+	/** It couldn't be built (no WebGL, a failed download): why, as `error`. */
+	fail(err?: unknown): void;
 	/** It's gone: reports it for the last time. */
 	end(): void;
 };
+
+/** Why a 3D view couldn't be built, short enough to log: the error's name and message, without query strings. */
+export function failReason(err: unknown): string {
+	let text: string;
+	if (err instanceof Error) text = `${err.name}: ${err.message}`;
+	else if (typeof Event !== 'undefined' && err instanceof Event) text = `Event: ${err.type}`;
+	else if (err === undefined || err === null) text = 'unknown';
+	else text = String(err);
+	return text.replace(/\?[^\s]*/g, '').slice(0, 120);
+}
 
 /** Measures one 3D view (view: product, tile or haul; kind: what it shows) and reports it as view3d when it ends. */
 export function meterView(canvas: HTMLCanvasElement, view: string, kind: string): Meter {
@@ -358,6 +368,7 @@ export function meterView(canvas: HTMLCanvasElement, view: string, kind: string)
 	const item = context(canvas).item_id ?? pageProps(path).item_id;
 	let lost = false;
 	let failed = false;
+	let error = '';
 	let done = false;
 	let gpuLabel = '';
 	if (page) {
@@ -375,7 +386,7 @@ export function meterView(canvas: HTMLCanvasElement, view: string, kind: string)
 				'view3d',
 				{
 					vid: id, view, kind, ...(item ? { item_id: item } : {}), ...stats.props(performance.now()),
-					px: `${canvas.width}x${canvas.height}`, dpr: devicePixelRatio, gl: canvas.dataset.gl ?? 'own', gpu: gpuLabel, lost, failed, final
+					px: `${canvas.width}x${canvas.height}`, dpr: devicePixelRatio, gl: canvas.dataset.gl ?? 'own', gpu: gpuLabel, lost, failed, ...(error ? { error } : {}), final
 				},
 				path
 			);
@@ -394,7 +405,10 @@ export function meterView(canvas: HTMLCanvasElement, view: string, kind: string)
 			stats.rendered(t, performance.now() - t);
 		},
 		idle: () => stats.idle(),
-		fail: () => (failed = true),
+		fail(err) {
+			failed = true;
+			error = failReason(err);
+		},
 		end() {
 			if (done) return;
 			done = true;

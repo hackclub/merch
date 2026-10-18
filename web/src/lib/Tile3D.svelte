@@ -140,7 +140,7 @@
 				};
 				raf = requestAnimationFrame(tick);
 			})
-			.catch(() => meter.fail()); // the photo stays
+			.catch((e) => meter.fail(e)); // the photo stays
 		return () => {
 			disposed = true;
 			cancelAnimationFrame(raf);
