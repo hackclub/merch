@@ -1316,3 +1316,57 @@ func TestMyRequestsIncludeTheirItems(t *testing.T) {
 		t.Fatalf("no requests: items = %+v", none.Items)
 	}
 }
+
+// The build ships .br and .gz copies of every asset (adapter-static precompress); the server
+// sends the smallest one the browser accepts, since the pod has too little CPU to compress live.
+func TestStaticServesPrecompressed(t *testing.T) {
+	h := newHarness(t, func(d *Deps) {
+		d.Static = fstest.MapFS{
+			"index.html":               {Data: []byte("<html>app shell</html>")},
+			"_app/immutable/a.js":      {Data: []byte("console.log(1)")},
+			"_app/immutable/a.js.br":   {Data: []byte("BROTLI")},
+			"_app/immutable/a.js.gz":   {Data: []byte("GZIP")},
+			"_app/immutable/plain.css": {Data: []byte("body{}")},
+		}
+	})
+	get := func(p, accept string) (*http.Response, string) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", h.srv.URL+p, nil)
+		req.Header.Set("Accept-Encoding", accept) // set by hand, so Go's client doesn't decode
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return resp, string(b)
+	}
+	for _, c := range []struct{ accept, enc, body string }{
+		{"gzip, deflate, br, zstd", "br", "BROTLI"},
+		{"gzip, deflate", "gzip", "GZIP"},
+		{"identity", "", "console.log(1)"},
+		{"br;q=0, gzip", "gzip", "GZIP"},
+	} {
+		resp, body := get("/_app/immutable/a.js", c.accept)
+		if resp.Header.Get("Content-Encoding") != c.enc || body != c.body {
+			t.Errorf("Accept-Encoding %q: encoding %q body %q, want %q %q", c.accept, resp.Header.Get("Content-Encoding"), body, c.enc, c.body)
+		}
+		if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/javascript") {
+			t.Errorf("Accept-Encoding %q: Content-Type %q", c.accept, ct)
+		}
+		if resp.Header.Get("Vary") != "Accept-Encoding" {
+			t.Errorf("Accept-Encoding %q: Vary %q", c.accept, resp.Header.Get("Vary"))
+		}
+		if !strings.Contains(resp.Header.Get("Cache-Control"), "immutable") {
+			t.Errorf("Accept-Encoding %q: Cache-Control %q", c.accept, resp.Header.Get("Cache-Control"))
+		}
+	}
+	// No compressed copy: the file as is.
+	if resp, body := get("/_app/immutable/plain.css", "br, gzip"); resp.Header.Get("Content-Encoding") != "" || body != "body{}" {
+		t.Errorf("plain.css: encoding %q body %q", resp.Header.Get("Content-Encoding"), body)
+	}
+	// The compressed copies themselves aren't pages.
+	if _, body := get("/_app/immutable/a.js.br", ""); body != "BROTLI" {
+		t.Errorf("direct .br fetch: %q", body)
+	}
+}

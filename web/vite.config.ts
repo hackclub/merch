@@ -20,8 +20,9 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			// Single-page app: every unknown path falls back to index.html, which the
-			// Go server mirrors in production.
-			adapter: adapter({ fallback: 'index.html' }),
+			// Go server mirrors in production. precompress writes .br and .gz copies, which the
+			// server sends as they are (its pod has too little CPU to compress each response).
+			adapter: adapter({ fallback: 'index.html', precompress: true }),
 			version: { name: release }
 		})
 	],

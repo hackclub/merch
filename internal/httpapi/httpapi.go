@@ -1391,7 +1391,44 @@ func (s *server) static(w http.ResponseWriter, r *http.Request) {
 		s.serveIndex(w, r)
 		return
 	}
+	s.serveStatic(w, r, p)
+}
+
+// serveStatic sends the build's brotli or gzip copy of p (adapter-static precompress) when the
+// browser takes it: the pod has too little CPU to compress on the fly.
+func (s *server) serveStatic(w http.ResponseWriter, r *http.Request, p string) {
+	accept := acceptedEncodings(r.Header.Get("Accept-Encoding"))
+	for _, e := range []struct{ ext, name string }{{".br", "br"}, {".gz", "gzip"}} {
+		if _, err := fs.Stat(s.Static, p+e.ext); err != nil {
+			continue
+		}
+		w.Header().Set("Vary", "Accept-Encoding")
+		if !accept[e.name] {
+			continue
+		}
+		if ct := mime.TypeByExtension(path.Ext(p)); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
+		w.Header().Set("Content-Encoding", e.name)
+		http.ServeFileFS(w, r, s.Static, p+e.ext)
+		return
+	}
 	http.ServeFileFS(w, r, s.Static, p)
+}
+
+// acceptedEncodings reads an Accept-Encoding header, leaving out codings refused with q=0.
+func acceptedEncodings(h string) map[string]bool {
+	ok := map[string]bool{}
+	for _, part := range strings.Split(h, ",") {
+		name, params, _ := strings.Cut(part, ";")
+		if q, isQ := strings.CutPrefix(strings.ReplaceAll(params, " ", ""), "q="); isQ {
+			if f, err := strconv.ParseFloat(q, 64); err == nil && f == 0 {
+				continue
+			}
+		}
+		ok[strings.ToLower(strings.TrimSpace(name))] = true
+	}
+	return ok
 }
 
 // ---- helpers ----
