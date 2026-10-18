@@ -15,7 +15,8 @@
 	<div class="who">
 		{#if session.me?.user}
 			{#if session.me.roles.admin}<a class="button admin" href="/admin">Admin</a>{/if}
-			<span>{session.me.user.name || session.me.user.email}</span>
+			<a href="/requests" data-track="my-requests">My requests</a>
+			<span class="wide" data-private>{session.me.user.name || session.me.user.email}</span>
 			<button class="link" onclick={logout}>Sign out</button>
 		{:else if session.loaded}
 			<a class="button" href="/auth/login" data-sveltekit-reload>Sign in<span class="wide">{' '}with Hack Club</span></a>
