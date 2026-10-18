@@ -76,8 +76,8 @@ The shop home page (`web/src/routes/+page.svelte`) is the exception: Zach wants 
 Fillout request forms (forms.hackclub.com/mini-magazine). It's one white column on the grey page,
 in one font and size: plain intro text, one photo, then the questions, a compact item list, shipping
 info and Submit. Keep it that simple; product pages carry the 3D views and the detail.
-The item list opens with "Start here": the Mini-Magazine, the Welcome to Hack Club postcard and
-the Haven postcard, which are what Zach most wants people to hand out. Everything else is listed
+The item list opens with "Start here": the Mini-Magazine, the Welcome to Hack Club postcard,
+the Haven postcard and the 11x17 Haven poster, which are what Zach most wants people to hand out. Everything else is listed
 under "Extras", grouped by kind (`SECTIONS` in `web/src/lib/sections.ts`).
 
 ## TDD workflow (required)

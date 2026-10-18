@@ -18,19 +18,20 @@ const haven = { ...item(10, 'Pri/Hav/4x6/1st', 1), packs: 'postcard' };
 const brochure = { ...item(11, 'Pri/Hac/Tea/T26'), binding: 'trifold' };
 const flyer = { ...item(12, 'Pri/Spr/8.5/Kri', 0), width_in: 8.5, height_in: 11 };
 const collage = { ...item(13, 'Pri/Let/Abo/Tee'), packs: 'postcard' };
+const havenPoster = { ...item(14, 'Pri/Hav/11x/1st', 0), width_in: 11, height_in: 17 };
 
 describe('sectionize', () => {
-	const all = [mag, mini, shirt, poster, card, welcome, flag, laptops, mystery, haven, brochure, flyer, collage];
+	const all = [mag, mini, shirt, poster, card, welcome, flag, laptops, mystery, haven, brochure, flyer, collage, havenPoster];
 	const got = sectionize(all);
 	const ids = (key: string) => got.find((s) => s.section.key === key)!.tiles.map((t) => t.item.id);
 
-	it('starts with the Mini-Magazine and the two postcards, then the extras, stickers last', () => {
+	it('starts with the Mini-Magazine, the two postcards and the Haven poster, then the extras, stickers last', () => {
 		expect(got.map((s) => s.section.key)).toEqual(['start', 'cards', 'posters', 'booklets', 'wear', 'more', 'stickers']);
 		expect(got.map((s) => !!s.section.extra)).toEqual([false, true, true, true, true, true, true]);
 	});
 
 	it('lists the start items in the order we want people to pick them, whatever their sort order', () => {
-		expect(ids('start')).toEqual([2, 6, 10]);
+		expect(ids('start')).toEqual([2, 6, 10, 14]);
 	});
 
 	it('groups the extras by what they are', () => {
@@ -65,7 +66,7 @@ describe('sectionize', () => {
 		expect(stickers.grid.map((t) => t.item.id)).toEqual([7]);
 		// Other sections are all rows.
 		const start = got.find((s) => s.section.key === 'start')!;
-		expect([start.rows.length, start.grid.length]).toEqual([3, 0]);
+		expect([start.rows.length, start.grid.length]).toEqual([4, 0]);
 		// Without the featured sticker, the rest still go in the grid.
 		expect(sectionize([flag])[0].grid.map((t) => t.item.id)).toEqual([7]);
 	});

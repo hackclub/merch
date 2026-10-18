@@ -31,7 +31,7 @@ export const SECTIONS: Section[] = [
 		key: 'start',
 		title: 'Start here',
 		blurb: 'The best way to spread Hack Club: hand these out at school, at your club, or to friends.',
-		skus: ['Pri/Bok/Mini25/', 'Pri/Wel/4x6/', 'Pri/Hav/4x6/']
+		skus: ['Pri/Bok/Mini25/', 'Pri/Wel/4x6/', 'Pri/Hav/4x6/', 'Pri/Hav/11x/']
 	},
 	// Cards hand out better than posters, so they come first. Flyers (letter size and smaller) follow the cards.
 	{ key: 'cards', title: 'More cards and flyers', blurb: '', extra: true, match: (i) => i.packs === 'postcard' || (flat(i) && !poster(i)), rank: (i) => Number(i.packs !== 'postcard') },
