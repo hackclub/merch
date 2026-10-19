@@ -360,6 +360,8 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   to the cent, the same
   number as the cost table's postage (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback
   when there's no postage history; 0 still makes international shipping free.
+  Zach's standing decision (2026-10-16, repeated 2026-10-19): international requesters always
+  pay their own postage. Never make it free or propose free or subsidized international postage.
 - **Cost to Hack Club** (`internal/swag/costs.go`, shown to everyone above the request form's
   "I understand" checkbox, with "Cost to you": $0 in the US, the shipping fee abroad):
   items at the warehouse's unit costs (mail.hackclub.com `unit_cost`, ships-with SKUs included),
