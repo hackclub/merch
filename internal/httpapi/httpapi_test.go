@@ -78,6 +78,14 @@ func (f *fakeWarehouse) ListSKUs(context.Context) ([]theseus.SKU, error) {
 		{SKU: "Swa/Shirt/HC/XL", Name: "Shirt XL", InStock: 122, Enabled: true, UnitCost: "14.2682"},
 		{SKU: "Swa/Hood/Small", Name: "Hoodie S", InStock: 4, Enabled: true, UnitCost: "30"},
 		{SKU: "Pri/Hav/4x6/1st", Name: "Haven Postcard", InStock: -503, Inbound: &havenInbound, Enabled: true, UnitCost: "0.05"},
+		// Plenty of what the other tests request.
+		{SKU: "Pri/A", Name: "Print A", InStock: 1000, Enabled: true},
+		{SKU: "Sti/B", Name: "Sticker B", InStock: 1000, Enabled: true},
+		{SKU: "Swa/HC/Pin/1st", Name: "Pin", InStock: 8, Enabled: true},
+		{SKU: "Pri/HPd/11x/1st", Name: "Hackpad Poster", InStock: 1000, Enabled: true},
+		{SKU: "Pri/Bok/M25/1st", Name: "Magazine", InStock: 1000, Enabled: true},
+		{SKU: "Pri/Bok/Mini25/1st", Name: "Mini-Magazine", InStock: 1000, Enabled: true},
+		{SKU: "Pri/M25/4x6/1st", Name: "Magazine card", InStock: 1000, Enabled: true},
 	}, nil
 }
 
@@ -647,7 +655,7 @@ func TestAdminManagesItemsAndSettings(t *testing.T) {
 
 	var skus struct{ SKUs []theseus.SKU }
 	h.do(admin, "GET", "/api/admin/warehouse/skus", nil, &skus)
-	if len(skus.SKUs) != 7 || skus.SKUs[0].SKU != "Sti/A" {
+	if len(skus.SKUs) != 14 || skus.SKUs[0].SKU != "Sti/A" {
 		t.Fatalf("skus = %+v", skus)
 	}
 }
@@ -1412,5 +1420,68 @@ func TestCallbackExchangeFailure(t *testing.T) {
 	resp := callback("used-code")
 	if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/" {
 		t.Fatalf("signed in, bad code -> %d %s, want 302 /", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
+
+// Requests stop at what the warehouse has left once open requests ship, except
+// for items an admin lets be backordered.
+func TestOutOfStockUnlessBackordered(t *testing.T) {
+	h := newHarness(t)
+	admin := h.client(adminEmail)
+	pin := h.mkItem("Swa/HC/Pin/1st", true) // 8 in stock
+	pin.MaxPerRequest = 10
+	if _, err := h.store.UpdateItem(context.Background(), pin); err != nil {
+		t.Fatal(err)
+	}
+	haven := h.mkItem("Pri/Hav/4x6/1st", true) // backordered by 503
+	ask := func(email string, it swag.Item, n int) (int, string) {
+		var out map[string]any
+		code := h.do(h.client(email), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: n}}}, &out)
+		msg, _ := out["error"].(string)
+		return code, msg
+	}
+	if code, msg := ask(userEmail, pin, 9); code != 422 || msg != "out of stock: only 8 Swa/HC/Pin/1st left" {
+		t.Fatalf("9 pins = %d %q", code, msg)
+	}
+	if code, _ := ask(userEmail, pin, 6); code != 201 {
+		t.Fatalf("6 pins = %d", code)
+	}
+	// The 6 waiting to ship are spoken for.
+	if code, msg := ask("other@x.com", pin, 3); code != 422 || msg != "out of stock: only 2 Swa/HC/Pin/1st left" {
+		t.Fatalf("3 more pins = %d %q", code, msg)
+	}
+	var cat struct {
+		Items []swag.Item
+		Stock map[string]struct {
+			InStock int `json:"in_stock"`
+		}
+	}
+	h.do(h.client(""), "GET", "/api/catalog", nil, &cat)
+	if cat.Stock["Swa/HC/Pin/1st"].InStock != 2 {
+		t.Fatalf("catalog pin stock = %+v", cat.Stock)
+	}
+	if e := h.events("request_refused"); len(e) != 2 || props(t, e[1])["error"] != "out of stock: only 2 Swa/HC/Pin/1st left" {
+		t.Fatalf("request_refused = %+v", e)
+	}
+
+	if code, msg := ask("other@x.com", haven, 1); code != 422 || msg != "out of stock: Pri/Hav/4x6/1st" {
+		t.Fatalf("haven before backorders = %d %q", code, msg)
+	}
+	haven.AllowBackorder = true
+	var upd swag.Item
+	if code := h.do(admin, "PUT", fmt.Sprintf("/api/admin/items/%d", haven.ID), haven, &upd); code != 200 || !upd.AllowBackorder {
+		t.Fatalf("allow backorder = %d %+v", code, upd)
+	}
+	if e := h.events("item_updated"); len(e) != 1 || props(t, e[0])["changed"].(map[string]any)["allow_backorder"] == nil {
+		t.Fatalf("item_updated = %+v", e)
+	}
+	h.do(h.client(""), "GET", "/api/catalog", nil, &cat)
+	for _, it := range cat.Items {
+		if it.ID == haven.ID && !it.AllowBackorder {
+			t.Fatalf("catalog doesn't say haven can be backordered: %+v", it)
+		}
+	}
+	if code, msg := ask("other@x.com", haven, 3); code != 201 {
+		t.Fatalf("backordered haven = %d %q", code, msg)
 	}
 }

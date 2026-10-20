@@ -207,14 +207,16 @@ func (s *server) waitsForRestock(ctx context.Context, lines []swag.Line, cat map
 	return false
 }
 
-// skuStock is one SKU's warehouse stock, for the shop's item list.
+// skuStock is one SKU's warehouse stock, for the shop's item list. InStock is
+// what's left once open requests ship.
 type skuStock struct {
 	InStock int `json:"in_stock"`
 	Inbound int `json:"inbound"`
 }
 
-// catalogStock is the stock of every listed item's SKU and size SKUs, so the
-// shop can say when one is backordered. Without the warehouse it's empty.
+// catalogStock is the stock of every listed item's SKU and size SKUs, less what
+// open requests hold, so the shop can say when one is backordered or sold out.
+// Without the warehouse it's empty.
 func (s *server) catalogStock(ctx context.Context, items []swag.Item) map[string]skuStock {
 	out := map[string]skuStock{}
 	skus, err := s.cachedSKUs(ctx)
@@ -222,11 +224,29 @@ func (s *server) catalogStock(ctx context.Context, items []swag.Item) map[string
 		s.Log.Error("warehouse sku lookup failed", "err", err)
 		return out
 	}
+	held, err := s.Store.HeldQuantities(ctx)
+	if err != nil {
+		s.Log.Error("held quantities lookup failed", "err", err)
+	}
 	for _, it := range items {
 		for _, sku := range append([]string{it.SKU}, variantSKUs(it)...) {
 			st := theseus.StockFor(skus, sku)
-			out[sku] = skuStock{st.InStock, st.Inbound}
+			out[sku] = skuStock{st.InStock - held[sku], st.Inbound}
 		}
+	}
+	return out
+}
+
+// availableStock is how many of each listed SKU requests can still take
+// (swag.ValidateInput.Available); nil without the warehouse.
+func (s *server) availableStock(ctx context.Context, items []swag.Item) map[string]int {
+	stock := s.catalogStock(ctx, items)
+	if len(stock) == 0 {
+		return nil
+	}
+	out := map[string]int{}
+	for sku, st := range stock {
+		out[sku] = st.InStock
 	}
 	return out
 }

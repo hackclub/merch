@@ -117,6 +117,10 @@ type payResponse struct {
 func (h *harness) intlRequest(email string) viewed {
 	h.t.Helper()
 	it := h.mkItem(fmt.Sprintf("Sti/%s", email), true)
+	it.AllowBackorder = true // not in the fake warehouse
+	if _, err := h.store.UpdateItem(context.Background(), it); err != nil {
+		h.t.Fatal(err)
+	}
 	var r viewed
 	if code := h.do(h.client(email), "POST", "/api/requests", map[string]any{"purpose": "personal", "customs_ok": true, "address": deAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 1}}}, &r); code != 201 {
 		h.t.Fatalf("create = %d", code)

@@ -26,6 +26,7 @@ export type Item = {
 	pages: string[]; // a booklet's page images in reading order, front cover first
 	ships_with: string[]; // warehouse SKUs packed with every unit (the magazine's card)
 	club_only: boolean; // not offered for personal requests, only clubs and events
+	allow_backorder: boolean; // requests can take more than the warehouse has; they ship once the restock arrives
 	clip: string; // looping video, GIF or photo of the real thing, shown on its shop tile; '' = none
 };
 

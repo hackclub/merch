@@ -98,6 +98,10 @@ type Item struct {
 	// personal requests, only to people running a club or an event.
 	ClubOnly bool `json:"club_only"`
 
+	// AllowBackorder lets requests take more than the warehouse has; they ship
+	// once the restock arrives. Without it, requests stop at what's in stock.
+	AllowBackorder bool `json:"allow_backorder"`
+
 	// Variants are the sizes of an item, each its own warehouse SKU. When an
 	// item has variants, every request line for it must pick one; limits still
 	// apply to the item as a whole.
@@ -170,6 +174,7 @@ var (
 	ErrBadPurpose     = errors.New("say what the request is for")
 	ErrNoReason       = errors.New("tell us in a sentence or two how you'll use it")
 	ErrNoCustoms      = errors.New("confirm you'll pay any customs fees your country charges")
+	ErrOutOfStock     = errors.New("out of stock")
 )
 
 type ValidateInput struct {
@@ -189,6 +194,10 @@ type ValidateInput struct {
 	// PriorQuantities is how many of each item the user has already received
 	// or has in flight (non-rejected, non-cancelled requests).
 	PriorQuantities map[int64]int
+	// Available is how many of each SKU can still go out: the warehouse's
+	// stock less what open requests hold. nil when the warehouse can't be
+	// reached, and then stock isn't checked (every request is reviewed).
+	Available map[string]int
 }
 
 func Validate(in ValidateInput) error {
@@ -247,6 +256,9 @@ func Validate(in ValidateInput) error {
 		if item.MaxPerUser != nil && in.PriorQuantities[l.ItemID]+perItem[l.ItemID] > *item.MaxPerUser {
 			return fmt.Errorf("%w: at most %d %s per person", ErrItemLimit, *item.MaxPerUser, item.Name)
 		}
+		if err := checkStock(in.Available, item, l); err != nil {
+			return err
+		}
 	}
 	for id, q := range perItem {
 		if item := in.Catalog[id]; q < item.MinPerRequest {
@@ -260,6 +272,26 @@ func Validate(in ValidateInput) error {
 		return ErrNoCustoms
 	}
 	return nil
+}
+
+// checkStock refuses a line the warehouse can't cover, unless the item can be
+// backordered.
+func checkStock(avail map[string]int, item Item, l Line) error {
+	if avail == nil || item.AllowBackorder {
+		return nil
+	}
+	sku, name := item.SKU, item.Name
+	if v, ok := item.Variant(l.SKU); ok {
+		sku, name = v.SKU, item.Name+" size "+v.Label
+	}
+	switch n := avail[sku]; {
+	case n >= l.Quantity:
+		return nil
+	case n <= 0:
+		return fmt.Errorf("%w: %s", ErrOutOfStock, name)
+	default:
+		return fmt.Errorf("%w: only %d %s left", ErrOutOfStock, n, name)
+	}
 }
 
 // Packs lists the small pack sizes for each kind of pack; past the last one,

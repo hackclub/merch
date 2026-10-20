@@ -374,3 +374,36 @@ func TestShipmentSkipsRemovedLines(t *testing.T) {
 		t.Fatalf("Shipment = %+v", got)
 	}
 }
+
+// Requests can't take more than the warehouse can send, except of items an
+// admin lets be backordered (they ship when the restock arrives).
+func TestValidateStock(t *testing.T) {
+	cat := catalog()
+	backorder := cat[1]
+	backorder.AllowBackorder = true
+	avail := map[string]int{"Sti/Pck/1": 2, "Swa/Sox/1": 0, "Swa/Shirt/HC/S": 0, "Swa/Shirt/HC/M": 5}
+	cases := []struct {
+		name  string
+		cat   map[int64]Item
+		lines []Line
+		avail map[string]int
+		want  string // "" = ok
+	}{
+		{"enough", cat, []Line{{ItemID: 1, Quantity: 2}}, avail, ""},
+		{"short", cat, []Line{{ItemID: 1, Quantity: 3}}, avail, "out of stock: only 2 Sticker pack left"},
+		{"none", cat, []Line{{ItemID: 2, Quantity: 1}}, avail, "out of stock: Socks"},
+		{"size out", cat, []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/S"}}, avail, "out of stock: T-shirt size S"},
+		{"size in", cat, []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}, avail, ""},
+		{"backorder allowed", map[int64]Item{1: backorder}, []Line{{ItemID: 1, Quantity: 3}}, avail, ""},
+		{"unknown stock", cat, []Line{{ItemID: 2, Quantity: 1}}, nil, ""},
+	}
+	for _, tc := range cases {
+		err := Validate(ValidateInput{Settings: settings(), Catalog: tc.cat, Purpose: PurposeClub, Reason: "club", Lines: tc.lines, Available: tc.avail})
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s: %v", tc.name, err)
+		case tc.want != "" && (!errors.Is(err, ErrOutOfStock) || err.Error() != tc.want):
+			t.Errorf("%s: %v, want %q", tc.name, err, tc.want)
+		}
+	}
+}

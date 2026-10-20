@@ -449,6 +449,7 @@
 						<td>
 							<label class="row"><input type="checkbox" style="width: auto" bind:checked={it.visible} /> Visible</label>
 							<label class="row" title="Hidden from personal requests"><input type="checkbox" style="width: auto" bind:checked={it.club_only} /> Clubs &amp; events only</label>
+							<label class="row" title="Requests can take more than the warehouse has; they ship once the restock arrives"><input type="checkbox" style="width: auto" bind:checked={it.allow_backorder} /> Can be backordered</label>
 							<label>Sort order <input type="number" bind:value={it.sort_order} /></label>
 							<label>Printed size, inches (for the 3D preview)
 								<span class="row size">

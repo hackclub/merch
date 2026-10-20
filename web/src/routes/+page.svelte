@@ -5,7 +5,7 @@
 	import { api, ApiError, formatCents, isInternational } from '$lib/api';
 	import { addressComplete, addressSummary, blankAddress, prefillAddress } from '$lib/address';
 	import AddressLine1 from '$lib/AddressLine1.svelte';
-	import { backorderNote } from '$lib/backorder';
+	import { backorderNote, shortNote, soldOut, stockErrors } from '$lib/backorder';
 	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from '$lib/cart';
@@ -75,7 +75,7 @@
 	// Anyone can fill the bag; signing in only comes at the end, when they send it.
 	const open = $derived(!!catalog?.settings.requests_open);
 	const count = $derived(totalQuantity(cart));
-	const problems = $derived(catalog ? cartErrors(cart, catalog.items, sizes) : []);
+	const problems = $derived(catalog ? [...cartErrors(cart, catalog.items, sizes), ...stockErrors(cart, catalog.items, sizes, catalog.stock)] : []);
 	const intl = $derived(isInternational(address.country));
 	// International shipping is paid by card right on the form.
 	const payByCard = $derived(intl && !!quote?.estimate.fee_cents);
@@ -247,6 +247,8 @@
 			<div class="add">
 				{#if item.variants.length}
 					<SizeSteppers {item} {sizes} onchange={(sku, n) => setSize(item, sku, n)} />
+				{:else if soldOut(item, catalog?.stock) && !cart[item.id]}
+					<!-- Nothing to add: the note under its name says it's out of stock. -->
 				{:else if expanded(item)}
 					<QuantityPicker {item} value={cart[item.id] ?? 0} onchange={(n) => setAmount(item, n)} />
 				{:else}
@@ -307,6 +309,7 @@
 							<a href={itemPath(item)}>{item.name}</a>
 							<span class="muted">{tileFact(item)}{#if sizesSummary(item, sizes)}{tileFact(item) ? ' · ' : ''}<strong class="in">{sizesSummary(item, sizes)}</strong>{/if}</span>
 							{#if backorderNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="backorder">{backorderNote(item, catalog.stock, cart, sizes)}</span>{/if}
+							{#if shortNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="out_of_stock">{shortNote(item, catalog.stock, cart, sizes)}</span>{/if}
 						</div>
 						{#if open}{@render add(item)}{/if}
 						{#if open && expanded(item) && showsAmountIn3D(item)}
@@ -325,6 +328,7 @@
 								</a>
 								<a href={itemPath(item)} class="name">{item.name}</a>
 								{#if backorderNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="backorder">{backorderNote(item, catalog.stock, cart, sizes)}</span>{/if}
+							{#if shortNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="out_of_stock">{shortNote(item, catalog.stock, cart, sizes)}</span>{/if}
 								{#if open}{@render add(item)}{/if}
 								{#if peek === item.id}{@render peekPanel(item)}{/if}
 							</div>

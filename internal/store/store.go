@@ -136,12 +136,12 @@ func (s *Store) UpdateSettings(ctx context.Context, st swag.Settings) error {
 // ---- items ----
 
 const itemCols = `id, sku, name, description, images, visible, sort_order, max_per_request, max_per_user, width_in, height_in, variants,
-	finish, thickness_in, photos, packs, binding, pages, ships_with, club_only, clip, min_per_request, quick_picks, weight_oz, print_files`
+	finish, thickness_in, photos, packs, binding, pages, ships_with, club_only, clip, min_per_request, quick_picks, weight_oz, print_files, allow_backorder`
 
 func scanItem(row pgx.Row) (swag.Item, error) {
 	var it swag.Item
 	err := row.Scan(&it.ID, &it.SKU, &it.Name, &it.Description, &it.Images, &it.Visible, &it.SortOrder, &it.MaxPerRequest, &it.MaxPerUser, &it.WidthIn, &it.HeightIn, &it.Variants,
-		&it.Finish, &it.ThicknessIn, &it.Photos, &it.Packs, &it.Binding, &it.Pages, &it.ShipsWith, &it.ClubOnly, &it.Clip, &it.MinPerRequest, &it.QuickPicks, &it.WeightOz, &it.PrintFiles)
+		&it.Finish, &it.ThicknessIn, &it.Photos, &it.Packs, &it.Binding, &it.Pages, &it.ShipsWith, &it.ClubOnly, &it.Clip, &it.MinPerRequest, &it.QuickPicks, &it.WeightOz, &it.PrintFiles, &it.AllowBackorder)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return it, ErrNotFound
 	}
@@ -184,16 +184,16 @@ func (s *Store) GetItem(ctx context.Context, id int64) (swag.Item, error) {
 func (s *Store) CreateItem(ctx context.Context, it swag.Item) (swag.Item, error) {
 	return s.saveItem(ctx, it, false, `
 		INSERT INTO items (sku, name, description, images, visible, sort_order, max_per_request, max_per_user, width_in, height_in, variants,
-			finish, thickness_in, photos, packs, binding, pages, ships_with, club_only, clip, min_per_request, quick_picks, weight_oz, print_files)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) RETURNING `+itemCols)
+			finish, thickness_in, photos, packs, binding, pages, ships_with, club_only, clip, min_per_request, quick_picks, weight_oz, print_files, allow_backorder)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING `+itemCols)
 }
 
 func (s *Store) UpdateItem(ctx context.Context, it swag.Item) (swag.Item, error) {
 	return s.saveItem(ctx, it, true, `
 		UPDATE items SET sku = $1, name = $2, description = $3, images = $4, visible = $5,
 			sort_order = $6, max_per_request = $7, max_per_user = $8, width_in = $9, height_in = $10, variants = $11,
-			finish = $12, thickness_in = $13, photos = $14, packs = $15, binding = $16, pages = $17, ships_with = $18, club_only = $19, clip = $20, min_per_request = $21, quick_picks = $22, weight_oz = $23, print_files = $24, updated_at = now()
-		WHERE id = $25 RETURNING `+itemCols)
+			finish = $12, thickness_in = $13, photos = $14, packs = $15, binding = $16, pages = $17, ships_with = $18, club_only = $19, clip = $20, min_per_request = $21, quick_picks = $22, weight_oz = $23, print_files = $24, allow_backorder = $25, updated_at = now()
+		WHERE id = $26 RETURNING `+itemCols)
 }
 
 // saveItem writes an item and keeps every warehouse SKU on one item: a SKU
@@ -223,7 +223,7 @@ func (s *Store) saveItem(ctx context.Context, it swag.Item, update bool, q strin
 		return it, err
 	}
 	args := []any{it.SKU, it.Name, it.Description, nonNil(it.Images), it.Visible, it.SortOrder, it.MaxPerRequest, it.MaxPerUser, it.WidthIn, it.HeightIn, it.Variants,
-		it.Finish, it.ThicknessIn, photos(it.Photos), it.Packs, it.Binding, nonNil(it.Pages), nonNil(it.ShipsWith), it.ClubOnly, it.Clip, max(it.MinPerRequest, 1), nonNilInts(it.QuickPicks), it.WeightOz, printFiles(it.PrintFiles)}
+		it.Finish, it.ThicknessIn, photos(it.Photos), it.Packs, it.Binding, nonNil(it.Pages), nonNil(it.ShipsWith), it.ClubOnly, it.Clip, max(it.MinPerRequest, 1), nonNilInts(it.QuickPicks), it.WeightOz, printFiles(it.PrintFiles), it.AllowBackorder}
 	if update {
 		args = append(args, it.ID)
 	}
@@ -358,6 +358,30 @@ type NewRequest struct {
 // UsageCheck receives the user's prior per-item quantities (excluding
 // rejected/cancelled requests) and may veto.
 type UsageCheck func(prior map[int64]int) error
+
+// HeldQuantities is how many of each SKU open requests (awaiting payment or
+// pending) will take from the warehouse once they ship.
+func (s *Store) HeldQuantities(ctx context.Context) (map[string]int, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT ri.sku, sum(ri.quantity)::int FROM swag_request_items ri
+		JOIN swag_requests r ON r.id = ri.request_id
+		WHERE r.status IN ('awaiting_payment', 'pending')
+		GROUP BY ri.sku`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	held := map[string]int{}
+	for rows.Next() {
+		var sku string
+		var q int
+		if err := rows.Scan(&sku, &q); err != nil {
+			return nil, err
+		}
+		held[sku] = q
+	}
+	return held, rows.Err()
+}
 
 // CreateRequest locks the user row, computes usage, runs check, and inserts —
 // all in one transaction so concurrent requests can't both slip under a limit.

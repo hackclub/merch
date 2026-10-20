@@ -5,6 +5,7 @@
 	import { bag, setCart, setSizes } from '$lib/bag.svelte';
 	import { pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
 	import { itemsFor, offered } from '$lib/purpose';
+	import { shortNote, soldOut } from '$lib/backorder';
 	import { isBooklet, itemIdFromParam, itemPath, previewCount, printFileText, productPreview, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
 	import { sheetThickness, finishInfo } from '$lib/paper';
 	import { programFor } from '$lib/programs';
@@ -176,7 +177,9 @@
 			{:else if !offered(item, bag.purpose)}
 				<p class="muted">This is only for people running a Hack Club or an event. <a href="/">Change what your request is for</a>.</p>
 			{:else}
-				{#if item.variants.length}
+				{#if soldOut(item, catalog?.stock)}
+					<p class="error" data-track="out_of_stock">Out of stock.</p>
+				{:else if item.variants.length}
 					<p class="size-label">How many of each size?</p>
 					<SizeSteppers {item} sizes={bag.sizes} onchange={(sku, n) => {
 						const next = setSizeQuantity(bag.cart, bag.sizes, item, sku, n);
@@ -190,6 +193,9 @@
 							<button onclick={() => setCart(setQuantity(bag.cart, item, 1))}>Add to request</button>
 						{/if}
 					</div>
+				{/if}
+				{#if shortNote(item, catalog?.stock, bag.cart, bag.sizes) && inCart > 0}
+					<p class="error" data-track="out_of_stock">{shortNote(item, catalog?.stock, bag.cart, bag.sizes)}</p>
 				{/if}
 				{#if total > 0}
 					<p class="ok">

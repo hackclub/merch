@@ -356,6 +356,14 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   `stock`), and the estimate counts from the restock (`Estimate.AfterRestock`: no dates, 1–2
   extra business days for the warehouse to receive it). The date is in Zenventory purchase
   orders (`required_by_date`), which Theseus fetches but doesn't return yet.
+  Only items with **"Can be backordered"** (`items.allow_backorder`, a checkbox on the admin Items
+  tab) take requests past stock. For every other item, a new request can take only what's left:
+  the warehouse's `in_stock` less what open (`awaiting_payment`, `pending`) requests hold
+  (`Store.HeldQuantities`). `swag.Validate` refuses the rest ("out of stock: only 2 Hack Club
+  enamel pin left", logged as `request_refused`), and the shop says "Out of stock." / "Only 2
+  left." and hides Add. A SKU the warehouse doesn't list counts as out of stock; if the warehouse
+  can't be reached, stock isn't checked. Since 2026-10-20 only the Haven postcard and the
+  Haven poster can be backordered (Zach: not the pins). Admin shipping doesn't check stock.
 - **International fee:** an international request pays its typical postage off the rate card,
   to the cent, the same
   number as the cost table's postage (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback

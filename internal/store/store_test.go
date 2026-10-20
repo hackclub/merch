@@ -531,3 +531,34 @@ func TestDispatchTimeAndWarehouseCosts(t *testing.T) {
 		t.Fatalf("since = %+v, later = %+v", since, later)
 	}
 }
+
+// Open requests hold their SKUs until they ship; closed and shipped ones don't.
+func TestHeldQuantities(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "ident!1", "a@x.com")
+	shirt, _ := s.CreateItem(ctx, swag.Item{SKU: "Swa/Shirt/HC", Name: "T-shirt", Visible: true, MaxPerRequest: 9, Variants: shirtSizes, AllowBackorder: true})
+	if !shirt.AllowBackorder {
+		t.Fatalf("allow_backorder not saved: %+v", shirt)
+	}
+	pin := mkItem(t, s, "Swa/Pin", true)
+	mk := func(status swag.Status, lines ...swag.Line) *Request {
+		r, err := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Status: status, Lines: lines}, noCheck)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	mk(swag.StatusPending, swag.Line{ItemID: pin.ID, Quantity: 2}, swag.Line{ItemID: shirt.ID, Quantity: 1, SKU: "Swa/Shirt/HC/M"})
+	mk(swag.StatusAwaitingPayment, swag.Line{ItemID: pin.ID, Quantity: 3})
+	closed := mk(swag.StatusPending, swag.Line{ItemID: pin.ID, Quantity: 50})
+	if _, err := s.CloseRequest(ctx, closed.ID, swag.StatusRejected, "", false); err != nil {
+		t.Fatal(err)
+	}
+	held, err := s.HeldQuantities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(held) != 2 || held["Swa/Pin"] != 5 || held["Swa/Shirt/HC/M"] != 1 {
+		t.Fatalf("held = %v", held)
+	}
+}
