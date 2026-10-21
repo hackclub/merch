@@ -1,4 +1,4 @@
-import type { Item, Line } from './types';
+import type { Item, Line, Purpose } from './types';
 
 /** item id -> quantity */
 export type Cart = Record<number, number>;
@@ -174,4 +174,27 @@ export function quantityProblem(item: Item, q: number): string {
 	if (q < item.min_per_request) return `At least ${item.min_per_request} per request.`;
 	if (item.packs && !packQuantity(item.packs, q)) return PACK_RULES[item.packs] ?? 'That amount isn’t a pack size.';
 	return '';
+}
+
+/** Loose sticker designs (fewer than a pack of 50) a club or event request can have before we suggest packs. */
+export const LOOSE_STICKER_DESIGNS = 3;
+
+/**
+ * A nudge for club and event requests that ask for a few each of many sticker designs: we'd rather
+ * send fewer designs in packs of 50, which the warehouse keeps bagged. It never blocks a request.
+ * Reviewers regrouped these by hand (event requests asked for a median 13.5 designs; 4.5 shipped).
+ */
+export function stickerNudge(cart: Cart, items: Item[], purpose: Purpose | ''): { designs: number; loose: number; text: string } | null {
+	if (purpose !== 'club' && purpose !== 'event') return null;
+	const picked = items.filter((i) => i.packs === 'sticker' && (cart[i.id] ?? 0) > 0);
+	const loose = picked.filter((i) => cart[i.id] < 50).length;
+	if (loose < LOOSE_STICKER_DESIGNS) return null;
+	return {
+		designs: picked.length,
+		loose,
+		text:
+			`You picked ${picked.length} sticker designs, ${loose === picked.length ? 'a few of each' : `${loose} of them a few each`}. ` +
+			"We'd rather send you fewer designs in packs of 50: they're bagged in 50s at the warehouse, so whole packs are much easier for our team to ship (and for you to hand out). " +
+			'You can still send it like this; we may regroup it before it ships.'
+	};
 }
