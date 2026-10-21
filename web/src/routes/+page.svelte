@@ -8,7 +8,7 @@
 	import { backorderNote, shortNote, soldOut, stockErrors } from '$lib/backorder';
 	import { applyPlace } from '$lib/addressSearch';
 	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
-	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from '$lib/cart';
+	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, stickerNudge, totalQuantity } from '$lib/cart';
 	import { feeTooltip, galleryRows, roughFee } from '$lib/gallery';
 	import { pickedLines } from '$lib/haul';
 	import { cardSides, itemPath, previewCount, showsAmountIn3D, thumbnail, tilePreview } from '$lib/items';
@@ -23,6 +23,7 @@
 	import QuantityPicker from '$lib/QuantityPicker.svelte';
 	import Tile3D from '$lib/Tile3D.svelte';
 	import { thumb } from '$lib/thumb';
+	import { track } from '$lib/track';
 	import type { Address, Catalog, Item, Purpose, SwagRequest } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
@@ -77,6 +78,13 @@
 	const count = $derived(totalQuantity(cart));
 	const problems = $derived(catalog ? [...cartErrors(cart, catalog.items, sizes), ...stockErrors(cart, catalog.items, sizes, catalog.stock)] : []);
 	const intl = $derived(isInternational(address.country));
+	// Clubs and events asking for a few each of many sticker designs: suggest packs of 50 (never blocks).
+	const nudge = $derived(catalog ? stickerNudge(cart, shown, purpose) : null);
+	let nudged = false;
+	$effect(() => {
+		if (nudge && !nudged) track('sticker_nudge', { designs: nudge.designs, loose: nudge.loose });
+		nudged = !!nudge;
+	});
 	// International shipping is paid by card right on the form.
 	const payByCard = $derived(intl && !!quote?.estimate.fee_cents);
 	// Two strips of everything under the intro: photos and products on top, magazine pages and backs below.
@@ -298,6 +306,10 @@
 			<section class="group" aria-labelledby="group-{section.key}">
 				<h3 id="group-{section.key}">{section.title}</h3>
 				{#if section.blurb}<p class="blurb">{section.blurb}</p>{/if}
+				{#if section.key === 'stickers' && (purpose === 'club' || purpose === 'event') && !nudge}
+					<p class="blurb">For clubs and events: pick a few favorite designs in packs of 50. They're much easier for our team to ship than a few each of many designs.</p>
+				{/if}
+				{#if section.key === 'stickers' && nudge}<p class="nudge" data-track="sticker_nudge" role="status">{nudge.text}</p>{/if}
 				{#each rows as { item } (item.id)}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="line" data-item={item.id} class:picked={cart[item.id]} class:sized={open && expanded(item)}
@@ -424,6 +436,7 @@
 				{/if}
 				<div class="submit">
 					{#if quote && arrivalText(quote.estimate)}<p>{arrivalText(quote.estimate)}, by {quote.estimate.service}.</p>{/if}
+					{#if nudge}<p class="nudge" data-track="sticker_nudge">{nudge.text}</p>{/if}
 					{#each problems as p}<p class="error">{p}</p>{/each}
 					{#if quoteError}<p class="error">{quoteError}</p>{/if}
 					{#if submitError}<p class="error" role="alert">{submitError}</p>{/if}
@@ -493,6 +506,7 @@
 	.group { margin-bottom: 1.5rem; }
 	.group h3 { margin: 0 0 0.25rem; font-size: 1rem; line-height: 1.3; }
 	.group .blurb { margin: 0 0 0.25rem; }
+	.nudge { margin: 0.25rem 0 0.5rem; padding: 0.75rem 1rem; background: var(--tile); border-left: 3px solid var(--red); font-size: 0.95rem; }
 	/* The line between the start section and the extras. */
 	.extras { margin: 2.5rem 0 1rem; padding-top: 1.5rem; border-top: 1px solid var(--smoke); }
 	.extras h3 { margin: 0; font-size: 1.1rem; line-height: 1.3; }

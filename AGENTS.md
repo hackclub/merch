@@ -479,7 +479,9 @@ blocks landing):
   nothing clickable was hit), `field` (which field changed; the choice for radios, checkboxes and
   selects, only `chars` for typed text), `field_invalid` (the browser blocked a submit: `field`,
   `type`, `reason` such as `valueMissing` or `patternMismatch`; never the value), `cart` and `cart_size` (`item_id`, `sku`, `from`, `to`; from
-  every page, since all cart changes go through `$lib/bag.svelte`), `purpose`, `item_hover` (mouse
+  every page, since all cart changes go through `$lib/bag.svelte`), `purpose`, `sticker_nudge` (a club or
+  event request picked 3 or more sticker designs at under 50 each and was shown the packs-of-50
+  suggestion: `designs`, `loose`), `item_hover` (mouse
   over an item for ≥ 0.5 s), `payment_error` (a card didn't go through: `request_id`, `method` = `card` or `apple_pay`, and Stripe's `type`,
   `code`, `decline_code`; never the message), `api_error`, `js_error`, `pwa_installed`,
   `web_vital` (Core Web Vitals from the `web-vitals` library, once per page load: `metric` =

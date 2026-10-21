@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cartErrors, cartLines, emptyCart, packQuantities, parseCart, parseQuickPicks, presetQuantities, quantityProblem, parseSizes, pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, totalQuantity } from './cart';
+import { cartErrors, cartLines, emptyCart, packQuantities, parseCart, parseQuickPicks, presetQuantities, quantityProblem, parseSizes, pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, stickerNudge, totalQuantity } from './cart';
 import type { Item } from './types';
 
 const items: Item[] = [
@@ -221,5 +221,37 @@ describe('quantityProblem', () => {
 		expect(quantityProblem(postcard, 200)).toBe('At most 150 per request.');
 		expect(quantityProblem(items[0], 4)).toBe('At most 3 per request.');
 		expect(quantityProblem({ ...items[0], min_per_request: 2 }, 1)).toBe('At least 2 per request.');
+	});
+});
+
+describe('stickerNudge', () => {
+	const designs = (n: number, q: number) =>
+		Array.from({ length: n }, (_, i) => ({ ...sticker, id: 100 + i, name: `Sticker ${i}` }))
+			.reduce<{ items: Item[]; cart: Record<number, number> }>((a, s) => ({ items: [...a.items, s], cart: { ...a.cart, [s.id]: q } }), { items: [], cart: {} });
+
+	it('nudges club and event requests with a few each of many designs toward packs of 50', () => {
+		const { items, cart } = designs(14, 10);
+		const n = stickerNudge(cart, items, 'event');
+		expect(n).toMatchObject({ designs: 14, loose: 14 });
+		expect(n?.text).toContain('14 sticker designs');
+		expect(n?.text).toContain('packs of 50');
+		expect(stickerNudge(cart, items, 'club')).not.toBeNull();
+	});
+
+	it('leaves alone a few designs, whole packs, and personal requests', () => {
+		expect(stickerNudge(designs(2, 10).cart, designs(2, 10).items, 'event')).toBeNull();
+		expect(stickerNudge(designs(6, 50).cart, designs(6, 50).items, 'event')).toBeNull();
+		expect(stickerNudge(designs(14, 10).cart, designs(14, 10).items, 'personal')).toBeNull();
+		// Only stickers count: postcards in fives are fine.
+		expect(stickerNudge({ [postcard.id]: 10, [sticker.id]: 10 }, [postcard, sticker], 'event')).toBeNull();
+	});
+
+	it('counts only loose designs: whole packs alongside a couple of loose ones are fine', () => {
+		const { items, cart } = designs(5, 50);
+		cart[items[0].id] = 10;
+		cart[items[1].id] = 3;
+		expect(stickerNudge(cart, items, 'event')).toBeNull();
+		cart[items[2].id] = 10;
+		expect(stickerNudge(cart, items, 'event')).toMatchObject({ designs: 5, loose: 3 });
 	});
 });
