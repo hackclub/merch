@@ -72,17 +72,23 @@ type Deps struct {
 type server struct {
 	Deps
 
-	skuMu  sync.Mutex
-	skus   []theseus.SKU
-	skusAt time.Time
+	skuMu         sync.Mutex
+	skus          []theseus.SKU
+	skusAt        time.Time
+	skuRefreshing bool       // a background refresh of skus is running
+	skuFetch      sync.Mutex // one warehouse fetch at a time
 
 	history historyCache
 
 	release string // the web build being served, stamped on usage events
 }
 
-// skuCacheTTL bounds how often product pages hit mail.hackclub.com.
-const skuCacheTTL = time.Minute
+// skuCacheTTL bounds how often product pages hit mail.hackclub.com. Past it, the list is still
+// served while a fresh one loads in the background, up to skuStaleMax.
+const (
+	skuCacheTTL = time.Minute
+	skuStaleMax = 30 * time.Minute
+)
 
 func New(d Deps) http.Handler {
 	if d.Now == nil {
@@ -160,7 +166,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeErr(w, http.StatusNotFound, "not found") })
 	mux.HandleFunc("/", s.static)
 
-	return s.headers(s.csrf(s.visitor(s.logAPI(s.limit(mux)))))
+	return s.headers(s.csrf(s.visitor(s.logAPI(s.limit(gzipJSON(mux))))))
 }
 
 // ---- middleware ----
@@ -454,17 +460,56 @@ func (s *server) itemStock(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) cachedSKUs(ctx context.Context) ([]theseus.SKU, error) {
 	s.skuMu.Lock()
-	defer s.skuMu.Unlock()
+	if s.skus != nil {
+		age := s.Now().Sub(s.skusAt)
+		if age < skuCacheTTL {
+			defer s.skuMu.Unlock()
+			return s.skus, nil
+		}
+		// A minute old: answer with it now and refresh in the background, so no visitor waits on
+		// the warehouse (catalog calls that did took up to 15 s).
+		if age < skuStaleMax {
+			if !s.skuRefreshing {
+				s.skuRefreshing = true
+				go s.refreshSKUs()
+			}
+			defer s.skuMu.Unlock()
+			return s.skus, nil
+		}
+	}
+	s.skuMu.Unlock()
+	return s.fetchSKUs(ctx)
+}
+
+// fetchSKUs loads the warehouse's SKU list into the cache, one fetch at a time.
+func (s *server) fetchSKUs(ctx context.Context) ([]theseus.SKU, error) {
+	s.skuFetch.Lock()
+	defer s.skuFetch.Unlock()
+	s.skuMu.Lock()
 	if s.skus != nil && s.Now().Sub(s.skusAt) < skuCacheTTL {
+		defer s.skuMu.Unlock()
 		return s.skus, nil
 	}
+	s.skuMu.Unlock()
 	list, err := s.Warehouse.ListSKUs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	s.skus = list
-	s.skusAt = s.Now()
-	return s.skus, nil
+	s.skuMu.Lock()
+	defer s.skuMu.Unlock()
+	s.skus, s.skusAt = list, s.Now()
+	return list, nil
+}
+
+func (s *server) refreshSKUs() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if _, err := s.fetchSKUs(ctx); err != nil {
+		s.Log.Error("warehouse sku refresh failed", "err", err)
+	}
+	s.skuMu.Lock()
+	s.skuRefreshing = false
+	s.skuMu.Unlock()
 }
 
 type requestView struct {
@@ -1403,7 +1448,7 @@ func (s *server) static(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveStatic sends the build's brotli or gzip copy of p (adapter-static precompress) when the
-// browser takes it: the pod has too little CPU to compress on the fly.
+// browser takes it: the pod has too little CPU to brotli big JS on the fly (JSON: gzipJSON).
 func (s *server) serveStatic(w http.ResponseWriter, r *http.Request, p string) {
 	accept := acceptedEncodings(r.Header.Get("Accept-Encoding"))
 	for _, e := range []struct{ ext, name string }{{".br", "br"}, {".gz", "gzip"}} {

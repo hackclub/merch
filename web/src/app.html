@@ -27,6 +27,14 @@
 		<link rel="icon" href="/icon.svg" type="image/svg+xml" />
 		<link rel="apple-touch-icon" href="/icon-192.png" />
 		<title>Hack Club Merch Request</title>
+		<!-- The server is in Finland, so every round trip counts: open the font and image hosts now, and
+		     start loading the catalog with the HTML instead of after the app's code ($lib/api takes it over). -->
+		<link rel="preconnect" href="https://assets.hackclub.com" crossorigin />
+		<link rel="preconnect" href="https://cdn.hackclub.com" />
+		<script>
+			if (location.pathname === '/' || location.pathname.startsWith('/items/'))
+				window.__catalog = fetch('/api/catalog', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

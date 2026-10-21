@@ -61,12 +61,18 @@ type fakeWarehouse struct {
 	skuCalls int
 	skuFail  error
 	gets     int
+	skuWait  chan struct{} // when set, ListSKUs waits for it (a slow warehouse)
 }
 
 func (f *fakeWarehouse) ListSKUs(context.Context) ([]theseus.SKU, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.skuCalls++
+	if w := f.skuWait; w != nil {
+		f.mu.Unlock()
+		<-w
+		f.mu.Lock()
+	}
 	if f.skuFail != nil {
 		return nil, f.skuFail
 	}

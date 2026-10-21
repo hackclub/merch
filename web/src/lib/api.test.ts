@@ -32,6 +32,24 @@ describe('api', () => {
 		await expect(api.get('/api/requests')).rejects.toEqual(new ApiError(422, 'you requested swag recently'));
 	});
 
+	it('takes over the catalog fetch app.html started, once', async () => {
+		const early = new Response(JSON.stringify({ items: [1] }), { status: 200 });
+		vi.stubGlobal('__catalog', Promise.resolve(early));
+		const fetch = stubFetch(200, { items: [2] });
+		expect(await api.get('/api/catalog')).toEqual({ items: [1] });
+		expect(fetch).not.toHaveBeenCalled();
+		// Later loads (another page, a refresh of the data) fetch as usual.
+		expect(await api.get('/api/catalog')).toEqual({ items: [2] });
+		expect(fetch).toHaveBeenCalledTimes(1);
+	});
+
+	it('fetches again when the early catalog fetch failed', async () => {
+		vi.stubGlobal('__catalog', Promise.reject(new TypeError('Failed to fetch')));
+		const fetch = stubFetch(200, { items: [2] });
+		expect(await api.get('/api/catalog')).toEqual({ items: [2] });
+		expect(fetch).toHaveBeenCalledTimes(1);
+	});
+
 	it('handles empty 204 responses', async () => {
 		stubFetch(204, undefined);
 		await expect(api.post('/auth/logout', {})).resolves.toBeUndefined();

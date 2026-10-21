@@ -270,9 +270,15 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
 - The pod requests 100m CPU, so a few ms of CPU per request gets throttled into hundreds of ms.
   Do heavy work once and cache it (shipping history is indexed once and loaded at startup), and
   check `api` events' `ms` after you land.
+- The server is in Finland (Hetzner, Vantaa), so most visitors are 100–250 ms per round trip away;
+  in October 2026, 75% of page loads got their first byte within 1.0 s. Save round trips: `app.html` preconnects to
+  the font and image hosts and starts fetching `/api/catalog` with the HTML (`$lib/api` takes it
+  over), and the warehouse's SKU list is served stale while it refreshes (`cachedSKUs`), so no
+  visitor waits on mail.hackclub.com.
 - The build writes brotli and gzip copies of every JS, CSS and JSON file (adapter-static
-  `precompress`), and the server sends the one the browser accepts (`serveStatic`). Nothing is
-  compressed live. Before 2026-10-18 nothing was compressed: the home page loaded 965 KB of JS
+  `precompress`), and the server sends the one the browser accepts (`serveStatic`). Only `/api/*`
+  JSON is gzipped live (`gzipJSON`, BestSpeed): the catalog is 65 KB raw and 14 KB gzipped, which
+  fits in the first round trip. Before 2026-10-18 nothing was compressed: the home page loaded 965 KB of JS
   (three.js alone 585 KB, 121 KB as brotli).
 - One container: `Dockerfile`, which builds the PWA and a static Go binary on distroless. It
   listens on `$PORT` (default 8080). Health check: `GET /healthz` (pings the DB).

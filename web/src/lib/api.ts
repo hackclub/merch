@@ -9,6 +9,19 @@ export class ApiError extends Error {
 	}
 }
 
+declare global {
+	// app.html starts fetching the catalog with the HTML, before this code has loaded.
+	var __catalog: Promise<Response> | undefined;
+}
+
+/** The catalog fetch app.html started, the first time it's asked for; undefined after (or if it failed). */
+async function early(method: string, path: string): Promise<Response | undefined> {
+	if (method !== 'GET' || path !== '/api/catalog' || !globalThis.__catalog) return undefined;
+	const p = globalThis.__catalog;
+	globalThis.__catalog = undefined;
+	return p.catch(() => undefined);
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
 	const init: RequestInit & { headers: Record<string, string> } = {
 		method,
@@ -19,7 +32,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 		init.headers['Content-Type'] = 'application/json';
 		init.body = JSON.stringify(body);
 	}
-	const res = await fetch(path, init);
+	const res = (await early(method, path)) ?? (await fetch(path, init));
 	const text = await res.text();
 	const data = text ? JSON.parse(text) : undefined;
 	if (!res.ok) {
