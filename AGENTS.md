@@ -110,7 +110,7 @@ make dev       # Go server :8080 + Vite :5173 (proxies /api, /auth) — http://l
                # Only from the main worktree. See "Sharing porygon with other agents".
 make server    # Go server only; serves web/build if built (make web)
 make docker    # production image
-scripts/usage-report [days]   # how real people used production (read-only); see "Usage analytics"
+scripts/prod-psql             # production SQL (read-only); see "Usage analytics"
 ```
 
 One Postgres container serves every worktree. Each test gets its own database, so parallel
@@ -434,11 +434,10 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
 Everything people do on the site goes to the `usage_events` table, so agents can see how the shop is
 used and improve it. **Use it as evidence, and keep it complete:**
 
-1. **Before you change a flow, look at how it's used.** Run `scripts/usage-report [days]`
-   (production, read-only, default 7 days; admins and headless browsers are left out; `--dev`
-   reads the dev DB, `--all` keeps admins in, e.g. for errors and slow routes while the site is
-   private). Write ad-hoc queries with `scripts/prod-psql`. Dev's table has only agent and
-   test traffic. Mention what the data showed in your reply or commit message ("12 of 40 people
+1. **Before you change a flow, look at how it's used.** Query production yourself with
+   `scripts/prod-psql` (read-only), starting from the question you have, not a canned report.
+   Leave out admins and headless browsers (see below). Dev's table has only agent and test
+   traffic. Mention what the data showed in your reply or commit message ("12 of 40 people
    who added a poster were refused at the estimate").
 2. **Instrument every new feature, test first.** Every action records a server event that says
    what happened (`s.track(r, user, "name", props)`). Choices and interactions that never reach the
@@ -499,8 +498,7 @@ blocks landing):
   `fps` and the frame stats above while it's moving, `px` (drawing buffer), `dpr`, `gl` (`shared`
   or `own` renderer), `gpu` (the GPU's name), `lost`, `failed` (with `error`: why, as the error's name and message, no query strings); snapshots, so use the **`usage_view3d`** view). Join them to
   `visit_start` on `visit` for the device: `visit_start` also has `cores`, `memory_gb` (Chrome),
-  `net`, `save_data` and `reduced_motion`. `scripts/usage-report` has smoothness by page and
-  device, 3D views by kind and GPU, and the scripts behind long frames. `/admin` sends only page
+  `net`, `save_data` and `reduced_motion`. `/admin` sends only page
   views, page time and these performance events.
 - `api`: every `/api/*` and `/auth/*` call (except `/api/events`), logged by middleware: `route`
   (the mux pattern), `url` (the path, never the query), `status`, `ms`, and on a 500 the
@@ -568,9 +566,9 @@ from usage_events where release <> '' group by 1 order by 1;
 
 When Zach asks you to improve the shop from evidence, run this loop end to end:
 
-1. **Read the evidence.** Run `scripts/usage-report 30` (real people) and `scripts/usage-report --all 30`
-   (errors and slow routes). Then join `usage_events` with the domain tables in production
-   (`scripts/prod-psql`): `swag_requests` and `swag_request_items` (what was asked for and
+1. **Read the evidence.** Query production yourself (`scripts/prod-psql`) and think from first
+   principles: what people came for, where they stopped, and why. Join `usage_events` (real
+   people; with admins left in for errors and slow routes) with the domain tables: `swag_requests` and `swag_request_items` (what was asked for and
    shipped; `status`, `paid_at`, `refunded_cents`, `requested_quantity`; app requests have no
    dispatch time column, so use `request_dispatched.at` and its `wait_h`), `items`
    (limits, visibility, sizes), `settings`, `shipping_history` (postage and transit), and
