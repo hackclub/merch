@@ -238,24 +238,21 @@ describe('stickerNudge', () => {
 		expect(stickerNudge(cart, items, 'club')).not.toBeNull();
 	});
 
-	it('leaves alone a few designs, whole packs, and personal requests', () => {
-		expect(stickerNudge(designs(2, 10).cart, designs(2, 10).items, 'event')).toBeNull();
-		expect(stickerNudge(designs(6, 50).cart, designs(6, 50).items, 'event')).toBeNull();
+	it('leaves alone 5 or fewer loose designs, whole packs, and personal requests', () => {
+		expect(stickerNudge(designs(5, 10).cart, designs(5, 10).items, 'event')).toBeNull();
+		expect(stickerNudge(designs(8, 50).cart, designs(8, 50).items, 'event')).toBeNull();
 		expect(stickerNudge(designs(14, 10).cart, designs(14, 10).items, 'personal')).toBeNull();
 		// Only stickers count: postcards in fives are fine.
 		expect(stickerNudge({ [postcard.id]: 10, [sticker.id]: 10 }, [postcard, sticker], 'event')).toBeNull();
 	});
 
-	it('counts only loose designs: whole packs alongside a couple of loose ones are fine', () => {
-		const { items, cart } = designs(5, 50);
-		cart[items[0].id] = 10;
-		cart[items[1].id] = 3;
+	it('shows once more than 5 designs are under 50 each, counting only those', () => {
+		const { items, cart } = designs(8, 50);
+		for (const i of items.slice(0, 5)) cart[i.id] = 10;
 		expect(stickerNudge(cart, items, 'event')).toBeNull();
-		cart[items[2].id] = 10;
-		expect(stickerNudge(cart, items, 'event')).toMatchObject({ designs: 5, loose: 3 });
-		delete cart[items[4].id];
+		cart[items[5].id] = 3;
 		expect(stickerNudge(cart, items, 'event')?.text).toBe(
-			"You picked 4 sticker designs, 3 of them a few each. We'd rather send you fewer designs in packs of 50 because they're bagged in 50s at the warehouse. " +
+			"You picked 8 sticker designs, 6 of them a few each. We'd rather send you fewer designs in packs of 50 because they're bagged in 50s at the warehouse. " +
 				'This makes it easier for us to ship (and for you to hand out). You can still request it like this, but we may send you higher quantities of fewer designs when we ship.'
 		);
 	});

@@ -177,7 +177,7 @@ export function quantityProblem(item: Item, q: number): string {
 }
 
 /** Loose sticker designs (fewer than a pack of 50) a club or event request can have before we suggest packs. */
-export const LOOSE_STICKER_DESIGNS = 3;
+export const LOOSE_STICKER_DESIGNS = 5;
 
 /**
  * A nudge for club and event requests that ask for a few each of many sticker designs: we'd rather
@@ -188,7 +188,7 @@ export function stickerNudge(cart: Cart, items: Item[], purpose: Purpose | ''): 
 	if (purpose !== 'club' && purpose !== 'event') return null;
 	const picked = items.filter((i) => i.packs === 'sticker' && (cart[i.id] ?? 0) > 0);
 	const loose = picked.filter((i) => cart[i.id] < 50).length;
-	if (loose < LOOSE_STICKER_DESIGNS) return null;
+	if (loose <= LOOSE_STICKER_DESIGNS) return null;
 	return {
 		designs: picked.length,
 		loose,
