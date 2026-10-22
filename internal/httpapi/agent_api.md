@@ -35,10 +35,11 @@ Lists requests, newest first (at most 500). `status` is one of `awaiting_payment
 - `admin_note`: the note shown to the requester.
 - `estimate`: the package, its weight, postage and arrival dates.
 - `costs`: what sending it costs Hack Club (items, labor, packaging and postage), in cents.
-  Shipped (`dispatched`) requests keep it, priced on what actually shipped: the parts the
-  warehouse has charged for are its real figures, and `costs_actual` names them (`items` and
-  `labor` once it takes the order, `postage` once it's mailed and you've refreshed). The rest
-  are estimates. The dispatch and refresh replies include both.
+  Shipped (`dispatched`) requests keep it, priced on what actually shipped. The warehouse
+  bills Hack Club only for labor and postage: those parts are its real charges once it has
+  them, and `costs_actual` names them (`labor` once it takes the order, `postage` once it's
+  mailed and you've refreshed). Items are always at the warehouse's unit costs (what Hack Club
+  paid for the stock), and the rest are estimates. The dispatch and refresh replies include both.
 
 ### `GET /api/agent/requests/{id}`
 
@@ -103,8 +104,8 @@ for a person to approve, the 502 says so: leave a `Needs a human:` note and don'
 
 `{}` asks mail.hackclub.com for a `dispatched` request's tracking and saves its
 `tracking_number` and `carrier` (empty until the warehouse mails it), `mailed_at`, and what the
-warehouse charged (`warehouse_costs`: `contents_cents`, `labor_cents`, and `postage_cents` once
-it's mailed). Returns the request, with `costs` and `costs_actual` updated. A 409
+warehouse charged (`warehouse_costs`: `labor_cents`, and `postage_cents` once it's mailed;
+`contents_cents` is the warehouse's own stock value, not a charge, and isn't used in `costs`). Returns the request, with `costs` and `costs_actual` updated. A 409
 means it hasn't been dispatched. Nothing pulls tracking on its own, so check what you shipped
 on later runs until it has a tracking number.
 

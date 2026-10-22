@@ -112,7 +112,7 @@ export type SwagRequest = {
 	carrier: string;
 	mailed_at: string | null;
 	dispatched_at?: string | null; // when it went to the warehouse
-	warehouse_costs?: { contents_cents: number | null; labor_cents: number | null; postage_cents: number | null }; // what mail.hackclub.com charged, once it says
+	warehouse_costs?: { contents_cents: number | null; labor_cents: number | null; postage_cents: number | null }; // what mail.hackclub.com charged (labor, then postage once mailed); contents is its stock value, not a charge
 	source: string; // 'app' | 'fillout' (imported history)
 	airtable_record_id?: string;
 	internal_note?: string; // admin-only

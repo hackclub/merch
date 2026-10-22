@@ -394,9 +394,11 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   by `dispatched_at`; imports by `mailed_at`) as items, labor, packing and postage; the month so
   far plus the last 7 days' daily average for each day left; what's waiting to ship; and whether
   international requesters' payments (paid less refunded) cover their postage, by country. Each
-  request uses mail.hackclub.com's own charges where it has them (`warehouse_*_cents`: contents and
-  labor when it takes the order, postage once mailed; its labor runs higher than the AGH rates in
-  `costs.go`), else `CostToShip` estimates. Nothing pulls charges on its own: the dashboard's "Pull
+  request uses mail.hackclub.com's own charges where it has them (`warehouse_*_cents`: labor
+  when it takes the order, postage once mailed; its labor runs higher than the AGH rates in
+  `costs.go`), else `CostToShip` estimates. The warehouse never bills for items: its
+  `contents_cost` sums a stale per-SKU `actual_cost_to_hc` ($0 for shirts in 2026-10), so items
+  always use the SKUs' `unit_cost` (average PO cost). Nothing pulls charges on its own: the dashboard's "Pull
   costs from warehouse" (`POST /api/admin/requests/refresh`, up to 60 orders a click) and each
   request's refresh fetch them. The request list below loads every request once and filters in the
   browser (`$lib/dashboard`).
@@ -602,8 +604,8 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
 - A key acts for the admin who made it and stops working if they leave `ADMIN_EMAILS`. It
   works only on `/api/agent/*`, never on cookie routes, and can't make keys or change items
   or settings.
-- Every request carries `costs`, shipped ones too (`coster`: the warehouse's charges where it
-  has them, named in `costs_actual`, else estimates), so the review agent's reports use real
+- Every request carries `costs`, shipped ones too (`coster`: the warehouse's labor and
+  postage charges where it has them, named in `costs_actual`, else estimates), so the review agent's reports use real
   figures. The dispatch and refresh replies include them.
 - `GET /api/agent/requests/{id}` adds `requester`, `history` (their other requests) and
   `same_address` (other accounts' requests to the same street and postal code, compared on

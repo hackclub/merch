@@ -15,7 +15,7 @@ import (
 // payments cover their postage.
 
 // shippedCost is what a shipped request cost. Actual names the parts that are
-// the warehouse's own figures ("items", "labor", "postage"); the rest are
+// the warehouse's own charges ("labor", "postage"); the rest are
 // estimates from today's unit costs and past postage (packing always is).
 type shippedCost struct {
 	swag.Costs
@@ -78,8 +78,9 @@ func (s *server) adminDashboard(w http.ResponseWriter, r *http.Request, v viewer
 	writeJSON(w, http.StatusOK, map[string]any{"summary": swag.SummarizeSpend(rows, days, now), "costs": costs, "queue": queue})
 }
 
-// coster prices requests: the warehouse's charges where it has given them,
-// else what the request's shipped lines should cost (swag.CostToShip).
+// coster prices requests: the warehouse's labor and postage charges where it
+// has given them, else what the request's shipped lines should cost
+// (swag.CostToShip).
 func (s *server) coster(ctx context.Context) (func(*store.Request) shippedCost, error) {
 	items, err := s.Store.ListItems(ctx, false)
 	if err != nil {
@@ -113,20 +114,20 @@ func (s *server) coster(ctx context.Context) (func(*store.Request) shippedCost, 
 		if err == nil {
 			e = h.Estimate(req.Address.Country, p, now)
 		}
+		// Items stay at today's unit costs (mail.hackclub.com's average PO cost):
+		// the warehouse bills only labor and postage, and its contents_cost is
+		// a stale per-SKU figure ($0 for shirts in 2026-10).
 		c := shippedCost{Costs: swag.CostToShip(shipment(lines, cat), unit, p, e), Actual: []string{}}
 		wc := req.WarehouseCosts
 		for _, part := range []struct {
 			name   string
 			actual *int
 			into   *int
-		}{{"items", wc.ContentsCents, &c.ItemsCents}, {"labor", wc.LaborCents, &c.LaborCents}, {"postage", wc.PostageCents, &c.PostageCents}} {
+		}{{"labor", wc.LaborCents, &c.LaborCents}, {"postage", wc.PostageCents, &c.PostageCents}} {
 			if part.actual != nil {
 				*part.into = *part.actual
 				c.Actual = append(c.Actual, part.name)
 			}
-		}
-		if wc.ContentsCents != nil {
-			c.UnpricedSKUs = []string{}
 		}
 		c.TotalCents = c.ItemsCents + c.LaborCents + c.PackingCents + c.PostageCents
 		return c

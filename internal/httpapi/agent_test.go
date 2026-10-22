@@ -236,8 +236,10 @@ func TestAgentAPIDocs(t *testing.T) {
 	}
 }
 
-// Shipped requests keep their cost: the warehouse's charges where it gave
-// them, else the estimate, so the review agent can report what it shipped.
+// Shipped requests keep their cost: the warehouse's charges (labor, postage)
+// where it gave them, else the estimate, so the review agent can report what
+// it shipped. Items are always at unit cost: the warehouse never bills for them,
+// and its contents_cost (0.01 in the fake) is a stale per-SKU figure.
 func TestAgentSeesShippedCosts(t *testing.T) {
 	h := newHarness(t)
 	it := h.mkItem("Sti/A", true)
@@ -250,7 +252,7 @@ func TestAgentSeesShippedCosts(t *testing.T) {
 	if code := h.do(agent, "POST", fmt.Sprintf("/api/agent/requests/%d/dispatch", req.ID), map[string]any{}, &shipped); code != 200 {
 		t.Fatalf("dispatch = %d", code)
 	}
-	if c := shipped.Costs; c == nil || c.ItemsCents != 50 || c.LaborCents != 220 || c.TotalCents != c.ItemsCents+c.LaborCents+c.PackingCents+c.PostageCents || fmt.Sprint(shipped.CostsActual) != "[items labor]" {
+	if c := shipped.Costs; c == nil || c.ItemsCents != 50 || c.LaborCents != 220 || c.TotalCents != c.ItemsCents+c.LaborCents+c.PackingCents+c.PostageCents || fmt.Sprint(shipped.CostsActual) != "[labor]" {
 		t.Fatalf("dispatch costs = %+v %v", c, shipped.CostsActual)
 	}
 	var got agentRequest
@@ -264,7 +266,7 @@ func TestAgentSeesShippedCosts(t *testing.T) {
 		t.Fatalf("list = %+v", list)
 	}
 	var refreshed requestView
-	if code := h.do(agent, "POST", fmt.Sprintf("/api/agent/requests/%d/refresh", req.ID), map[string]any{}, &refreshed); code != 200 || refreshed.Costs == nil || fmt.Sprint(refreshed.CostsActual) != "[items labor postage]" {
+	if code := h.do(agent, "POST", fmt.Sprintf("/api/agent/requests/%d/refresh", req.ID), map[string]any{}, &refreshed); code != 200 || refreshed.Costs == nil || fmt.Sprint(refreshed.CostsActual) != "[labor postage]" {
 		t.Fatalf("refresh = %d %+v %v", code, refreshed.Costs, refreshed.CostsActual)
 	}
 	// Requesters never see costs.

@@ -107,7 +107,7 @@ func (f *fakeWarehouse) CreateOrder(_ context.Context, in theseus.OrderInput) (*
 	}
 	f.orders = append(f.orders, in)
 	// Theseus charges contents and labor when it takes the order.
-	return &theseus.Order{ID: fmt.Sprintf("pkg!%d", len(f.orders)), Status: "dispatched", ContentsCost: "0.50", LaborCost: 2.2}, nil
+	return &theseus.Order{ID: fmt.Sprintf("pkg!%d", len(f.orders)), Status: "dispatched", ContentsCost: "0.01", LaborCost: 2.2}, nil
 }
 
 // GetOrder: every order has been mailed, for $4.71.
@@ -117,7 +117,7 @@ func (f *fakeWarehouse) GetOrder(_ context.Context, id string) (*theseus.Order, 
 	f.gets++
 	mailed := time.Date(2026, 10, 17, 20, 0, 0, 0, time.UTC)
 	return &theseus.Order{ID: id, Status: "mailed", TrackingNumber: "9400", Carrier: "USPS", MailedAt: &mailed,
-		ContentsCost: "0.50", LaborCost: 2.2, PostageCost: "4.71"}, nil
+		ContentsCost: "0.01", LaborCost: 2.2, PostageCost: "4.71"}, nil
 }
 
 type fakeCDN struct {

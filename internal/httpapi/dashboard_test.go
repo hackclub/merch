@@ -45,9 +45,9 @@ func TestAdminDashboard(t *testing.T) {
 	if len(d.Summary.Days) != 7 || d.Summary.Days[6].Requests != 2 || d.Summary.Totals.Requests != 2 || d.Summary.Month.Requests != 2 {
 		t.Fatalf("summary = %+v", d.Summary)
 	}
-	// The warehouse said what contents and labor cost when it took the order; postage is still an estimate.
+	// The warehouse said what labor cost when it took the order; items are at unit cost, postage still an estimate.
 	c := d.Costs[fmt.Sprint(us.ID)]
-	if c.ItemsCents != 50 || c.LaborCents != 220 || fmt.Sprint(c.Actual) != "[items labor]" {
+	if c.ItemsCents != 50 || c.LaborCents != 220 || fmt.Sprint(c.Actual) != "[labor]" {
 		t.Fatalf("US costs = %+v", c)
 	}
 	if d.Queue.Requests != 1 || d.Queue.TotalCents == 0 {
@@ -68,7 +68,7 @@ func TestAdminDashboard(t *testing.T) {
 		t.Fatalf("events = %+v", evs)
 	}
 	h.do(admin, "GET", "/api/admin/dashboard?days=7", nil, &d)
-	if c := d.Costs[fmt.Sprint(de.ID)]; c.PostageCents != 471 || fmt.Sprint(c.Actual) != "[items labor postage]" {
+	if c := d.Costs[fmt.Sprint(de.ID)]; c.PostageCents != 471 || c.ItemsCents != 50 || fmt.Sprint(c.Actual) != "[labor postage]" {
 		t.Fatalf("DE costs = %+v", c)
 	}
 	if in := d.Summary.International; in.PostageCents != 471 || in.PostageActual != 1 || in.NetCents != 1500-471 {
