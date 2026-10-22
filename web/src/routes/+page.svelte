@@ -267,16 +267,6 @@
 			</div>
 		{/snippet}
 
-		{#snippet nudgeNote(text: string, required: boolean)}
-			<div class="nudge" data-track="sticker_nudge" role="status">
-				<p>{text}</p>
-				<label class="choice" class:on={regroupOK}>
-					<input type="checkbox" name="sticker_regroup_ok" {required} bind:checked={regroupOK} />
-					<span>I understand.</span>
-				</label>
-			</div>
-		{/snippet}
-
 		{#snippet peekPanel(item: Item)}
 			{@const preview = tilePreview(item)}
 			{@const sides = cardSides(item)}
@@ -321,7 +311,6 @@
 				{#if section.key === 'stickers' && (purpose === 'club' || purpose === 'event') && !nudge}
 					<p class="blurb">For clubs and events: pick a few favorite designs in packs of 50. They're much easier for our team to ship than a few each of many designs.</p>
 				{/if}
-				{#if section.key === 'stickers' && nudge}{@render nudgeNote(nudge.text, false)}{/if}
 				{#each rows as { item } (item.id)}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div class="line" data-item={item.id} class:picked={cart[item.id]} class:sized={open && expanded(item)}
@@ -357,6 +346,16 @@
 								{#if peek === item.id}{@render peekPanel(item)}{/if}
 							</div>
 						{/each}
+					</div>
+				{/if}
+				<!-- Under the stickers, once they've picked a few each of many designs. Submit waits for the box. -->
+				{#if section.key === 'stickers' && nudge}
+					<div class="nudge" id="sticker-note" data-track="sticker_nudge" role="status">
+						<p>{nudge.text}</p>
+						<label class="choice" class:on={regroupOK}>
+							<input type="checkbox" name="sticker_regroup_ok" bind:checked={regroupOK} />
+							<span>I understand.</span>
+						</label>
 					</div>
 				{/if}
 			</section>
@@ -448,7 +447,7 @@
 				{/if}
 				<div class="submit">
 					{#if quote && arrivalText(quote.estimate)}<p>{arrivalText(quote.estimate)}, by {quote.estimate.service}.</p>{/if}
-					{#if nudge}{@render nudgeNote(nudge.text, true)}{/if}
+					{#if nudge && !regroupOK}<p class="error"><a href="#sticker-note">Check “I understand.” under Stickers</a> to send this request.</p>{/if}
 					{#each problems as p}<p class="error">{p}</p>{/each}
 					{#if quoteError}<p class="error">{quoteError}</p>{/if}
 					{#if submitError}<p class="error" role="alert">{submitError}</p>{/if}
@@ -518,7 +517,7 @@
 	.group { margin-bottom: 1.5rem; }
 	.group h3 { margin: 0 0 0.25rem; font-size: 1rem; line-height: 1.3; }
 	.group .blurb { margin: 0 0 0.25rem; }
-	.nudge { display: grid; gap: 0.6rem; margin: 0.25rem 0 0.5rem; padding: 0.75rem 1rem; background: var(--tile); border-left: 3px solid var(--red); font-size: 0.95rem; }
+	.nudge { display: grid; gap: 0.6rem; margin: 0.75rem 0 0.25rem; padding: 0.75rem 1rem; background: var(--tile); border-left: 3px solid var(--red); font-size: 0.95rem; }
 	.nudge p { margin: 0; }
 	/* The line between the start section and the extras. */
 	.extras { margin: 2.5rem 0 1rem; padding-top: 1.5rem; border-top: 1px solid var(--smoke); }
