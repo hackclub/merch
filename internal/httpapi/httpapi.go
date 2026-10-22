@@ -517,6 +517,9 @@ type requestView struct {
 	StripeKey string         `json:"stripe_key,omitempty"` // pay by card on the page, with this publishable key
 	Estimate  *swag.Estimate `json:"estimate,omitempty"`   // when it should arrive, while it waits to ship
 	Costs     *swag.Costs    `json:"costs,omitempty"`      // admins: what it costs Hack Club to send
+	// CostsActual names the parts of a shipped request's Costs that are the
+	// warehouse's own charges ("items", "labor", "postage"); the rest are estimates.
+	CostsActual []string `json:"costs_actual,omitempty"`
 }
 
 func (s *server) view(r *store.Request) requestView {
@@ -949,10 +952,14 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 	changed := slices.ContainsFunc(req.Lines, func(l store.RequestLine) bool { return l.RequestedQuantity != nil })
 	s.trackRequest(r, v, "request_dispatched", req, map[string]any{"changed": changed, "has_note": body.Note != "", "warning": warning != ""})
 	s.emailRequest(r, req, "dispatched")
+	out := []requestView{s.view(req)}
+	if err := s.withEstimates(r.Context(), out, true); err != nil {
+		s.Log.Error("pricing shipped request failed", "request_id", id, "err", err)
+	}
 	writeJSON(w, http.StatusOK, struct {
 		requestView
 		Warning string `json:"warning,omitempty"` // for the admin: something to fix by hand
-	}{s.view(req), warning})
+	}{out[0], warning})
 }
 
 // adminInternalNote saves the admins' Markdown note on a request.
@@ -1000,7 +1007,12 @@ func (s *server) adminRefresh(w http.ResponseWriter, r *http.Request, v viewer) 
 		return
 	}
 	s.trackRequest(r, v, "tracking_updated", req, map[string]any{"carrier": req.Carrier, "has_tracking": req.TrackingNumber != "", "has_postage": mailed})
-	s.respondRequest(w, req, nil)
+	out := []requestView{s.view(req)}
+	if err := s.withEstimates(r.Context(), out, true); err != nil {
+		s.serverErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out[0])
 }
 
 func (s *server) respond(w http.ResponseWriter) func(*store.Request, error) {

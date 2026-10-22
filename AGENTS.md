@@ -602,6 +602,9 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
 - A key acts for the admin who made it and stops working if they leave `ADMIN_EMAILS`. It
   works only on `/api/agent/*`, never on cookie routes, and can't make keys or change items
   or settings.
+- Every request carries `costs`, shipped ones too (`coster`: the warehouse's charges where it
+  has them, named in `costs_actual`, else estimates), so the review agent's reports use real
+  figures. The dispatch and refresh replies include them.
 - `GET /api/agent/requests/{id}` adds `requester`, `history` (their other requests) and
   `same_address` (other accounts' requests to the same street and postal code, compared on
   letters and digits only).

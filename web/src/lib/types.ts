@@ -120,7 +120,8 @@ export type SwagRequest = {
 	lines: RequestLine[];
 	stripe_key?: string; // pay by card on the page
 	estimate?: ShippingEstimate; // while it waits to ship; postage only for admins
-	costs?: Costs; // admins: what it costs Hack Club to send, while it waits to ship
+	costs?: Costs; // admins: what it costs Hack Club to send; once shipped, with the warehouse's charges where it has them
+	costs_actual?: string[]; // which parts of a shipped request's costs are the warehouse's own charges
 };
 
 export type SubmissionStatus = 'submitted' | 'approved' | 'printing' | 'stocked' | 'rejected';

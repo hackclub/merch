@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/swag"
 	"github.com/hackclub/merch/internal/theseus"
 )
@@ -299,12 +300,25 @@ func (s *server) shippingSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 // withEstimates adds delivery estimates to requests still waiting to ship, and
-// for admins what each costs Hack Club to send.
+// for admins what each costs Hack Club to send. Shipped requests get their
+// cost too, from the warehouse's charges where it has given them (coster).
 func (s *server) withEstimates(ctx context.Context, views []requestView, admin bool) error {
 	var cat map[int64]swag.Item
 	var h *swag.History
 	var unit map[string]float64
+	var cost func(*store.Request) shippedCost
 	for i, v := range views {
+		if admin && v.Status == swag.StatusDispatched {
+			if cost == nil {
+				var err error
+				if cost, err = s.coster(ctx); err != nil {
+					return err
+				}
+			}
+			c := cost(v.Request)
+			views[i].Costs, views[i].CostsActual = &c.Costs, c.Actual
+			continue
+		}
 		if v.Source != "app" || (v.Status != swag.StatusPending && v.Status != swag.StatusAwaitingPayment) {
 			continue
 		}

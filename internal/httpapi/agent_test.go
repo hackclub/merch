@@ -235,3 +235,42 @@ func TestAgentAPIDocs(t *testing.T) {
 		}
 	}
 }
+
+// Shipped requests keep their cost: the warehouse's charges where it gave
+// them, else the estimate, so the review agent can report what it shipped.
+func TestAgentSeesShippedCosts(t *testing.T) {
+	h := newHarness(t)
+	it := h.mkItem("Sti/A", true)
+	agent := h.keyClient(h.mkKey("Review agent").Token)
+	var req store.Request
+	if code := h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 2}}}, &req); code != 201 {
+		t.Fatalf("create = %d", code)
+	}
+	var shipped requestView
+	if code := h.do(agent, "POST", fmt.Sprintf("/api/agent/requests/%d/dispatch", req.ID), map[string]any{}, &shipped); code != 200 {
+		t.Fatalf("dispatch = %d", code)
+	}
+	if c := shipped.Costs; c == nil || c.ItemsCents != 50 || c.LaborCents != 220 || c.TotalCents != c.ItemsCents+c.LaborCents+c.PackingCents+c.PostageCents || fmt.Sprint(shipped.CostsActual) != "[items labor]" {
+		t.Fatalf("dispatch costs = %+v %v", c, shipped.CostsActual)
+	}
+	var got agentRequest
+	h.do(agent, "GET", fmt.Sprintf("/api/agent/requests/%d", req.ID), nil, &got)
+	if got.Costs == nil || got.Costs.TotalCents != shipped.Costs.TotalCents {
+		t.Fatalf("get costs = %+v", got.Costs)
+	}
+	var list struct{ Requests []requestView }
+	h.do(agent, "GET", "/api/agent/requests?status=dispatched", nil, &list)
+	if len(list.Requests) != 1 || list.Requests[0].Costs == nil {
+		t.Fatalf("list = %+v", list)
+	}
+	var refreshed requestView
+	if code := h.do(agent, "POST", fmt.Sprintf("/api/agent/requests/%d/refresh", req.ID), map[string]any{}, &refreshed); code != 200 || refreshed.Costs == nil || fmt.Sprint(refreshed.CostsActual) != "[items labor postage]" {
+		t.Fatalf("refresh = %d %+v %v", code, refreshed.Costs, refreshed.CostsActual)
+	}
+	// Requesters never see costs.
+	var mine struct{ Requests []map[string]any }
+	h.do(h.client(userEmail), "GET", "/api/requests", nil, &mine)
+	if _, ok := mine.Requests[0]["costs"]; ok {
+		t.Fatalf("requester sees costs: %+v", mine.Requests[0])
+	}
+}
