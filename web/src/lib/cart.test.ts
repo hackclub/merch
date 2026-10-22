@@ -253,5 +253,10 @@ describe('stickerNudge', () => {
 		expect(stickerNudge(cart, items, 'event')).toBeNull();
 		cart[items[2].id] = 10;
 		expect(stickerNudge(cart, items, 'event')).toMatchObject({ designs: 5, loose: 3 });
+		delete cart[items[4].id];
+		expect(stickerNudge(cart, items, 'event')?.text).toBe(
+			"You picked 4 sticker designs, 3 of them a few each. We'd rather send you fewer designs in packs of 50 because they're bagged in 50s at the warehouse. " +
+				'This makes it easier for us to ship (and for you to hand out). You can still request it like this, but we may send you higher quantities of fewer designs when we ship.'
+		);
 	});
 });
