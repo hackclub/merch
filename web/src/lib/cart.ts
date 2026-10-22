@@ -193,7 +193,7 @@ export function stickerNudge(cart: Cart, items: Item[], purpose: Purpose | ''): 
 		designs: picked.length,
 		loose,
 		text:
-			`You picked ${picked.length} sticker designs, ${loose === picked.length ? 'a few of each' : `${loose} of them a few each`}. ` +
+			`You picked ${picked.length} sticker designs, ${loose} of them a few each. ` +
 			"We'd rather send you fewer designs in packs of 50 because they're bagged in 50s at the warehouse. " +
 			'This makes it easier for us to ship (and for you to hand out). You can still request it like this, but we may send you higher quantities of fewer designs when we ship.'
 	};

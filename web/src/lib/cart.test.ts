@@ -233,7 +233,7 @@ describe('stickerNudge', () => {
 		const { items, cart } = designs(14, 10);
 		const n = stickerNudge(cart, items, 'event');
 		expect(n).toMatchObject({ designs: 14, loose: 14 });
-		expect(n?.text).toContain('14 sticker designs');
+		expect(n?.text).toMatch(/^You picked 14 sticker designs, 14 of them a few each\. /);
 		expect(n?.text).toContain('packs of 50');
 		expect(stickerNudge(cart, items, 'club')).not.toBeNull();
 	});
