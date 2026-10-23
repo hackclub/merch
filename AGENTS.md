@@ -551,8 +551,8 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   someone else's), `submission_created`,
   `print_file_uploaded` (print art stored on the CDN: `product`, `fit`, `dpi`, `bytes`, `type`),
   `print_request_created` (`print_request_id`, `product`, `quantity`, `estimate_cents`, `has_back`,
-  `has_needed_by`, and with a date `days_until_needed` against the estimate's `max_days`; never the name
-  or note). They carry the page's `visit` (the
+  `has_needed_by`, and with a date `days_until_needed` against the estimate's `max_days`;
+  `initial_quantity` and the first shipment's `country`; never the name, note or address). They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
 - Admin events (`internal/httpapi/insights.go`). Request events belong to the requester's
   `user_id`, with `admin_id` for who acted, and carry `request_id`, `country`, `purpose`, `source`,
@@ -565,7 +565,7 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   `item_media_added` (`kind` = `image`, `page`, `photo` or `print_file`), `settings_updated` (`changed`),
   `submission_updated` (`from`, `to`, `kind`, `has_sku`),
   `print_request_updated` (`print_request_id`, `from`, `to`, `product`, `quantity`, `has_note`, `has_sku`,
-  `wait_h`), `api_key_created` and `api_key_revoked`
+  `wait_h`, `shipment_request_id` once stocked made their first shipment), `api_key_created` and `api_key_revoked`
   (`api_key_id`), `requests_refreshed` (the dashboard pulled tracking and charges from
   mail.hackclub.com: `checked`, `updated`, `mailed`, `failed`, `left`). Notes are never logged, only `has_note`. What an agent does with an API key
   (see "Agent API") logs the same events with `api_key_id` added; its notes are
@@ -632,7 +632,9 @@ When Zach asks you to improve the shop from evidence, run this loop end to end:
 
 Staff who pick "I'm Hack Club staff", then "I want to get postcards / posters made", get the print flow
 (`web/src/lib/PrintRequest.svelte`) in place of the swag list. HQ orders the run from Vistaprint, it ships
-to the warehouse, and once it's in, an admin lists it in the shop like any item.
+to the warehouse, and it's listed in the shop, where anyone can request it to help market the program
+(staff included, through "I'm Hack Club staff", any time). The form also asks how many to send them first,
+and where, so they see it in person once it arrives.
 
 - **Products** (`swag.PrintProducts`, `GET /api/print/products`): 4x6 postcards on Vistaprint's premium
   linen card stock (what HQ always orders; printed both sides), and 11x17 posters ordered as Vistaprint
@@ -642,11 +644,15 @@ to the warehouse, and once it's in, an admin lists it in the shop like any item.
   postcard and poster files (1885x1282, 3382x5182 px) match it. The flow offers a full-size SVG template
   with the bleed, trim and safe lines (`templateSVG` in `$lib/print`).
 - **Art checks** (`swag.CheckArt`, mirrored by `checkArt` in `$lib/print` for instant feedback): PNG or
-  JPEG only (the 3D preview needs a raster). Full-bleed art is ready; art at the trimmed size prints with
-  a warning (white slivers); anything else is the wrong shape, and under 150 DPI is refused as blurry.
-  Picked files show at once, flat with the trim and safe lines, and in 3D with the bleed cut off
-  (`Product3D`: a linen card that turns over, or a sheet beside a phone). They upload untouched to the
-  CDN only on Submit (`POST /api/print/files`, signed in, up to 60 MB each, checked again on the server).
+  JPEG only (the 3D preview needs a raster), and **at least 300 DPI** (Zach, 2026-10-23: refused below,
+  in the browser and on the server). Full-bleed art is ready; art at the trimmed size prints with a
+  warning (white slivers); anything else is the wrong shape. Picked files show at once with their zones
+  marked: the bleed (red, cut off), the trim line, the ⅛" inside it that a drifting cut can take
+  (amber, not safe), and the safe area (dashed blue), with a legend saying what goes where; "As printed"
+  shows it trimmed. The 3D view shows it with the bleed cut off (`Product3D`: a linen card that turns
+  over, or a sheet beside a phone). Files upload untouched to the CDN only on Submit (`POST
+  /api/print/files`, signed in, up to 60 MB each, checked again), and the server also uploads a trimmed,
+  shrunk JPEG (`preview_url`, `imgprep.WebInset` by `swag.TrimInset`) for the shop item.
 - **Estimate** (`swag.EstimatePrint`, `GET /api/print/estimate`): prices are Hack Club's own Vistaprint
   orders from zach@hackclub.com's order confirmations (2025-05 to 2026-10, after the 30% ProAdvantage
   discount, before tax), read between the quantities ordered on a straight line. For example: 1,000
@@ -657,10 +663,16 @@ to the warehouse, and once it's in, an admin lists it in the shop like any item.
   `prices` and keep `TestEstimatePrintPrices` in step.
 - **Requests** (`print_requests`; `POST /api/print-requests`, `GET /api/print-requests` on My requests):
   product, name, quantity, front and optional back URLs, how they'll use it (required), an optional
-  needed-by date, and the estimate when sent. Status: `submitted → ordered → stocked`, or `rejected`;
-  admins move it, add a note the requester sees and the SKU once stocked, on the Admin page's
-  submissions tab (`/api/admin/print-requests`). Anyone signed in can send one, like the staff purpose,
-  so reviewers check the email.
+  needed-by date, the first shipment (`initial_quantity`, postcards in the shop's packs, and `address`),
+  and the estimate when sent. Status: `submitted → ordered → stocked`, or `rejected`; admins move it and
+  add a note the requester sees on the Admin page's submissions tab (`/api/admin/print-requests`).
+  **Stocked needs the SKU** and does two things (`sendFirstShipment`, once; saving again retries): lists
+  the SKU in the shop if no item has it (visible, named after the request, its trimmed previews as images,
+  landscape when the art was, postcards packed as postcards), and makes the first shipment a `pending`
+  swag request on the requester's account (`purpose` staff, a note naming the print request; per-person
+  limits and stock holds don't apply). It's reviewed and shipped like any request, and abroad it starts in
+  `awaiting_payment`: they pay its postage. Anyone signed in can send one, like the staff purpose, so
+  reviewers check the email.
 
 ## Agent API
 

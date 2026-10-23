@@ -54,6 +54,8 @@ export type PrintRequest = {
 	status: 'submitted' | 'ordered' | 'stocked' | 'rejected';
 	admin_note: string;
 	sku: string;
+	initial_quantity: number; // sent to them once it's stocked
+	shipment_request_id: number | null; // the request that became
 	created_at: string;
 };
 
@@ -64,11 +66,11 @@ export const printStatusLabel: Record<PrintRequest['status'], string> = {
 	rejected: 'Not printed'
 };
 
-/** How art fits: full size with bleed, the trimmed size, or neither. Mirrors swag.CheckArt. */
+/** How art fits: full size with bleed, the trimmed size, or neither. Under the product's DPI (300) is refused.
+ * Mirrors swag.CheckArt. */
 export type ArtCheck = { fit: 'bleed' | 'trim' | 'wrong_shape'; dpi: number; problem?: string; warning?: string };
 
 const TOLERANCE = 0.005;
-const MIN_DPI = 150;
 
 export function checkArt(p: PrintProduct, w: number, h: number): ArtCheck {
 	const short = Math.min(w, h);
@@ -78,10 +80,9 @@ export function checkArt(p: PrintProduct, w: number, h: number): ArtCheck {
 	for (const [fit, sw, sh] of [['bleed', p.bleed_width_in, p.bleed_height_in], ['trim', p.width_in, p.height_in]] as const) {
 		if (Math.abs(short / long / (sw / sh) - 1) > TOLERANCE) continue;
 		const dpi = Math.floor(short / sw);
-		if (dpi < MIN_DPI) return { fit, dpi, problem: `It's only ${dpi} DPI and would print blurry. Export it at ${p.dpi} DPI: ${want}.` };
+		if (dpi < p.dpi) return { fit, dpi, problem: `It's ${dpi} DPI, and prints need at least ${p.dpi} DPI. Export it at ${want}.` };
 		const c: ArtCheck = { fit, dpi };
 		if (fit === 'trim') c.warning = `No bleed: it's the trimmed size, so a white sliver may show at the edges. Best is ${want}, with the background running to the edge.`;
-		else if (dpi < p.dpi) c.warning = `${dpi} DPI may print a little soft. Best is ${p.dpi} DPI: ${want}.`;
 		return c;
 	}
 	return { fit: 'wrong_shape', dpi: 0, problem: `It's ${w} x ${h} px, which isn't the shape of a ${p.name}. Make it ${want}.` };
@@ -100,7 +101,10 @@ export function guides(p: PrintProduct, w: number, h: number) {
 	const inch = Math.min(w, h) / (bleed ? p.bleed_width_in : p.width_in); // pixels per inch
 	const inset = (inches: number) => ({ x: ((inches * inch) / w) * 100, y: ((inches * inch) / h) * 100 });
 	const trim = bleed ? p.bleed_in : 0;
-	return { trim: inset(trim), safe: inset(trim + p.safe_in) };
+	// The safe line inside the trim box, in percent of the trimmed width and height.
+	const tw = w - 2 * trim * inch;
+	const th = h - 2 * trim * inch;
+	return { trim: inset(trim), safe: inset(trim + p.safe_in), safeInTrim: { x: ((p.safe_in * inch) / tw) * 100, y: ((p.safe_in * inch) / th) * 100 } };
 }
 
 /** The trimmed sheet in inches, turned the way the art is (landscape art, landscape card). */
@@ -167,3 +171,9 @@ export const printArtProps = (product: string, side: string, check: ArtCheck | n
 	check
 		? { product, side, fit: check.fit, dpi: check.dpi, problem: !!check.problem, warning: !!check.warning, mb: Math.round(bytes / 1e5) / 10 }
 		: { product, side, fit: 'unreadable', problem: true, type: type.slice(0, 40) };
+
+/** How many to send them first: postcards in the shop's packs (5s to 25, then 50s), posters a few at a time; up to the run. */
+export function firstShipmentOptions(p: PrintProduct, run: number): number[] {
+	const all = p.postcard ? [5, 10, 15, 20, 25, 50, 100, 150, 200, 250] : [1, 2, 3, 5, 10, 15, 20, 25];
+	return [0, ...all.filter((n) => n <= run)];
+}

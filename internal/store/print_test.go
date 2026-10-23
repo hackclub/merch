@@ -3,6 +3,8 @@ package store
 import (
 	"testing"
 	"time"
+
+	"github.com/hackclub/merch/internal/swag"
 )
 
 func TestPrintRequests(t *testing.T) {
@@ -13,9 +15,13 @@ func TestPrintRequests(t *testing.T) {
 		UserID: a.ID, Product: "postcard_4x6", Title: "Haven postcard", Quantity: 1000,
 		FrontURL: "https://cdn.hackclub.com/front.png", BackURL: "https://cdn.hackclub.com/back.png",
 		Note: "For Haven events", NeededBy: &due, EstimateCents: 11958,
+		InitialQuantity: 25, Address: &addr, FrontPreviewURL: "https://cdn.hackclub.com/front.jpg",
 	})
 	if err != nil || pr.ID == 0 || pr.Status != "submitted" || pr.UserEmail != "a@x.com" || pr.NeededBy == nil || !pr.NeededBy.Equal(due) {
 		t.Fatalf("CreatePrintRequest = %+v, %v", pr, err)
+	}
+	if pr.InitialQuantity != 25 || pr.Address == nil || pr.Address.City != "Burlington" || pr.FrontPreviewURL == "" || pr.ShipmentRequestID != nil {
+		t.Fatalf("first shipment = %d to %+v, preview %q, request %v", pr.InitialQuantity, pr.Address, pr.FrontPreviewURL, pr.ShipmentRequestID)
 	}
 	mine, _ := s.ListPrintRequestsByUser(ctx, a.ID)
 	theirs, _ := s.ListPrintRequestsByUser(ctx, b.ID)
@@ -39,5 +45,19 @@ func TestPrintRequests(t *testing.T) {
 	got, err := s.GetPrintRequest(ctx, pr.ID)
 	if err != nil || got.Quantity != 1000 {
 		t.Fatalf("GetPrintRequest = %+v, %v", got, err)
+	}
+
+	// Once stocked, the first shipment is a swag request; it's recorded once.
+	it := mkItem(t, s, "Pri/Hav/4x6/1st", false)
+	req, err := s.CreateRequest(ctx, NewRequest{UserID: a.ID, Address: addr, Purpose: "staff", Status: "pending",
+		Lines: []swag.Line{{ItemID: it.ID, Quantity: 25}}}, func(map[int64]int) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.SetPrintShipment(ctx, pr.ID, req.ID); err != nil || got.ShipmentRequestID == nil || *got.ShipmentRequestID != req.ID {
+		t.Fatalf("SetPrintShipment = %+v, %v", got, err)
+	}
+	if _, err := s.SetPrintShipment(ctx, pr.ID, req.ID); err != ErrNotFound {
+		t.Fatalf("second SetPrintShipment = %v, want ErrNotFound", err)
 	}
 }

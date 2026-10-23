@@ -37,12 +37,13 @@
 					{#if p.needed_by}<div>Needed by {p.needed_by.slice(0, 10)}</div>{/if}
 					<div class="muted">{new Date(p.created_at).toLocaleDateString()}</div></td>
 				<td><a href={p.front_url} target="_blank" rel="noreferrer">Front</a>{#if p.back_url} · <a href={p.back_url} target="_blank" rel="noreferrer">Back</a>{/if}</td>
-				<td>{p.quantity.toLocaleString('en-US')}<div class="muted">{formatCents(p.estimate_cents)}</div></td>
+				<td>{p.quantity.toLocaleString('en-US')}<div class="muted">{formatCents(p.estimate_cents)}</div>
+					{#if p.initial_quantity}<div>First {p.initial_quantity} to them{p.shipment_request_id ? `: request #${p.shipment_request_id}` : ' once stocked'}</div>{/if}</td>
 				<td>
 					<select bind:value={p.status}>
 						{#each Object.entries(printStatusLabel) as [st, label]}<option value={st}>{label}</option>{/each}
 					</select>
-					<input bind:value={p.sku} placeholder="warehouse SKU once stocked" />
+					<input bind:value={p.sku} placeholder="warehouse SKU once stocked" title="Stocked lists the SKU in the shop (made from their art if it's new) and requests their first shipment" />
 					<input bind:value={p.admin_note} placeholder="note to them" />
 				</td>
 				<td><button onclick={() => save(p)}>Save</button></td>

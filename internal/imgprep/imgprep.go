@@ -22,12 +22,16 @@ var ErrNotImage = errors.New("not a PNG, JPEG or WebP image")
 
 // Web decodes a PNG, JPEG or WebP, scales it down to fit MaxSide (never up),
 // flattens transparency onto white and re-encodes it as a JPEG.
-func Web(data []byte) ([]byte, error) {
+func Web(data []byte) ([]byte, error) { return WebInset(data, 0) }
+
+// WebInset is Web after cutting inset pixels off every edge: print art's
+// bleed, so the picture shows the finished, trimmed piece.
+func WebInset(data []byte, inset int) ([]byte, error) {
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, ErrNotImage
 	}
-	b := src.Bounds()
+	b := src.Bounds().Inset(inset)
 	w, h := b.Dx(), b.Dy()
 	if long := max(w, h); long > MaxSide {
 		w, h = w*MaxSide/long, h*MaxSide/long

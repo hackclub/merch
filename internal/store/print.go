@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/hackclub/merch/internal/swag"
 )
 
 // PrintRequest is staff asking for postcards or posters to be printed and
@@ -26,19 +28,30 @@ type PrintRequest struct {
 	Status        string     `json:"status"` // submitted → ordered → stocked, or rejected
 	AdminNote     string     `json:"admin_note"`
 	SKU           string     `json:"sku"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	// The first shipment to them once it's stocked: how many, where, and the
+	// swag request it became.
+	InitialQuantity   int           `json:"initial_quantity"`
+	Address           *swag.Address `json:"address"`
+	ShipmentRequestID *int64        `json:"shipment_request_id"`
+	// The art trimmed and shrunk to a web JPEG, for the item it's listed as.
+	FrontPreviewURL string    `json:"front_preview_url"`
+	BackPreviewURL  string    `json:"back_preview_url"`
+	Landscape       bool      `json:"landscape"` // the art is wider than tall
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 const printRequestSelect = `
 	SELECT p.id, p.user_id, u.email, u.name, p.product, p.title, p.quantity, p.front_url, p.back_url, p.note,
-		p.needed_by, p.estimate_cents, p.status, p.admin_note, p.sku, p.created_at, p.updated_at
+		p.needed_by, p.estimate_cents, p.status, p.admin_note, p.sku, p.created_at, p.updated_at,
+		p.initial_quantity, p.address, p.shipment_request_id, p.front_preview_url, p.back_preview_url, p.landscape
 	FROM print_requests p JOIN users u ON u.id = p.user_id`
 
 func scanPrintRequest(row pgx.Row) (*PrintRequest, error) {
 	var p PrintRequest
 	err := row.Scan(&p.ID, &p.UserID, &p.UserEmail, &p.UserName, &p.Product, &p.Title, &p.Quantity, &p.FrontURL, &p.BackURL, &p.Note,
-		&p.NeededBy, &p.EstimateCents, &p.Status, &p.AdminNote, &p.SKU, &p.CreatedAt, &p.UpdatedAt)
+		&p.NeededBy, &p.EstimateCents, &p.Status, &p.AdminNote, &p.SKU, &p.CreatedAt, &p.UpdatedAt,
+		&p.InitialQuantity, &p.Address, &p.ShipmentRequestID, &p.FrontPreviewURL, &p.BackPreviewURL, &p.Landscape)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -48,9 +61,11 @@ func scanPrintRequest(row pgx.Row) (*PrintRequest, error) {
 func (s *Store) CreatePrintRequest(ctx context.Context, p PrintRequest) (*PrintRequest, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO print_requests (user_id, product, title, quantity, front_url, back_url, note, needed_by, estimate_cents)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-		p.UserID, p.Product, p.Title, p.Quantity, p.FrontURL, p.BackURL, p.Note, p.NeededBy, p.EstimateCents).Scan(&id)
+		INSERT INTO print_requests (user_id, product, title, quantity, front_url, back_url, note, needed_by, estimate_cents,
+			initial_quantity, address, front_preview_url, back_preview_url, landscape)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+		p.UserID, p.Product, p.Title, p.Quantity, p.FrontURL, p.BackURL, p.Note, p.NeededBy, p.EstimateCents,
+		p.InitialQuantity, p.Address, p.FrontPreviewURL, p.BackPreviewURL, p.Landscape).Scan(&id)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -82,6 +97,20 @@ func (s *Store) ListPrintRequests(ctx context.Context) ([]*PrintRequest, error) 
 func (s *Store) UpdatePrintRequest(ctx context.Context, id int64, status, adminNote, sku string) (*PrintRequest, error) {
 	tag, err := s.pool.Exec(ctx, `UPDATE print_requests SET status = $2, admin_note = $3, sku = $4, updated_at = now() WHERE id = $1`,
 		id, status, adminNote, sku)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrNotFound
+	}
+	return s.GetPrintRequest(ctx, id)
+}
+
+// SetPrintShipment records the swag request a print run's first shipment
+// became. It's set once: ErrNotFound when it already has one.
+func (s *Store) SetPrintShipment(ctx context.Context, id, requestID int64) (*PrintRequest, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE print_requests SET shipment_request_id = $2, updated_at = now()
+		WHERE id = $1 AND shipment_request_id IS NULL`, id, requestID)
 	if err != nil {
 		return nil, mapErr(err)
 	}

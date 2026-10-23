@@ -4,13 +4,14 @@
 	// Files upload untouched on Submit (POST /api/print/files), then the request (POST /api/print-requests).
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { api, ApiError, fileToBase64 } from './api';
+	import { api, ApiError, fileToBase64, isInternational } from './api';
+	import { blankAddress, prefillAddress } from './address';
 	import { session } from './session.svelte';
 	import { track } from './track';
 	import Product3D from './Product3D.svelte';
 	import type { Preview3D } from './items';
 	import {
-		checkArt, estimateLine, guides, neededByNote, printArtProps, quantityPresets, readyText, sheetFor, templateSVG, trimCrop,
+		checkArt, estimateLine, firstShipmentOptions, guides, neededByNote, printArtProps, quantityPresets, readyText, sheetFor, templateSVG, trimCrop,
 		type ArtCheck, type PrintEstimate, type PrintProduct, type PrintRequest
 	} from './print';
 
@@ -27,6 +28,11 @@
 	let quantity = $state(1000);
 	let neededBy = $state('');
 	let note = $state('');
+	// The first ones sent to them once the run reaches the warehouse, and where.
+	let initial = $state(25);
+	let address = $state(prefillAddress(blankAddress(), session.me?.user?.address));
+	// Each side shows the art with its bleed, trim and safe zones, or as it'll look trimmed.
+	let asPrinted = $state<Record<Side, boolean>>({ front: false, back: false });
 	let estimate = $state<PrintEstimate | null>(null);
 	let estimateError = $state('');
 	let submitting = $state('');
@@ -41,6 +47,7 @@
 		key = k;
 		const p = products.find((x) => x.key === k)!;
 		quantity = quantityPresets(p)[2];
+		initial = p.postcard ? 25 : 5;
 		// Art for a postcard isn't the shape of a poster: check it again.
 		for (const side of ['front', 'back'] as const) {
 			const a = art[side];
@@ -127,13 +134,18 @@
 			? { postcards: { kind: 'postcards', ...opts, thicknessIn: product.thickness_in } }
 			: { sheet: { ...opts, thicknessIn: product.thickness_in } };
 	});
+	// A smaller run, or a switch to posters, can leave the first shipment bigger than what's offered: take the nearest below.
+	$effect(() => {
+		if (!product) return;
+		const options = firstShipmentOptions(product, quantity);
+		if (!options.includes(initial)) initial = options.filter((n) => n <= initial).at(-1) ?? 0;
+	});
 	const problems = $derived((['front', 'back'] as const).filter((s) => art[s]?.check.problem || reading[s]));
 	const late = $derived(estimate ? neededByNote(neededBy, estimate) : '');
 
-	async function upload(side: Side, a: Art): Promise<string> {
+	async function upload(side: Side, a: Art): Promise<{ url: string; preview_url: string }> {
 		submitting = `Uploading the ${side}…`;
-		const f = await api.post<{ url: string }>('/api/print/files', { product: key, filename: a.file.name, data: await fileToBase64(a.file) });
-		return f.url;
+		return api.post('/api/print/files', { product: key, filename: a.file.name, data: await fileToBase64(a.file) });
 	}
 
 	async function submit(e: SubmitEvent) {
@@ -141,10 +153,14 @@
 		if (!front || problems.length) return;
 		error = '';
 		try {
-			const front_url = await upload('front', front);
-			const back_url = art.back ? await upload('back', art.back) : '';
+			const f = await upload('front', front);
+			const b = art.back ? await upload('back', art.back) : { url: '', preview_url: '' };
 			submitting = 'Sending…';
-			await api.post<PrintRequest>('/api/print-requests', { product: key, title, quantity, front_url, back_url, note, needed_by: neededBy });
+			await api.post<PrintRequest>('/api/print-requests', {
+				product: key, title, quantity, front_url: f.url, back_url: b.url, front_preview_url: f.preview_url, back_preview_url: b.preview_url,
+				landscape: front.width > front.height, note, needed_by: neededBy,
+				initial_quantity: initial, address: initial > 0 ? { ...address, country: address.country.trim().toUpperCase() } : null
+			});
 			goto('/requests?printed=1');
 		} catch (err) {
 			error = err instanceof ApiError ? err.message : 'Something went wrong.';
@@ -201,11 +217,24 @@
 						</label>
 						{#if a}
 							{@const g = guides(product, a.width, a.height)}
-							<div class="flat" style="aspect-ratio: {a.width} / {a.height}">
-								<img src={a.url} alt="{side} art" />
-								<span class="guide trim" style="inset: {g.trim.y}% {g.trim.x}%"></span>
-								<span class="guide safe" style="inset: {g.safe.y}% {g.safe.x}%"></span>
+							<div class="views" role="group" aria-label="{side} preview">
+								<button type="button" class="link" class:on={!asPrinted[side]} data-track="print_guides" onclick={() => (asPrinted[side] = false)}>Bleed and safe area</button>
+								<button type="button" class="link" class:on={asPrinted[side]} data-track="print_as_printed" onclick={() => (asPrinted[side] = true)}>As printed</button>
 							</div>
+							{#if asPrinted[side]}
+								{@const sheetSize = sheetFor(product, a.width, a.height)}
+								<div class="flat printed" style="aspect-ratio: {sheetSize.widthIn} / {sheetSize.heightIn}">
+									<img src={a.trimmed} alt="{side} as printed, trimmed" />
+								</div>
+							{:else}
+								<!-- The bleed (striped, cut off), the trim line, the band inside it the cut can drift into, and the safe area. -->
+								<div class="flat" style="aspect-ratio: {a.width} / {a.height}">
+									<img src={a.url} alt="{side} art with its bleed, trim and safe area marked" />
+									<span class="zone-trim" style="inset: {g.trim.y}% {g.trim.x}%">
+										<span class="zone-safe" style="inset: {g.safeInTrim.y}% {g.safeInTrim.x}%"><span class="tag">Safe area</span></span>
+									</span>
+								</div>
+							{/if}
 							<p class="fact">{a.width} x {a.height} px{a.check.dpi ? ` · ${a.check.dpi} DPI` : ''}</p>
 							{#if a.check.problem}<p class="error">{a.check.problem}</p>
 							{:else if a.check.warning}<p class="warn">{a.check.warning}</p>
@@ -216,7 +245,14 @@
 					</div>
 				{/each}
 			</div>
-			{#if art.front || art.back}<p class="muted legend"><span class="key trim"></span> trim <span class="key safe"></span> safe area: keep text inside</p>{/if}
+			{#if art.front || art.back}
+				<ul class="zones" data-track="print_zones">
+					<li><span class="key bleed"></span><span><strong>Bleed: cut off.</strong> The outer ⅛". Run your background and photos into it, but put nothing you need there.</span></li>
+					<li><span class="key cut"></span><span><strong>Trim line.</strong> Where it's cut to {product.width_in}" x {product.height_in}".</span></li>
+					<li><span class="key unsafe"></span><span><strong>Not safe.</strong> The ⅛" inside the trim. Cuts can drift this far, so text and logos here may be cut off.</span></li>
+					<li><span class="key safe"></span><span><strong>Safe area.</strong> Everything important (text, logos, QR codes, faces) goes inside the dashed line.</span></li>
+				</ul>
+			{/if}
 
 			{#if preview}
 				<div class="preview">
@@ -224,7 +260,11 @@
 				</div>
 			{/if}
 
-			<h3>How many?</h3>
+			<h3>How many should we print?</h3>
+			<p>
+				We'll stock them at our warehouse and list them in the shop, where anyone can request them to help market your program.
+				You can request more yourself any time: pick “I'm Hack Club staff” on this site.
+			</p>
 			<div class="presets">
 				{#each quantityPresets(product) as q (q)}
 					<button type="button" class="secondary" class:on={quantity === q} onclick={() => (quantity = q)}>{q.toLocaleString('en-US')}</button>
@@ -248,6 +288,28 @@
 					<p class="error">{estimateError}</p>
 				{/if}
 			</div>
+
+			<h3>How many should we send you first?</h3>
+			<p>When the print run reaches our warehouse, we'll send you this many so you can see them in person. It goes out as a request on your account, like any other.</p>
+			<label>First shipment
+				<select name="initial_quantity" bind:value={initial}>
+					{#each firstShipmentOptions(product, quantity) as n (n)}<option value={n}>{n ? n.toLocaleString('en-US') : 'None, thanks'}</option>{/each}
+				</select></label>
+			{#if initial > 0}
+				<div class="form-grid address" data-private>
+					<label>First name <input required bind:value={address.first_name} autocomplete="given-name" /></label>
+					<label>Last name <input required bind:value={address.last_name} autocomplete="family-name" /></label>
+					<label>Address line 1 <input required bind:value={address.line_1} autocomplete="address-line1" /></label>
+					<label>Address line 2 (optional) <input bind:value={address.line_2} autocomplete="address-line2" /></label>
+					<label>City <input required bind:value={address.city} autocomplete="address-level2" /></label>
+					<label>State / province <input bind:value={address.state} autocomplete="address-level1" /></label>
+					<label>ZIP / postal code <input required bind:value={address.postal_code} autocomplete="postal-code" /></label>
+					<label>Country code (US, CA, GB…) <input required maxlength="2" bind:value={address.country} autocomplete="country" /></label>
+					<label>Phone {isInternational(address.country) ? '(required for customs)' : '(optional)'}
+						<input required={isInternational(address.country)} bind:value={address.phone_number} autocomplete="tel" /></label>
+				</div>
+				{#if isInternational(address.country)}<p class="muted">Outside the US, you'll pay this shipment's postage by card on My requests once it's ready, like any international request.</p>{/if}
+			{/if}
 
 			<label>Name it <input required maxlength="200" bind:value={title} placeholder="e.g. Haven postcard" /></label>
 			<label>Need them by (optional) <input type="date" bind:value={neededBy} /></label>
@@ -296,11 +358,28 @@
 	/* The art as uploaded, with the trim (solid) and safe area (dashed) drawn over it. */
 	.flat { position: relative; max-height: 20rem; background: var(--tile); }
 	.flat img { display: block; width: 100%; height: 100%; object-fit: contain; }
-	.guide { position: absolute; pointer-events: none; }
-	.guide.trim, .key.trim { border: 1.5px solid var(--red); }
-	.guide.safe, .key.safe { border: 1.5px dashed #338eda; }
-	.key { display: inline-block; width: 1rem; height: 0.7rem; margin: 0 0.25rem 0 0.75rem; vertical-align: middle; }
-	.legend { font-size: 0.85rem; margin-top: 0.5rem; }
+	.flat { overflow: hidden; }
+	/* Everything outside the trim box is bleed: red. Inside it, everything outside the safe box is amber. */
+	.zone-trim {
+		position: absolute; overflow: hidden; pointer-events: none; outline: 1.5px solid var(--red);
+		box-shadow: 0 0 0 100vmax rgba(236, 55, 80, 0.55);
+	}
+	.zone-safe { position: absolute; border: 1.5px dashed #338eda; box-shadow: 0 0 0 100vmax rgba(255, 166, 0, 0.42); }
+	.tag {
+		position: absolute; top: 0.2rem; left: 0.2rem; padding: 0.05rem 0.3rem; background: #338eda; color: white;
+		font-family: var(--mono); font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.02em;
+	}
+	.views { display: flex; gap: 0.75rem; }
+	.views .on { color: var(--dark); text-decoration: none; font-weight: 700; }
+	.zones { list-style: none; margin: 0.75rem 0 0; padding: 0; display: grid; gap: 0.4rem; font-size: 0.9rem; }
+	.zones li { display: flex; gap: 0.6rem; align-items: flex-start; }
+	.key { flex: none; width: 1.4rem; height: 0.9rem; margin-top: 0.25rem; }
+	.key.bleed { background: rgba(236, 55, 80, 0.55); }
+	.key.cut { border-top: 2px solid var(--red); height: 0; margin-top: 0.7rem; }
+	.key.unsafe { background: rgba(255, 166, 0, 0.42); }
+	.key.safe { border: 1.5px dashed #338eda; }
+	.address { margin-top: 0.75rem; }
+	.address label { margin-top: 0; }
 	.preview { margin: 1rem 0; }
 	.warn { color: #a15c00; font-weight: 700; }
 	.presets { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }

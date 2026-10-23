@@ -54,3 +54,30 @@ func TestWebRejectsNonImages(t *testing.T) {
 		t.Fatal("want error for non-image")
 	}
 }
+
+// Print art loses its bleed: a red border around white keeps only the white.
+func TestWebInsetCutsEveryEdge(t *testing.T) {
+	img := image.NewNRGBA(image.Rect(0, 0, 400, 300))
+	for y := 0; y < 300; y++ {
+		for x := 0; x < 400; x++ {
+			if x < 20 || y < 20 || x >= 380 || y >= 280 {
+				img.Set(x, y, color.NRGBA{236, 55, 80, 255})
+			} else {
+				img.Set(x, y, color.White)
+			}
+		}
+	}
+	var b bytes.Buffer
+	png.Encode(&b, img)
+	out, err := WebInset(b.Bytes(), 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := jpeg.Decode(bytes.NewReader(out))
+	if bd := got.Bounds(); bd.Dx() != 360 || bd.Dy() != 260 {
+		t.Fatalf("size = %v, want 360 x 260", bd)
+	}
+	if r, g, _, _ := got.At(0, 0).RGBA(); r>>8 < 240 || g>>8 < 240 {
+		t.Fatalf("corner = %v, want the white inside the bleed", got.At(0, 0))
+	}
+}

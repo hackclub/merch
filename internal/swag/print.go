@@ -166,16 +166,14 @@ const (
 	ArtWrongShape = "wrong_shape" // neither: it would be cropped or stretched
 )
 
-// Below minArtDPI art prints visibly blurry; below the product's DPI, a little soft.
-const minArtDPI = 150
-
 // artTolerance is how far art's proportions may be from the product's
 // (0.5%; bleed and trim differ by 2% on a postcard): the Haven postcard's
 // 1885 x 1282 px is a few pixels over 6.25 x 4.25 in at 300 DPI.
 const artTolerance = 0.005
 
 // ArtCheck says whether a piece of art (w x h pixels, either way round) will
-// print well on p. Problem is set when it shouldn't be printed as is.
+// print well on p. Problem is set when it can't be printed as is: the wrong
+// shape, or under the product's DPI (300), which Zach requires.
 type ArtCheck struct {
 	Fit     string `json:"fit"`
 	DPI     int    `json:"dpi"`
@@ -204,9 +202,19 @@ func CheckArt(p PrintProduct, w, h int) ArtCheck {
 	case c.Fit == ArtWrongShape:
 		c.Problem = fmt.Sprintf("it's %d x %d px, which isn't the shape of a %s: make it %d x %d px (%.2f\" x %.2f\" at %d DPI)",
 			w, h, p.Name, pw, ph, bw, bh, p.DPI)
-	case c.DPI < minArtDPI:
-		c.Problem = fmt.Sprintf("it's only %d DPI and would print blurry: export it at %d DPI (%d x %d px)",
-			c.DPI, p.DPI, pw, ph)
+	case c.DPI < p.DPI:
+		c.Problem = fmt.Sprintf("it's %d DPI, and prints need at least %d: export it at %d x %d px (%.2f\" x %.2f\" at %d DPI)",
+			c.DPI, p.DPI, pw, ph, bw, bh, p.DPI)
 	}
 	return c
+}
+
+// TrimInset is how many pixels of bleed come off each edge of art w x h when
+// it's trimmed: none when the art is already the trimmed size.
+func TrimInset(p PrintProduct, w, h int) int {
+	if CheckArt(p, w, h).Fit != ArtBleed {
+		return 0
+	}
+	bw, _ := p.BleedSize()
+	return int(float64(min(w, h)) * p.BleedIn / bw)
 }

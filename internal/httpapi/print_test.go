@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"image"
@@ -57,18 +58,29 @@ func TestPrintFileUpload(t *testing.T) {
 	if code := upload(staff, "postcard_4x6", art, &f); code != 201 {
 		t.Fatalf("upload = %d", code)
 	}
-	if f.URL != "https://cdn.example/1/front-side.png" || f.Width != 1875 || f.Height != 1275 || f.Fit != swag.ArtBleed || f.DPI != 300 || f.Bytes != int64(len(art)) {
+	if f.URL != "https://cdn.example/1/front-side.png" || f.PreviewURL != "https://cdn.example/2/front-side-preview.jpg" || f.Width != 1875 || f.Height != 1275 || f.Fit != swag.ArtBleed || f.DPI != 300 || f.Bytes != int64(len(art)) {
 		t.Fatalf("file = %+v", f)
 	}
 	if up := h.cdn.uploads[0]; up.contentType != "image/png" || !bytes.Equal(up.data, art) {
 		t.Fatalf("uploaded %s, %d bytes", up.contentType, len(up.data))
 	}
+	// The preview is the trimmed card, shrunk: 1800 x 1200 px of art without its bleed.
+	if up := h.cdn.uploads[1]; up.contentType != "image/jpeg" {
+		t.Fatalf("preview uploaded as %s", up.contentType)
+	} else if cfg, _, err := image.DecodeConfig(bytes.NewReader(up.data)); err != nil || cfg.Width != 1600 || cfg.Height != 1066 {
+		t.Fatalf("preview = %+v, %v", cfg, err)
+	}
 	if e := h.events("print_file_uploaded"); len(e) != 1 || props(t, e[0])["fit"] != "bleed" || props(t, e[0])["product"] != "postcard_4x6" {
 		t.Fatalf("events = %+v", e)
 	}
-	// A square won't print as a postcard; a PDF can't be previewed; nobody signed out uploads.
+	// A square won't print as a postcard; under 300 DPI won't print sharp; a PDF can't be previewed;
+	// nobody signed out uploads.
 	if code := upload(staff, "postcard_4x6", pngOf(t, 500, 500), nil); code != 422 {
 		t.Fatalf("square upload = %d", code)
+	}
+	var low struct{ Error string }
+	if code := upload(staff, "postcard_4x6", pngOf(t, 1274, 1874), &low); code != 422 || !strings.Contains(low.Error, "at least 300") {
+		t.Fatalf("299 DPI upload = %d %q", code, low.Error)
 	}
 	if code := upload(staff, "postcard_4x6", []byte("%PDF-1.7\n"+strings.Repeat("x", 100)), nil); code != 422 {
 		t.Fatalf("pdf upload = %d", code)
@@ -79,8 +91,8 @@ func TestPrintFileUpload(t *testing.T) {
 	if code := upload(h.client(""), "postcard_4x6", art, nil); code != 401 {
 		t.Fatalf("signed-out upload = %d", code)
 	}
-	if len(h.cdn.uploads) != 1 {
-		t.Fatalf("%d uploads, want 1", len(h.cdn.uploads))
+	if len(h.cdn.uploads) != 2 {
+		t.Fatalf("%d uploads, want 2", len(h.cdn.uploads))
 	}
 }
 
@@ -91,10 +103,15 @@ func TestPrintRequestFlow(t *testing.T) {
 		"product": "postcard_4x6", "title": " Haven postcard ", "quantity": 1000,
 		"front_url": "https://cdn.example/1/front.png", "back_url": "https://cdn.example/2/back.png",
 		"note": "Handing out at Haven events", "needed_by": "2026-11-10",
+		"front_preview_url": "https://cdn.example/3/front-preview.jpg", "back_preview_url": "https://cdn.example/4/back-preview.jpg",
+		"landscape": true, "initial_quantity": 25, "address": usAddr,
 	}
 	var pr store.PrintRequest
 	if code := h.do(staff, "POST", "/api/print-requests", body, &pr); code != 201 {
 		t.Fatalf("create = %d", code)
+	}
+	if pr.InitialQuantity != 25 || pr.Address == nil || pr.Address.City != "Burlington" || !pr.Landscape || pr.FrontPreviewURL == "" {
+		t.Fatalf("first shipment = %+v", pr)
 	}
 	if pr.Title != "Haven postcard" || pr.Status != "submitted" || pr.EstimateCents != 8259+3699 || pr.NeededBy == nil || pr.NeededBy.Format("2006-01-02") != "2026-11-10" {
 		t.Fatalf("created = %+v", pr)
@@ -104,11 +121,13 @@ func TestPrintRequestFlow(t *testing.T) {
 		t.Fatalf("events = %+v", e)
 	}
 	p := props(t, e[0])
-	if p["product"] != "postcard_4x6" || p["quantity"] != float64(1000) || p["has_back"] != true || p["estimate_cents"] != float64(11958) || p["note"] != nil || p["title"] != nil {
+	if p["product"] != "postcard_4x6" || p["quantity"] != float64(1000) || p["has_back"] != true || p["estimate_cents"] != float64(11958) || p["note"] != nil || p["title"] != nil ||
+		p["initial_quantity"] != float64(25) || p["country"] != "US" || p["address"] != nil {
 		t.Fatalf("props = %+v", p)
 	}
 
-	for k, v := range map[string]any{"product": "banner", "title": "", "quantity": 7, "front_url": "javascript:alert(1)", "back_url": "ftp://x", "note": "", "needed_by": "soon"} {
+	for k, v := range map[string]any{"product": "banner", "title": "", "quantity": 7, "front_url": "javascript:alert(1)", "back_url": "ftp://x", "note": "", "needed_by": "soon",
+		"initial_quantity": 30, "address": map[string]any{"city": "Burlington"}, "front_preview_url": "ftp://x"} {
 		bad := map[string]any{}
 		for kk, vv := range body {
 			bad[kk] = vv
@@ -117,6 +136,23 @@ func TestPrintRequestFlow(t *testing.T) {
 		if code := h.do(staff, "POST", "/api/print-requests", bad, nil); code != 422 {
 			t.Errorf("bad %s = %d, want 422", k, code)
 		}
+	}
+	// More than the whole run, or a first shipment with nowhere to go, is refused; none needs no address.
+	for _, change := range []map[string]any{{"initial_quantity": 1050}, {"address": nil}, {"initial_quantity": -5}} {
+		bad := map[string]any{}
+		for kk, vv := range body {
+			bad[kk] = vv
+		}
+		for kk, vv := range change {
+			bad[kk] = vv
+		}
+		if code := h.do(staff, "POST", "/api/print-requests", bad, nil); code != 422 {
+			t.Errorf("%v = %d, want 422", change, code)
+		}
+	}
+	if code := h.do(staff, "POST", "/api/print-requests", map[string]any{"product": "poster_11x17", "title": "Sprig poster", "quantity": 100,
+		"front_url": "https://cdn.example/f.png", "note": "Libraries", "initial_quantity": 0}, nil); code != 201 {
+		t.Fatalf("no first shipment = %d", code)
 	}
 	if code := h.do(h.client(""), "POST", "/api/print-requests", body, nil); code != 401 {
 		t.Fatalf("signed-out create = %d", code)
@@ -130,7 +166,7 @@ func TestPrintRequestFlow(t *testing.T) {
 		PrintRequests []store.PrintRequest `json:"print_requests"`
 	}
 	h.do(h.client(userEmail), "GET", "/api/print-requests", nil, &others)
-	if len(mine.PrintRequests) != 1 || len(others.PrintRequests) != 0 {
+	if len(mine.PrintRequests) != 2 || len(others.PrintRequests) != 0 {
 		t.Fatalf("mine = %d, others = %d", len(mine.PrintRequests), len(others.PrintRequests))
 	}
 
@@ -141,17 +177,71 @@ func TestPrintRequestFlow(t *testing.T) {
 	var all struct {
 		PrintRequests []store.PrintRequest `json:"print_requests"`
 	}
-	if code := h.do(admin, "GET", "/api/admin/print-requests", nil, &all); code != 200 || len(all.PrintRequests) != 1 || all.PrintRequests[0].UserEmail != "staff@hackclub.com" {
+	if code := h.do(admin, "GET", "/api/admin/print-requests", nil, &all); code != 200 || len(all.PrintRequests) != 2 || all.PrintRequests[0].UserEmail != "staff@hackclub.com" {
 		t.Fatalf("admin list = %d %+v", code, all)
+	}
+	// Stocked needs the SKU it's under, to list it and send the first shipment.
+	if code := h.do(admin, "PUT", path, map[string]any{"status": "stocked"}, nil); code != 422 {
+		t.Fatalf("stocked without SKU = %d", code)
 	}
 	var upd store.PrintRequest
 	if code := h.do(admin, "PUT", path, map[string]any{"status": "stocked", "admin_note": "In the shop", "sku": " Pri/Hav/4x6/1st "}, &upd); code != 200 || upd.Status != "stocked" || upd.SKU != "Pri/Hav/4x6/1st" {
 		t.Fatalf("update = %d %+v", code, upd)
 	}
+	// It's listed in the shop for everyone, made from the art (landscape like the art).
+	items, _ := h.store.ItemsBySKU(context.Background(), []string{"Pri/Hav/4x6/1st"})
+	if len(items) != 1 {
+		t.Fatalf("items = %+v", items)
+	}
+	it := items[0]
+	if !it.Visible || it.StaffOnly || it.Name != "Haven postcard" || it.Packs != "postcard" || it.Finish != "linen" || *it.WidthIn != 6 || *it.HeightIn != 4 ||
+		len(it.Images) != 2 || it.Images[0] != "https://cdn.example/3/front-preview.jpg" {
+		t.Fatalf("item = %+v", it)
+	}
+	// The first shipment is a request on their account, waiting for review like any other.
+	if upd.ShipmentRequestID == nil {
+		t.Fatalf("no first shipment request: %+v", upd)
+	}
+	req, err := h.store.GetRequest(context.Background(), *upd.ShipmentRequestID)
+	if err != nil || req.Status != swag.StatusPending || req.Purpose != "staff" || req.Address.City != "Burlington" ||
+		len(req.Lines) != 1 || req.Lines[0].ItemID != it.ID || req.Lines[0].Quantity != 25 || !strings.Contains(req.Note, "first 25") {
+		t.Fatalf("first shipment = %+v, %v", req, err)
+	}
+	if e := h.events("print_request_updated"); len(e) != 1 || props(t, e[0])["shipment_request_id"] != float64(req.ID) {
+		t.Fatalf("stocked events = %+v", e)
+	}
+	// Saving it again doesn't send a second shipment.
+	if code := h.do(admin, "PUT", path, map[string]any{"status": "stocked", "sku": "Pri/Hav/4x6/1st"}, &upd); code != 200 || *upd.ShipmentRequestID != req.ID {
+		t.Fatalf("resave = %d %+v", code, upd)
+	}
 	if code := h.do(admin, "PUT", path, map[string]any{"status": "lost"}, nil); code != 422 {
 		t.Fatalf("bad status = %d", code)
 	}
-	if e := h.events("print_request_updated"); len(e) != 1 || props(t, e[0])["from"] != "submitted" || props(t, e[0])["to"] != "stocked" {
+	if e := h.events("print_request_updated"); len(e) != 2 || props(t, e[0])["from"] != "submitted" || props(t, e[0])["to"] != "stocked" {
 		t.Fatalf("update events = %+v", e)
+	}
+}
+
+// A run stocked under a SKU that's already listed ships from that item; abroad,
+// the first shipment waits for its postage like any international request.
+func TestPrintFirstShipmentUsesListedItem(t *testing.T) {
+	h := newHarness(t)
+	staff, admin := h.client("staff@hackclub.com"), h.client(adminEmail)
+	listed := h.mkItem("Pri/Spr/11x/Lar", true)
+	var pr store.PrintRequest
+	if code := h.do(staff, "POST", "/api/print-requests", map[string]any{"product": "poster_11x17", "title": "Sprig poster", "quantity": 100,
+		"front_url": "https://cdn.example/f.png", "note": "Libraries", "initial_quantity": 5, "address": deAddr}, &pr); code != 201 {
+		t.Fatalf("create = %d", code)
+	}
+	var upd store.PrintRequest
+	if code := h.do(admin, "PUT", fmt.Sprintf("/api/admin/print-requests/%d", pr.ID), map[string]any{"status": "stocked", "sku": "Pri/Spr/11x/Lar"}, &upd); code != 200 || upd.ShipmentRequestID == nil {
+		t.Fatalf("stocked = %d %+v", code, upd)
+	}
+	req, _ := h.store.GetRequest(context.Background(), *upd.ShipmentRequestID)
+	if req.Lines[0].ItemID != listed.ID || req.Status != swag.StatusAwaitingPayment || req.ShippingFeeCents <= 0 {
+		t.Fatalf("first shipment = %+v", req)
+	}
+	if items, _ := h.store.ItemsBySKU(context.Background(), []string{"Pri/Spr/11x/Lar"}); len(items) != 1 {
+		t.Fatalf("items = %d, want the one listed", len(items))
 	}
 }

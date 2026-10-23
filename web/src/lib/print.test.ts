@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkArt, guides, printArtProps, estimateLine, neededByNote, readyText, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
+import { checkArt, firstShipmentOptions, guides, printArtProps, estimateLine, neededByNote, readyText, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
 
 const postcard: PrintProduct = {
 	key: 'postcard_4x6', name: '4x6 postcard', paper: 'Premium linen card stock', vendor: 'Vistaprint', width_in: 4, height_in: 6,
@@ -17,15 +17,17 @@ describe('checkArt (mirrors swag.CheckArt)', () => {
 		expect(checkArt(postcard, 1275, 1875)).toEqual({ fit: 'bleed', dpi: 300 });
 		expect(checkArt(postcard, 1885, 1282)).toEqual({ fit: 'bleed', dpi: 301 });
 	});
-	it('warns about art without bleed and soft resolution', () => {
+	it('warns about art without bleed', () => {
 		const trim = checkArt(postcard, 3000, 2000);
 		expect(trim.fit).toBe('trim');
 		expect(trim.warning).toMatch(/no bleed/i);
-		expect(checkArt(postcard, 850, 1250).warning).toMatch(/200 DPI/);
+		expect(trim.problem).toBeUndefined();
 	});
-	it('refuses the wrong shape or a blurry file', () => {
+	it('refuses the wrong shape, and anything under 300 DPI', () => {
 		expect(checkArt(postcard, 2000, 2000).problem).toMatch(/1275 x 1875 px/);
-		expect(checkArt(postcard, 425, 625).problem).toMatch(/blurry/);
+		expect(checkArt(postcard, 850, 1250).problem).toMatch(/200 DPI.*at least 300/);
+		expect(checkArt(postcard, 1274, 1874).problem).toMatch(/299 DPI/);
+		expect(checkArt(postcard, 800, 1200).problem).toMatch(/200 DPI/); // trim size, too small
 	});
 });
 
@@ -44,6 +46,9 @@ describe('guides', () => {
 		expect(g.trim.x).toBeCloseTo(2);
 		expect(g.trim.y).toBeCloseTo(2.941, 2);
 		expect(g.safe.x).toBeCloseTo(4);
+		// ⅛" of the 6" x 4" trimmed card.
+		expect(g.safeInTrim.x).toBeCloseTo(2.083, 2);
+		expect(g.safeInTrim.y).toBeCloseTo(3.125);
 	});
 	it('has no bleed to cut on art at the trim size', () => {
 		const g = guides(postcard, 3000, 2000);
@@ -67,6 +72,16 @@ describe('templateSVG', () => {
 		expect(svg).toMatch(/<rect x="37.5" y="37.5" width="1800" height="1200"/); // trim
 		expect(svg).toMatch(/<rect x="75" y="75" width="1725" height="1125"/); // safe
 		expect(svg).toContain('6.25" x 4.25"');
+	});
+});
+
+describe('firstShipmentOptions', () => {
+	it('offers postcards in the packs the shop sends, up to the run', () => {
+		expect(firstShipmentOptions(postcard, 1000)).toEqual([0, 5, 10, 15, 20, 25, 50, 100, 150, 200, 250]);
+		expect(firstShipmentOptions(postcard, 100)).toEqual([0, 5, 10, 15, 20, 25, 50, 100]);
+	});
+	it('offers posters a few at a time', () => {
+		expect(firstShipmentOptions({ ...postcard, postcard: false }, 25)).toEqual([0, 1, 2, 3, 5, 10, 15, 20, 25]);
 	});
 });
 

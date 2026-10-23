@@ -109,10 +109,24 @@ func TestCheckArt(t *testing.T) {
 		{"trim size, no bleed", 3000, 2000, ArtTrim, 500, false},
 		{"square", 2000, 2000, ArtWrongShape, 0, true},
 		{"too small", 425, 625, ArtBleed, 100, true},
+		{"a pixel under 300 DPI", 1274, 1874, ArtBleed, 299, true},
+		{"trim size at 200 DPI", 800, 1200, ArtTrim, 200, true},
 	} {
 		c := CheckArt(pc, tc.w, tc.h)
 		if c.Fit != tc.fit || c.DPI != tc.dpi || (c.Problem != "") != tc.problem {
 			t.Errorf("%s: %+v", tc.name, c)
 		}
+	}
+}
+
+func TestTrimInset(t *testing.T) {
+	pc, _ := PrintProductByKey("postcard_4x6")
+	// ⅛" of a 4.25" side: the bleed comes off every edge.
+	if got := TrimInset(pc, 1875, 1275); got != 37 {
+		t.Fatalf("inset = %d, want 37 px", got)
+	}
+	// Art at the trimmed size has no bleed to cut.
+	if got := TrimInset(pc, 3000, 2000); got != 0 {
+		t.Fatalf("trim-size inset = %d", got)
 	}
 }

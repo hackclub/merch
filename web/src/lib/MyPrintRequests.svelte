@@ -24,6 +24,9 @@
 			</div>
 			<p>{p.quantity.toLocaleString('en-US')} × {p.product === 'postcard_4x6' ? '4x6 postcard' : '11x17 poster'} · <a href={p.front_url} target="_blank" rel="noreferrer">front</a>{#if p.back_url} · <a href={p.back_url} target="_blank" rel="noreferrer">back</a>{/if}</p>
 			<p class="muted">Sent {new Date(p.created_at).toLocaleDateString()}{p.needed_by ? ` · needed by ${p.needed_by.slice(0, 10)}` : ''}</p>
+			{#if p.initial_quantity}
+				<p>{p.shipment_request_id ? `The first ${p.initial_quantity} are on their way to you: request #${p.shipment_request_id} below.` : `We'll send you the first ${p.initial_quantity} when they reach our warehouse.`}</p>
+			{/if}
 			{#if p.status === 'stocked' && p.sku}<p>In the warehouse. <a href="/">Request it from the shop</a> like any other item.</p>{/if}
 			{#if p.admin_note}<p class="muted">Note from Hack Club: {p.admin_note}</p>{/if}
 		</div>
