@@ -526,7 +526,7 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   browser took back); `heap_mb` (Chrome); snapshots like `page_time`, so use the
   **`usage_page_perf`** view), `view3d` (one 3D view's life, from `meterView` in `$lib/track`:
   `vid`, `view` = `product`, `tile` or `haul`, `kind` (`sheet`, `book`, `fold`, `stickers`,
-  `postcards`, `shirt`, `pin`; the haul's `haul`, `table` or `compact`), `item_id`, `load_ms` (code
+  `postcards`, `shirt`, `pin`, `model`; the haul's `haul`, `table` or `compact`), `item_id`, `load_ms` (code
   downloaded and scene built), `ready_ms` (images in, drawn for real), `alive_ms`, `draws`,
   `render_p50`/`p95`/`max` (ms of main thread per draw; the GPU's share shows up as slow frames),
   `fps` and the frame stats above while it's moving, `px` (drawing buffer), `dpr`, `gl` (`shared`
@@ -806,6 +806,13 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   stands proud of glossy enamel, and the back gets a post and butterfly clutch (two on a pin
   1.4" or wider). The product page floats it beside a phone; the haul lays them face up in rows
   of 5.
+  Things that aren't printed (the Orpheus plushie) have a 3D model of the real thing: `items.model`
+  is a GLB URL (admin Items tab), scaled to `height_in` (default 10") and turned beside a phone
+  (`model.ts`, `model3d.ts`, lazy-loaded with three.js's GLB loader and meshopt decoder); the haul
+  sits copies side by side, three to a row. Leave `thickness_in` unset on these: `Pack` would
+  then box a squashable plush as a rigid 3D object. The plushie's model was made 2026-10-23 from
+  photos: a Hunyuan3D-2mv shape from a real front photo plus generated side and back views, white
+  fabric with the eyes, nostrils and mouth projected from the real photo, 188 KB as a meshopt GLB.
   Shop grid tiles (`web/src/lib/Tile3D.svelte`) show the same 3D views without the phone, still
   until touched. Tiles and the small request pile (`Haul3D` `compact`) mark their canvas
   `data-gl="shared"`: `createStage` (`paper3d.ts`) draws them all through one WebGL renderer and

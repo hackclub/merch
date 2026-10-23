@@ -6,7 +6,7 @@ import type { Item } from './types';
 
 const base: Item = {
 	id: 1, sku: 'Pri/A', name: 'Poster', description: '', images: ['poster.jpg'], visible: true, sort_order: 0, max_per_request: 10, min_per_request: 1, quick_picks: [], max_per_user: null,
-	width_in: 11, height_in: 17, variants: [], finish: '', thickness_in: 0.01, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, staff_only: false, allow_backorder: false, clip: ''
+	width_in: 11, height_in: 17, variants: [], finish: '', thickness_in: 0.01, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, staff_only: false, model: '', allow_backorder: false, clip: ''
 };
 const mag: Item = { ...base, id: 2, name: 'Mini-Magazine', images: [], pages: ['p1.jpg', 'p2.jpg', 'p3.jpg', 'p4.jpg'], binding: 'staple', width_in: 6, height_in: 6, thickness_in: null };
 const shirt: Item = { ...base, id: 3, name: 'T-Shirt', images: ['tee.jpg'], width_in: null, height_in: null, variants: [{ label: 'M', sku: 'T/M' }] };
@@ -73,6 +73,22 @@ describe('piles', () => {
 			['5 × Magazine 2025', 'booklet', 5],
 			['5 × Intro Card', 'paper', 5]
 		]);
+	});
+});
+
+describe('3D models', () => {
+	const plush: Item = { ...base, id: 6, sku: 'Swa/HC/Plu/Orp', name: 'Orpheus Plushie', images: ['plush.jpg'], model: 'orpheus.glb', width_in: 8, height_in: 10, thickness_in: null };
+
+	it('sit side by side, three to a row, at their real height', () => {
+		const [p] = piles([{ item: plush, quantity: 4 }]);
+		expect(p).toMatchObject({ kind: 'model', model: 'orpheus.glb', count: 4, art: 'plush.jpg', widthIn: 8, heightIn: 10, height: 10 });
+		expect(p.w).toBeCloseTo(3 * 8);
+		expect(p.d).toBeCloseTo(2 * 10);
+	});
+
+	it('take a plush toy\'s usual size without measurements', () => {
+		const [p] = piles([{ item: { ...plush, width_in: null, height_in: null }, quantity: 1 }]);
+		expect(p).toMatchObject({ kind: 'model', w: 8, d: 10, height: 10, heightIn: 10 });
 	});
 });
 

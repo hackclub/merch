@@ -1,7 +1,7 @@
 // Draws layoutHaul's table (haul.ts): every pile at true size — sealed clear zip
 // bags of 50 die-cut stickers, fanned loose stickers, banded postcard bundles,
 // booklet stacks with spines and page edges, shop-folded T-shirts (shirt3d.ts), enamel pins
-// lying face up (pin3d.ts), posters, and
+// lying face up (pin3d.ts), plushies from their 3D models (model3d.ts), posters, and
 // trifold brochures whose top one opens out flat and folds back up on a loop (fold3d.ts) —
 // next to a phone (and, on folding tables, an open laptop) for scale, seen from
 // above at an angle. Units are inches.
@@ -12,6 +12,7 @@ import { finishInfo } from './paper';
 import { foldCycle } from './fold';
 import { createTrifold, type Trifold } from './fold3d';
 import { createPhone, createStage, edgeColor, loadArt, pageEdges, paperBand, paperEdge, paperFace, PHONE_DEPTH } from './paper3d';
+import { modelGrid } from './model';
 import { PIN_GAP_IN, pinGrid, POST_IN, BODY_IN } from './pin';
 import { loadPin, type PinModel } from './pin3d';
 import { foldedShirtGeometry, shirtLook, shirtMaterial } from './shirt3d';
@@ -202,6 +203,37 @@ export function createHaulViewer(canvas: HTMLCanvasElement, initial: HaulLayout,
 				}
 				doneOne();
 			});
+			return;
+		}
+
+		if (p.kind === 'model') {
+			// Sitting side by side at their real height, each turned a little.
+			const count = Math.max(1, p.count ?? 1);
+			const label = `${p.label} · ${tall(p.height)}`;
+			const hit = new THREE.Mesh(new THREE.BoxGeometry(p.w, p.height, p.d), hitMat);
+			hit.position.set(p.x, p.height / 2, p.z);
+			hit.userData.label = label;
+			contents.add(hit);
+			disposers.push(() => hit.geometry.dispose());
+			if (!p.model) return doneOne();
+			const url = p.model;
+			// Loaded only when a request has one: three.js's GLB loader stays out of the haul's code.
+			import('./model3d')
+				.then((m) => m.loadModel(url, p.heightIn ?? p.height))
+				.then((one) => {
+					if (gen !== generation) return;
+					const { cols, rows } = modelGrid(count);
+					const cellW = p.w / cols, cellD = p.d / rows;
+					for (let i = 0; i < count; i++) {
+						const copy = i ? one.group.clone() : one.group;
+						copy.rotation.y = Math.sin(i * 2.3 + 1) * 0.25;
+						copy.position.set(p.x - p.w / 2 + cellW / 2 + (i % cols) * cellW, 0, p.z - p.d / 2 + cellD / 2 + Math.floor(i / cols) * cellD);
+						copy.traverse((o) => (o.userData.label = label));
+						contents.add(copy);
+					}
+					doneOne();
+				})
+				.catch(() => gen === generation && doneOne());
 			return;
 		}
 

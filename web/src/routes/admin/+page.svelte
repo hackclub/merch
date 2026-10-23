@@ -443,6 +443,8 @@
 									oninput={(e) => (it.ships_with = e.currentTarget.value.split(',').map((x) => x.trim()).filter(Boolean))} /></label>
 							<label>Shop tile clip (looping MP4, GIF or photo URL)
 								<input type="url" bind:value={it.clip} placeholder="https://cdn.hackclub.com/…/flip.mp4" /></label>
+							<label>3D model (GLB URL, for things that aren't printed; set the height to stand it at true size)
+								<input type="url" bind:value={it.model} placeholder="https://cdn.hackclub.com/…/orpheus.glb" /></label>
 							<label>Per person, ever (blank = no cap)
 								<input type="number" min="0" value={it.max_per_user ?? ''}
 									oninput={(e) => (it.max_per_user = e.currentTarget.value === '' ? null : +e.currentTarget.value)} /></label>

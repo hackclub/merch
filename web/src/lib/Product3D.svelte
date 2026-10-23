@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Interactive 3D view of a printed item (see paper3d.ts), a sticker request
-	// (sticker3d.ts), a T-shirt (shirt3d.ts) or an enamel pin (pin3d.ts): slowly spins like a store's 3D product view; drag or arrow
+	// (sticker3d.ts), a T-shirt (shirt3d.ts), an enamel pin (pin3d.ts) or a 3D model
+	// of the real thing, like the plushie (model3d.ts): slowly spins like a store's 3D product view; drag or arrow
 	// keys turn it, + / − zoom in to see the paper. Postcards lie in stacks, and the
 	// last one turns over to show the back. Booklets (book3d.ts) also
 	// open: drag, arrow keys or the slider turn their pages. A trifold brochure
@@ -22,6 +23,7 @@
 	import { postcardLabel } from './postcards';
 	import { shirtSize } from './shirt';
 	import { pinFacts } from './pin';
+	import { modelLabel } from './model';
 
 	// count: how many stickers or postcards are requested; the view grows to match.
 	let { preview, name, count = 0 }: { preview: Preview3D; name: string; count?: number } = $props();
@@ -57,7 +59,9 @@
 							? preview.shirt.front
 							: 'pin' in preview
 								? preview.pin.front
-								: preview.stickers.front
+								: 'model' in preview
+									? preview.model.front
+									: preview.stickers.front
 	);
 	// Shirts always have a back to show, if only a plain one; pins, their posts and clutches.
 	const back = $derived(
@@ -88,7 +92,9 @@
 						? `Size ${preview.shirt.size}, about ${sizeLabel(shirtSize(preview.shirt.size).chest, shirtSize(preview.shirt.size).length)}`
 						: 'pin' in preview
 							? pinFacts(preview.pin.widthIn, preview.pin.heightIn)
-							: ''
+							: 'model' in preview
+								? modelLabel(preview.model.heightIn)
+								: ''
 	);
 	$effect(() => {
 		const n = count;

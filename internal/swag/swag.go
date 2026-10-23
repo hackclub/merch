@@ -93,6 +93,10 @@ type Item struct {
 	// Clip is a short looping video or GIF of the real item (someone flipping
 	// through it); the shop tile plays it instead of the 3D view.
 	Clip string `json:"clip"`
+	// Model is a 3D model of the real thing (a GLB file), for things that
+	// aren't printed, like the Orpheus plushie; the product page turns it beside
+	// a phone, scaled to HeightIn.
+	Model string `json:"model"`
 
 	// ClubOnly items (the full-size magazine, the T-shirt) aren't offered for
 	// personal requests, only to people running a club or an event.

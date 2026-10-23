@@ -5,7 +5,7 @@ import type { Item } from './types';
 const poster: Item = {
 	id: 681, sku: 'Pri/HPd/11x/1st', name: '11x17 Hackpad Poster (Double-Sided)', description: '',
 	images: ['https://cdn.example/front.jpg', 'https://cdn.example/back.jpg'],
-	visible: true, sort_order: 1, max_per_request: 1, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, staff_only: false, allow_backorder: false, clip: ''
+	visible: true, sort_order: 1, max_per_request: 1, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: 11, height_in: 17, variants: [], finish: 'matte', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, staff_only: false, model: '', allow_backorder: false, clip: ''
 };
 
 describe('item URLs', () => {
@@ -170,6 +170,16 @@ describe('productPreview', () => {
 		expect(tilePreview(pin)).toEqual({ pin: { kind: 'pin', front: 'https://cdn.example/pin.jpg', widthIn: 2, heightIn: 1, phone: false } });
 		expect(productPreview({ ...pin, width_in: null, height_in: null })).toMatchObject({ pin: { widthIn: null, heightIn: null } });
 		expect(productPreview({ ...pin, images: [] })).toBeNull();
+	});
+
+	it('turns a 3D model (the plushie) beside a phone, scaled to its height', () => {
+		const plush: Item = { ...poster, sku: 'Swa/HC/Plu/Orp', name: 'Orpheus Plushie', images: ['https://cdn.example/plush.jpg'], model: 'https://cdn.example/orpheus.glb', width_in: 8, height_in: 10 };
+		expect(productPreview(plush)).toEqual({ model: { kind: 'model', url: 'https://cdn.example/orpheus.glb', front: 'https://cdn.example/plush.jpg', widthIn: 8, heightIn: 10, phone: true } });
+		expect(tilePreview(plush)).toEqual({ model: { kind: 'model', url: 'https://cdn.example/orpheus.glb', front: 'https://cdn.example/plush.jpg', widthIn: 8, heightIn: 10, phone: false } });
+		// Without measurements it still shows, at a plush toy's usual size.
+		expect(productPreview({ ...plush, width_in: null, height_in: null })).toMatchObject({ model: { widthIn: null, heightIn: null } });
+		expect(previewKind(productPreview(plush)!)).toBe('model');
+		expect(showsAmountIn3D(plush)).toBe(false);
 	});
 
 	it('builds the product-page 3D view with a phone and any ships_with extras, ignoring clips', () => {

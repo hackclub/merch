@@ -81,6 +81,7 @@ export function tileFact(item: Item): string {
 	const facts: string[] = [];
 	if (item.variants.length) facts.push(item.variants.map((v) => v.label).join(' '));
 	if (item.binding && item.pages.length) facts.push(`${item.pages.length} pages`);
+	else if (item.model && item.height_in) facts.push(`${item.height_in} in tall`);
 	else if (item.width_in && item.height_in && item.packs !== 'sticker') facts.push(`${item.width_in}×${item.height_in} in`);
 	if (item.packs === 'sticker') facts.push('3, 10 or packs of 50');
 	else if (item.packs) facts.push('in fives');

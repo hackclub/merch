@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { sectionize, tileFact } from './sections';
 import type { Item } from './types';
 
-const base: Item = { id: 0, sku: '', name: '', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, staff_only: false, allow_backorder: false, clip: '' };
+const base: Item = { id: 0, sku: '', name: '', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, staff_only: false, model: '', allow_backorder: false, clip: '' };
 const item = (id: number, sku: string, sort_order = id): Item => ({ ...base, id, sku, name: sku, sort_order });
 
 const mag = { ...item(1, 'Pri/Bok/M25/1st'), binding: 'perfect' };
@@ -79,6 +79,8 @@ describe('tileFact', () => {
 		expect(tileFact({ ...mini, packs: 'fives', binding: 'staple', pages: Array(12).fill('p') })).toBe('12 pages · in fives');
 		expect(tileFact({ ...welcome, packs: 'postcard', width_in: 6, height_in: 4 })).toBe('6×4 in · in fives');
 		expect(tileFact({ ...poster, width_in: 11, height_in: 17 })).toBe('11×17 in');
+		// A 3D model's fact is how tall it stands.
+		expect(tileFact({ ...shirt, sku: 'Swa/HC/Plu/Orp', model: 'orpheus.glb', width_in: 8, height_in: 10 })).toBe('10 in tall');
 		expect(tileFact({ ...poster, width_in: 11, height_in: 17, min_per_request: 2 })).toBe('11×17 in · at least 2');
 		expect(tileFact(mystery)).toBe('');
 	});

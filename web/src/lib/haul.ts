@@ -6,6 +6,7 @@ import { foldedSize, panelU } from './fold';
 import { isBooklet, isTrifold, shipsWith, thumbnail } from './items';
 import { sheetThickness } from './paper';
 import { CARD_IN, PER_BUNDLE } from './postcards';
+import { modelGrid, modelSize } from './model';
 import { isPin, PIN_GAP_IN, PIN_PILE_H, pinGrid } from './pin';
 import { PHONE } from './scale';
 import { PER_BAG, STICKER_THICKNESS_IN } from './stickers';
@@ -13,7 +14,7 @@ import type { Item, RequestLine } from './types';
 
 export type HaulLine = { item: Item; quantity: number; size?: string };
 
-export type PileKind = 'paper' | 'booklet' | 'sticker' | 'shirt' | 'pin' | 'box';
+export type PileKind = 'paper' | 'booklet' | 'sticker' | 'shirt' | 'pin' | 'model' | 'box';
 
 export type Pile = {
 	key: string;
@@ -30,6 +31,7 @@ export type Pile = {
 	binding?: string; // booklet binding ('staple' | 'perfect')
 	band?: boolean; // a printer's bundle, with a paper band around it
 	bag?: boolean; // a clear zip bag of 50 stickers
+	model?: string; // a 3D model's GLB, one per unit, sitting side by side
 	widthIn?: number | null;
 	heightIn?: number | null;
 };
@@ -132,6 +134,15 @@ function pileOf({ item, quantity, size }: HaulLine): Pile {
 		return {
 			key, label, art, w, d, height: STICKER_THICKNESS_IN * quantity,
 			kind: 'sticker', count: quantity, widthIn: item.width_in, heightIn: item.height_in
+		};
+	}
+	if (item.model) {
+		// Sitting side by side, three to a row, at their real height.
+		const one = modelSize(item);
+		const { cols, rows } = modelGrid(quantity);
+		return {
+			key, label, art, w: cols * one.w, d: rows * one.d, height: one.h,
+			kind: 'model', model: item.model, count: quantity, widthIn: one.w, heightIn: one.h
 		};
 	}
 	if (isPin(item)) {

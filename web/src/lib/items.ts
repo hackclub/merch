@@ -2,6 +2,7 @@ import type { BookOptions } from './book3d';
 import type { FoldOptions } from './fold3d';
 import { sheetThickness } from './paper';
 import type { Viewer, ViewerOptions } from './paper3d';
+import type { ModelOptions } from './model';
 import { isPin } from './pin';
 import type { PinOptions } from './pin3d';
 import { hasSize } from './scale';
@@ -37,7 +38,7 @@ export const isBooklet = (item: Item) => item.binding !== '' && item.binding !==
 /** A trifold brochure with its outside (images[0]) and inside (images[1]) art folds and unfolds in 3D. */
 export const isTrifold = (item: Item) => item.binding === 'trifold' && item.images.length >= 2;
 
-/** A 3D product preview: booklet flip-through, trifold, printed sheet, sticker packs, postcard bundles, a T-shirt, or an enamel pin. */
+/** A 3D product preview: booklet flip-through, trifold, printed sheet, sticker packs, postcard bundles, a T-shirt, an enamel pin, or a 3D model. */
 export type Preview3D =
 	| { book: BookOptions } // a booklet that flips through its pages
 	| { fold: FoldOptions } // a trifold brochure that opens and folds up
@@ -45,7 +46,8 @@ export type Preview3D =
 	| { stickers: StickerOptions }
 	| { postcards: PostcardOptions } // a stack, or bundles of 50
 	| { shirt: ShirtOptions } // cut out of its product photos, front and back
-	| { pin: PinOptions }; // die-struck metal cut out of its photo, enamel between raised gold lines
+	| { pin: PinOptions } // die-struck metal cut out of its photo, enamel between raised gold lines
+	| { model: ModelOptions }; // a 3D model of the real thing (the plushie)
 
 /** What a shop tile shows instead of its photo; null = just the photo. */
 /** Which kind of 3D view a preview is, for performance analytics (view3d's kind). */
@@ -60,6 +62,9 @@ export type TilePreview =
  * extras standing beside a booklet) or alone on a shop tile (phone = false).
  */
 export function productPreview(item: Item, includes: Item[] = [], phone = true): Preview3D | null {
+	if (item.model) {
+		return { model: { kind: 'model', url: item.model, front: thumbnail(item), widthIn: item.width_in, heightIn: item.height_in, phone } };
+	}
 	if (item.packs === 'sticker') {
 		return item.images.length
 			? { stickers: { kind: 'stickers', front: item.images[0], widthIn: item.width_in, heightIn: item.height_in, phone } }
@@ -151,6 +156,7 @@ export function loadPreviewViewer(canvas: HTMLCanvasElement, preview: Preview3D,
 			return v;
 		});
 	}
+	if ('model' in preview) return import('./model3d').then((m) => m.createModelViewer(canvas, preview.model, onReady));
 	if ('pin' in preview) return import('./pin3d').then((m) => m.createPinViewer(canvas, preview.pin, onReady));
 	if ('shirt' in preview) return import('./shirt3d').then((m) => m.createShirtViewer(canvas, preview.shirt, onReady));
 	return import('./paper3d').then((m) => m.createViewer(canvas, preview.sheet, onReady));

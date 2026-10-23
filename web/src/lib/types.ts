@@ -27,6 +27,7 @@ export type Item = {
 	ships_with: string[]; // warehouse SKUs packed with every unit (the magazine's card)
 	club_only: boolean; // not offered for personal requests, only clubs and events
 	staff_only: boolean; // offered only to Hack Club staff requests (the Orpheus plushie)
+	model: string; // a 3D model (GLB URL) of something that isn't printed, like the plushie
 	allow_backorder: boolean; // requests can take more than the warehouse has; they ship once the restock arrives
 	clip: string; // looping video, GIF or photo of the real thing, shown on its shop tile; '' = none
 };
