@@ -6,12 +6,15 @@
 	import { goto } from '$app/navigation';
 	import { api, ApiError, fileToBase64, isInternational } from './api';
 	import { blankAddress, prefillAddress } from './address';
+	import { applyPlace } from './addressSearch';
+	import AddressLine1 from './AddressLine1.svelte';
+	import type { Address } from './types';
 	import { session } from './session.svelte';
 	import { track } from './track';
 	import Product3D from './Product3D.svelte';
 	import type { Preview3D } from './items';
 	import {
-		checkArt, estimateLine, firstShipmentOptions, guides, neededByNote, printArtProps, quantityPresets, readyText, sheetFor, templateSVG, trimCrop,
+		arrivalLine, checkArt, estimateLine, firstShipmentOptions, guides, printArtProps, quantityPresets, sheetFor, templateSVG, timelineRows, trimCrop,
 		type ArtCheck, type PrintEstimate, type PrintProduct, type PrintRequest
 	} from './print';
 
@@ -24,9 +27,12 @@
 	const product = $derived(products.find((p) => p.key === key));
 	let art = $state<Record<Side, Art | null>>({ front: null, back: null });
 	let reading = $state<Record<Side, string>>({ front: '', back: '' }); // why a file couldn't be read
-	let title = $state('');
+	// The same art on both sides unless they upload a different back.
+	let backMode = $state<'same' | 'different'>('same');
+	let title = $state(''); // what the item is called in the warehouse
+	let program = $state('');
+	let deadline = $state('');
 	let quantity = $state(1000);
-	let neededBy = $state('');
 	let note = $state('');
 	// The first ones sent to them once the run reaches the warehouse, and where.
 	let initial = $state(25);
@@ -55,14 +61,15 @@
 		}
 	}
 
-	// Re-estimate as the product or quantity changes.
+	// Re-estimate as the product, quantity or first shipment changes: the last leg is to their country.
 	$effect(() => {
 		if (!product) return;
 		const q = quantity;
 		const k = product.key;
+		const first = initial > 0 ? `&first=${initial}&country=${encodeURIComponent(address.country.trim() || 'US')}` : '';
 		const timer = setTimeout(async () => {
 			try {
-				estimate = await api.get<PrintEstimate>(`/api/print/estimate?product=${k}&quantity=${q}`);
+				estimate = await api.get<PrintEstimate>(`/api/print/estimate?product=${k}&quantity=${q}${first}`);
 				estimateError = '';
 			} catch (e) {
 				estimate = null;
@@ -92,8 +99,8 @@
 		if (old) (URL.revokeObjectURL(old.url), URL.revokeObjectURL(old.trimmed));
 		art[side] = null;
 		if (!file || !product) return;
-		if (!/^image\/(png|jpeg)$/.test(file.type)) {
-			reading[side] = 'Pick a PNG or JPEG. (Export a PDF as a 300 DPI PNG.)';
+		if (file.type !== 'image/png') {
+			reading[side] = 'Pick a PNG. (Export your art as a PNG at 300 DPI or higher.)';
 			track('print_art', printArtProps(product.key, side, null, file.size, file.type));
 			input.value = '';
 			return;
@@ -113,7 +120,15 @@
 		const a = art[side];
 		if (a) (URL.revokeObjectURL(a.url), URL.revokeObjectURL(a.trimmed));
 		art[side] = null;
+		reading[side] = '';
 	}
+
+	function pickBack(mode: 'same' | 'different') {
+		backMode = mode;
+		if (mode === 'same') clearSide('back');
+	}
+
+	const pickPlace = (place: Address) => (address = applyPlace(address, place));
 
 	function download(landscape: boolean) {
 		if (!product) return;
@@ -124,11 +139,12 @@
 	}
 
 	const front = $derived(art.front);
+	const sides = $derived<Side[]>(backMode === 'same' ? ['front'] : ['front', 'back']);
 	const sheet = $derived(product && front ? sheetFor(product, front.width, front.height) : null);
 	// What the 3D view shows: one card (turn it over for the back) or the sheet, next to a phone for scale.
 	const preview = $derived.by((): Preview3D | null => {
 		if (!product || !front || !sheet || front.check.problem) return null;
-		const back = art.back && !art.back.check.problem ? art.back.trimmed : undefined;
+		const back = backMode === 'same' ? front.trimmed : art.back && !art.back.check.problem ? art.back.trimmed : undefined;
 		const opts = { front: front.trimmed, back, widthIn: sheet.widthIn, heightIn: sheet.heightIn, finish: product.finish, phone: true };
 		return product.postcard
 			? { postcards: { kind: 'postcards', ...opts, thicknessIn: product.thickness_in } }
@@ -141,7 +157,6 @@
 		if (!options.includes(initial)) initial = options.filter((n) => n <= initial).at(-1) ?? 0;
 	});
 	const problems = $derived((['front', 'back'] as const).filter((s) => art[s]?.check.problem || reading[s]));
-	const late = $derived(estimate ? neededByNote(neededBy, estimate) : '');
 
 	async function upload(side: Side, a: Art): Promise<{ url: string; preview_url: string }> {
 		submitting = `Uploading the ${side}…`;
@@ -154,11 +169,11 @@
 		error = '';
 		try {
 			const f = await upload('front', front);
-			const b = art.back ? await upload('back', art.back) : { url: '', preview_url: '' };
+			const b = backMode === 'same' ? f : await upload('back', art.back!);
 			submitting = 'Sending…';
 			await api.post<PrintRequest>('/api/print-requests', {
-				product: key, title, quantity, front_url: f.url, back_url: b.url, front_preview_url: f.preview_url, back_preview_url: b.preview_url,
-				landscape: front.width > front.height, note, needed_by: neededBy,
+				product: key, title, program, deadline, quantity, front_url: f.url, back_url: b.url, front_preview_url: f.preview_url, back_preview_url: b.preview_url,
+				landscape: front.width > front.height, note,
 				initial_quantity: initial, address: initial > 0 ? { ...address, country: address.country.trim().toUpperCase() } : null
 			});
 			goto('/requests?printed=1');
@@ -172,14 +187,10 @@
 
 <section class="print" data-track="print">
 	<h2>Get postcards or posters made</h2>
-	<p>
-		Send us print-ready art and we'll order it from Vistaprint, the same way HQ prints its own postcards and posters. It ships to our
-		warehouse, and once it's in, we list it in the shop so you, and anyone you send there, can request it.
-	</p>
 
 	{#if product}
 		<fieldset class="ask">
-			<legend>What should we print?</legend>
+			<legend>What do you want printed and stocked in the warehouse?</legend>
 			{#each products as p (p.key)}
 				<label class="choice" class:on={key === p.key}>
 					<input type="radio" name="print_product" value={p.key} checked={key === p.key} onchange={() => pickProduct(p.key)} />
@@ -192,11 +203,11 @@
 		<table class="specs">
 			<tbody>
 				<tr><td>Finished size (trim)</td><td>{product.width_in}" x {product.height_in}"</td></tr>
-				<tr><td>Art size, with bleed</td><td>{product.bleed_width_in}" x {product.bleed_height_in}" · <strong>{product.bleed_width_px} x {product.bleed_height_px} px</strong> at {product.dpi} DPI</td></tr>
+				<tr><td>Art size, with bleed</td><td>{product.bleed_width_in}" x {product.bleed_height_in}" at {product.dpi} DPI (or higher res is OK too)</td></tr>
 				<tr><td>Bleed</td><td>⅛" past the trim on every side. Run backgrounds and photos to the edge of the art; this strip is cut off.</td></tr>
 				<tr><td>Safe area</td><td>{product.safe_width_in}" x {product.safe_height_in}". Keep text and logos ⅛" inside the trim.</td></tr>
-				<tr><td>Files</td><td>PNG or JPEG, one per side, portrait or landscape.{product.postcard ? ' Postcards print on both sides; a blank back is fine.' : ' The back is optional.'}</td></tr>
-				<tr><td>Printed on</td><td>{product.paper}. {product.vendor}.</td></tr>
+				<tr><td>Files</td><td>PNG only, portrait or landscape. We print the same art on both sides, or you can upload a different back.</td></tr>
+				<tr><td>Printed on</td><td>{product.paper}.</td></tr>
 			</tbody>
 		</table>
 		<p class="templates">
@@ -208,12 +219,17 @@
 
 		<form onsubmit={submit}>
 			<h3>Your art</h3>
+			<fieldset class="back-mode">
+				<legend>Back</legend>
+				<label class="inline"><input type="radio" name="print_back" value="same" checked={backMode === 'same'} onchange={() => pickBack('same')} /> Same art on both sides</label>
+				<label class="inline"><input type="radio" name="print_back" value="different" checked={backMode === 'different'} onchange={() => pickBack('different')} /> A different back</label>
+			</fieldset>
 			<div class="sides">
-				{#each ['front', 'back'] as const as side (side)}
+				{#each sides as side (side)}
 					{@const a = art[side]}
 					<div class="side">
-						<label>{side === 'front' ? 'Front' : 'Back (optional)'}
-							<input type="file" accept="image/png,image/jpeg" required={side === 'front'} name="print_{side}" onchange={(e) => pickFile(side, e)} />
+						<label>{side === 'back' ? 'Back' : backMode === 'same' ? 'Front and back' : 'Front'}
+							<input type="file" accept="image/png" required name="print_{side}" onchange={(e) => pickFile(side, e)} />
 						</label>
 						{#if a}
 							{@const g = guides(product, a.width, a.height)}
@@ -239,7 +255,6 @@
 							{#if a.check.problem}<p class="error">{a.check.problem}</p>
 							{:else if a.check.warning}<p class="warn">{a.check.warning}</p>
 							{:else}<p class="ok">Ready to print: full bleed at {a.check.dpi} DPI.</p>{/if}
-							{#if side === 'back'}<button type="button" class="link" onclick={() => clearSide('back')}>No back</button>{/if}
 						{/if}
 						{#if reading[side]}<p class="error">{reading[side]}</p>{/if}
 					</div>
@@ -262,7 +277,7 @@
 
 			<h3>How many should we print?</h3>
 			<p>
-				We'll stock them at our warehouse and list them in the shop, where anyone can request them to help market your program.
+				We'll stock them at our warehouse and list them on the merch request form, where anyone can request them to help market your program.
 				You can request more yourself any time: pick “I'm Hack Club staff” on this site.
 			</p>
 			<div class="presets">
@@ -282,8 +297,13 @@
 							<tr><td>Express shipping to our warehouse</td><td>${(estimate.shipping_cents / 100).toFixed(2)}</td></tr>
 						</tbody>
 					</table>
-					<p>{readyText(estimate)}. Then it ships to you like anything else in the shop, usually the next weekday.</p>
-					<p class="muted">Estimated from Hack Club's own Vistaprint orders, 2025–26.</p>
+					<table class="specs timeline">
+						<tbody>
+							{#each timelineRows(estimate) as [step, time] (step)}<tr><td>{step}</td><td>{time}</td></tr>{/each}
+						</tbody>
+					</table>
+					<p><strong>{arrivalLine(estimate)}</strong></p>
+					<p class="muted">Estimated from Hack Club's own Vistaprint orders, 2025–26, and how our packages have shipped.</p>
 				{:else if estimateError}
 					<p class="error">{estimateError}</p>
 				{/if}
@@ -299,7 +319,12 @@
 				<div class="form-grid address" data-private>
 					<label>First name <input required bind:value={address.first_name} autocomplete="given-name" /></label>
 					<label>Last name <input required bind:value={address.last_name} autocomplete="family-name" /></label>
-					<label>Address line 1 <input required bind:value={address.line_1} autocomplete="address-line1" /></label>
+				</div>
+				<div data-private>
+					<AddressLine1 bind:value={address.line_1} onpick={pickPlace} placeholder="Start typing the street address…"
+						hint="Pick it from the suggestions and we’ll fill in the rest." />
+				</div>
+				<div class="form-grid address" data-private>
 					<label>Address line 2 (optional) <input bind:value={address.line_2} autocomplete="address-line2" /></label>
 					<label>City <input required bind:value={address.city} autocomplete="address-level2" /></label>
 					<label>State / province <input bind:value={address.state} autocomplete="address-level1" /></label>
@@ -311,11 +336,14 @@
 				{#if isInternational(address.country)}<p class="muted">Outside the US, you'll pay this shipment's postage by card on My requests once it's ready, like any international request.</p>{/if}
 			{/if}
 
-			<label>Name it <input required maxlength="200" bind:value={title} placeholder="e.g. Haven postcard" /></label>
-			<label>Need them by (optional) <input type="date" bind:value={neededBy} /></label>
-			{#if late}<p class="warn">{late}</p>{/if}
-			<label>How will you use them? Which event or program, about how many people, and anything else we should know.
-				<textarea required rows="3" maxlength="5000" bind:value={note} placeholder="e.g. Handing them out at 40 Haven events in November, about 25 each."></textarea></label>
+			<label>What's the name of the program this is for? <input required maxlength="200" name="print_program" bind:value={program} placeholder="Ex. Haven" /></label>
+			<label>What should we call this item in the warehouse? <input required maxlength="200" name="print_title" bind:value={title} placeholder="Ex. Haven postcard" /></label>
+			<label>How will you use them?
+				<span class="muted hint">More detail is more helpful here. Oftentimes people don't print enough, so we'll use our experience to print the right amount.</span>
+				<textarea required rows="4" maxlength="5000" bind:value={note} placeholder="Ex. Handing them out at 40 Haven events in November, about 25 each."></textarea></label>
+			<label>What is the final deadline for your program?
+				<span class="muted hint">Ex. If it's an in-person event, when is it happening? Give the date and any details around it.</span>
+				<textarea required rows="2" maxlength="2000" bind:value={deadline}></textarea></label>
 
 			<div class="submit">
 				{#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -379,6 +407,12 @@
 	.key.unsafe { background: rgba(255, 166, 0, 0.42); }
 	.key.safe { border: 1.5px dashed #338eda; }
 	.address { margin-top: 0.75rem; }
+	.back-mode { margin: 0 0 0.75rem; padding: 0; border: 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+	.back-mode legend { padding: 0; margin-bottom: 0.25rem; font-weight: 700; }
+	form .back-mode label.inline { display: flex; gap: 0.4rem; align-items: center; margin-top: 0; }
+	.back-mode input { width: auto; margin: 0; accent-color: var(--red); }
+	.estimate .timeline td:first-child { width: auto; }
+	form label .hint { font-weight: 400; }
 	.address label { margin-top: 0; }
 	.preview { margin: 1rem 0; }
 	.warn { color: #a15c00; font-weight: 700; }

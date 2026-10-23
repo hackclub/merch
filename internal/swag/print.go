@@ -89,11 +89,12 @@ func (p PrintProduct) BleedPixels() (w, h int) {
 }
 
 // The steps from a submitted print request to stock on the warehouse's
-// shelves, in business days: HQ checks the files and orders; Vistaprint
-// prints and ships (3–7 days order to delivery on HQ's 2025-26 orders); the
-// warehouse receives it (as for backorders, see Estimate.AfterRestock).
+// shelves, in business days: HQ checks the files and orders within 48 hours;
+// Vistaprint prints and ships (3–7 days order to delivery on HQ's 2025-26
+// orders); the warehouse receives it (as for backorders, see
+// Estimate.AfterRestock).
 const (
-	printReviewDays     = 1
+	printReviewDays     = 2
 	printVendorMinDays  = 3
 	printVendorMaxDays  = 7
 	printReceiveMinDays = 1
@@ -109,10 +110,20 @@ type PrintEstimate struct {
 	ShippingCents int     `json:"shipping_cents"`
 	TotalCents    int     `json:"total_cents"`
 	EachCents     float64 `json:"each_cents"`
-	MinDays       int     `json:"min_days"`
-	MaxDays       int     `json:"max_days"`
-	ReadyFrom     string  `json:"ready_from"`
-	ReadyBy       string  `json:"ready_by"`
+	// The legs, in business days: HQ checks the art and orders it; Vistaprint
+	// prints it and ships it to the warehouse, which receives it; and the
+	// first shipment goes from the warehouse to them (WithDelivery; zero
+	// without one, or without past shipments to go on).
+	ReviewDays      int    `json:"review_days"`
+	ToWarehouseDays [2]int `json:"to_warehouse_days"`
+	ToYouDays       [2]int `json:"to_you_days"`
+	// In the warehouse (MinDays–MaxDays from now), and at their door.
+	MinDays    int    `json:"min_days"`
+	MaxDays    int    `json:"max_days"`
+	ReadyFrom  string `json:"ready_from"`
+	ReadyBy    string `json:"ready_by"`
+	ArriveFrom string `json:"arrive_from,omitempty"`
+	ArriveBy   string `json:"arrive_by,omitempty"`
 }
 
 // EstimatePrint prices qty of p off Hack Club's past orders, reading between
@@ -135,15 +146,50 @@ func EstimatePrint(p PrintProduct, qty int, now time.Time) (PrintEstimate, error
 	}
 	e.TotalCents = e.PrintCents + e.ShippingCents
 	e.EachCents = float64(e.TotalCents) / float64(qty)
-	e.MinDays = printReviewDays + printVendorMinDays + printReceiveMinDays
-	e.MaxDays = printReviewDays + printVendorMaxDays + printReceiveMaxDays
-	day := now
-	if ny, err := time.LoadLocation("America/New_York"); err == nil {
-		day = now.In(ny)
-	}
+	e.ReviewDays = printReviewDays
+	e.ToWarehouseDays = [2]int{printVendorMinDays + printReceiveMinDays, printVendorMaxDays + printReceiveMaxDays}
+	e.MinDays = e.ReviewDays + e.ToWarehouseDays[0]
+	e.MaxDays = e.ReviewDays + e.ToWarehouseDays[1]
+	day := newYork(now)
 	e.ReadyFrom = AddBusinessDays(day, e.MinDays).Format(time.DateOnly)
 	e.ReadyBy = AddBusinessDays(day, e.MaxDays).Format(time.DateOnly)
 	return e, nil
+}
+
+// WithDelivery adds the first shipment's leg, from the warehouse to them:
+// ship is how a package like it went before (Estimate's handling and
+// transit), counted from when the run is in the warehouse.
+func (e PrintEstimate) WithDelivery(ship Estimate, now time.Time) PrintEstimate {
+	if ship.TransitSamples == 0 {
+		return e
+	}
+	e.ToYouDays = [2]int{ship.HandlingDays[0] + ship.TransitDays[0], ship.HandlingDays[1] + ship.TransitDays[1]}
+	day := newYork(now)
+	e.ArriveFrom = AddBusinessDays(day, e.MinDays+e.ToYouDays[0]).Format(time.DateOnly)
+	e.ArriveBy = AddBusinessDays(day, e.MaxDays+e.ToYouDays[1]).Format(time.DateOnly)
+	return e
+}
+
+func newYork(t time.Time) time.Time {
+	if ny, err := time.LoadLocation("America/New_York"); err == nil {
+		return t.In(ny)
+	}
+	return t
+}
+
+// Item is how a run of p is listed in the shop once it's stocked under sku:
+// its trimmed size (turned when the art is landscape), paper, and for
+// postcards, the shop's packs.
+func (p PrintProduct) Item(sku, name string, landscape bool) Item {
+	w, h, t := p.WidthIn, p.HeightIn, p.ThicknessIn
+	if landscape {
+		w, h = h, w
+	}
+	it := Item{SKU: sku, Name: name, Visible: true, MaxPerRequest: 25, WidthIn: &w, HeightIn: &h, Finish: p.Finish, ThicknessIn: &t}
+	if p.Postcard {
+		it.Packs, it.MaxPerRequest = "postcard", 100
+	}
+	return it
 }
 
 func interpolate(pts []pricePoint, qty int) int {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkArt, firstShipmentOptions, guides, printArtProps, estimateLine, neededByNote, readyText, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
+import { checkArt, firstShipmentOptions, guides, printArtProps, estimateLine, arrivalLine, timelineRows, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
 
 const postcard: PrintProduct = {
 	key: 'postcard_4x6', name: '4x6 postcard', paper: 'Premium linen card stock', vendor: 'Vistaprint', width_in: 4, height_in: 6,
@@ -9,8 +9,9 @@ const postcard: PrintProduct = {
 
 const estimate: PrintEstimate = {
 	product: 'postcard_4x6', quantity: 1000, print_cents: 8259, shipping_cents: 3699, total_cents: 11958, each_cents: 11.958,
-	min_days: 5, max_days: 10, ready_from: '2026-10-30', ready_by: '2026-11-06'
+	review_days: 2, to_warehouse_days: [4, 9], to_you_days: [0, 0], min_days: 6, max_days: 11, ready_from: '2026-11-02', ready_by: '2026-11-09'
 };
+const delivered: PrintEstimate = { ...estimate, to_you_days: [4, 7], arrive_from: '2026-11-06', arrive_by: '2026-11-18' };
 
 describe('checkArt (mirrors swag.CheckArt)', () => {
 	it('takes full-bleed art either way round', () => {
@@ -73,6 +74,12 @@ describe('templateSVG', () => {
 		expect(svg).toMatch(/<rect x="75" y="75" width="1725" height="1125"/); // safe
 		expect(svg).toContain('6.25" x 4.25"');
 	});
+	it("doesn't name the printer, and asks for a PNG", () => {
+		const svg = templateSVG({ ...postcard, vendor: 'Vistaprint Standard Postcards' }, false);
+		expect(svg).not.toMatch(/vistaprint/i);
+		expect(svg).not.toMatch(/jpe?g/i);
+		expect(svg).toContain('Export a PNG');
+	});
 });
 
 describe('firstShipmentOptions', () => {
@@ -89,13 +96,18 @@ describe('estimate text', () => {
 	it('gives the total and the price of each', () => {
 		expect(estimateLine(estimate)).toBe('About $119.58 for 1,000 (12¢ each)');
 	});
-	it('gives the dates they should be in the warehouse', () => {
-		expect(readyText(estimate)).toBe('In our warehouse between Fri, Oct 30 and Fri, Nov 6 (5–10 business days)');
+	it('lays out each leg: review and order, Vistaprint to our warehouse, our warehouse to them', () => {
+		expect(timelineRows(delivered)).toEqual([
+			['Review and order from Vistaprint', 'Within 48 hours'],
+			['Vistaprint prints and ships to our warehouse', '4–9 business days'],
+			['Our warehouse to you', '4–7 business days']
+		]);
+		// No first shipment: it ends at the warehouse.
+		expect(timelineRows(estimate).map((r) => r[0])).toEqual(['Review and order from Vistaprint', 'Vistaprint prints and ships to our warehouse']);
 	});
-	it('flags a date sooner than that', () => {
-		expect(neededByNote('2026-11-02', estimate)).toMatch(/might not make it/);
-		expect(neededByNote('2026-11-20', estimate)).toBe('');
-		expect(neededByNote('', estimate)).toBe('');
+	it('gives when the first ones reach them, or else when the run is in the warehouse', () => {
+		expect(arrivalLine(delivered)).toBe('Your first ones should arrive about Nov 6–18.');
+		expect(arrivalLine(estimate)).toBe('In our warehouse about Nov 2–9.');
 	});
 });
 

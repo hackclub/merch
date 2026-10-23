@@ -2,6 +2,8 @@
 // from swag.PrintProducts), checking art before it uploads, the bleed template, and
 // the estimate's wording. The server checks uploads again (swag.CheckArt).
 
+import { dateRange, spanText } from './shipping';
+
 export type PrintProduct = {
 	key: string;
 	name: string;
@@ -33,10 +35,17 @@ export type PrintEstimate = {
 	shipping_cents: number;
 	total_cents: number;
 	each_cents: number;
-	min_days: number;
+	// The legs in business days: HQ reviews and orders; Vistaprint prints and ships to the warehouse,
+	// which receives it; the first shipment goes to them ([0, 0] without one, or without history).
+	review_days: number;
+	to_warehouse_days: [number, number];
+	to_you_days: [number, number];
+	min_days: number; // in the warehouse
 	max_days: number;
 	ready_from: string; // YYYY-MM-DD, New York
 	ready_by: string;
+	arrive_from?: string; // the first shipment at their door
+	arrive_by?: string;
 };
 
 export type PrintRequest = {
@@ -44,12 +53,14 @@ export type PrintRequest = {
 	user_email?: string;
 	user_name?: string;
 	product: string;
-	title: string;
+	title: string; // what the item is called in the warehouse and the shop
+	program: string;
+	deadline: string; // the program's final deadline, in their words
 	quantity: number;
 	front_url: string;
 	back_url: string;
 	note: string;
-	needed_by: string | null;
+	needed_by: string | null; // older requests only
 	estimate_cents: number;
 	status: 'submitted' | 'ordered' | 'stocked' | 'rejected';
 	admin_note: string;
@@ -132,11 +143,11 @@ export function templateSVG(p: PrintProduct, landscape: boolean): string {
 <rect x="${fmt(b)}" y="${fmt(b)}" width="${px(tw)}" height="${px(th)}" fill="#fff" stroke="#000" stroke-width="${line}"/>
 <rect x="${fmt(s)}" y="${fmt(s)}" width="${px(sw)}" height="${px(sh)}" fill="none" stroke="#338eda" stroke-width="${line}" stroke-dasharray="${line * 6} ${line * 4}"/>
 <g font-family="sans-serif" font-size="${font}" fill="#333">
-<text x="${fmt(s + font)}" y="${fmt(s + font * 2)}">${p.name} · ${p.vendor}</text>
+<text x="${fmt(s + font)}" y="${fmt(s + font * 2)}">${p.name}</text>
 <text x="${fmt(s + font)}" y="${fmt(s + font * 3.4)}" fill="#ec3750">Red: bleed, ${fmt(bw)}" x ${fmt(bh)}" (${px(bw)} x ${px(bh)} px). Run the background to this edge; it's cut off.</text>
 <text x="${fmt(s + font)}" y="${fmt(s + font * 4.8)}">Black: trim, ${fmt(tw)}" x ${fmt(th)}". The finished size.</text>
 <text x="${fmt(s + font)}" y="${fmt(s + font * 6.2)}" fill="#338eda">Blue dashes: safe area, ${fmt(sw)}" x ${fmt(sh)}". Keep text and logos inside.</text>
-<text x="${fmt(s + font)}" y="${fmt(s + font * 7.6)}">Export a PNG or JPEG at ${p.dpi} DPI, without these guides.</text>
+<text x="${fmt(s + font)}" y="${fmt(s + font * 7.6)}">Export a PNG at ${p.dpi} DPI or higher, without these guides.</text>
 </g>
 </svg>`;
 }
@@ -149,18 +160,21 @@ export function estimateLine(e: PrintEstimate): string {
 	return `About ${usd(e.total_cents)} for ${e.quantity.toLocaleString('en-US')} (${each} each)`;
 }
 
-const day = (iso: string) =>
-	new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
-
-/** "In our warehouse between Fri, Oct 30 and Fri, Nov 6 (5–10 business days)". */
-export const readyText = (e: PrintEstimate) =>
-	`In our warehouse between ${day(e.ready_from)} and ${day(e.ready_by)} (${e.min_days}–${e.max_days} business days)`;
-
-/** A heads-up when they need them before the estimate's latest day; '' otherwise. */
-export function neededByNote(neededBy: string, e: PrintEstimate): string {
-	if (!neededBy || neededBy >= e.ready_by) return '';
-	return `That's before ${day(e.ready_by)}, so they might not make it. Say why in the note and we'll try to rush it (express shipping, or printing locally).`;
+/** Each leg from sending the art to the first ones at their door, as [step, how long]. */
+export function timelineRows(e: PrintEstimate): [string, string][] {
+	const rows: [string, string][] = [
+		['Review and order from Vistaprint', `Within ${e.review_days * 24} hours`],
+		['Vistaprint prints and ships to our warehouse', spanText(e.to_warehouse_days)]
+	];
+	if (e.to_you_days[1] > 0) rows.push(['Our warehouse to you', spanText(e.to_you_days)]);
+	return rows;
 }
+
+/** "Your first ones should arrive about Nov 6–18.", or when the run is in the warehouse without a first shipment. */
+export const arrivalLine = (e: PrintEstimate) =>
+	e.arrive_from && e.arrive_by
+		? `Your first ones should arrive about ${dateRange(e.arrive_from, e.arrive_by)}.`
+		: `In our warehouse about ${dateRange(e.ready_from, e.ready_by)}.`;
 
 /** Quick picks for how many to print. */
 export const quantityPresets = (p: PrintProduct): number[] =>

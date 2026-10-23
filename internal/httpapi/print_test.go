@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"image"
+	"image/jpeg"
 	"image/png"
 	"net/http"
 	"strings"
@@ -39,6 +40,14 @@ func TestPrintProductsAndEstimate(t *testing.T) {
 	var e swag.PrintEstimate
 	if code := h.do(anon, "GET", "/api/print/estimate?product=postcard_4x6&quantity=1000", nil, &e); code != 200 || e.PrintCents != 8259 || e.ReadyBy == "" {
 		t.Fatalf("estimate = %d %+v", code, e)
+	}
+	if e.ToYouDays != [2]int{} || e.ArriveBy != "" {
+		t.Fatalf("no first shipment, but a leg to them: %+v", e)
+	}
+	// With a first shipment, the last leg is how packages like it went to that country before.
+	shippingFixture(t, h)
+	if code := h.do(anon, "GET", "/api/print/estimate?product=postcard_4x6&quantity=1000&first=25&country=de", nil, &e); code != 200 || e.ToYouDays[1] == 0 || e.ArriveBy <= e.ReadyBy {
+		t.Fatalf("estimate with delivery = %d %+v", code, e)
 	}
 	for _, q := range []string{"product=banner&quantity=100", "product=postcard_4x6&quantity=7", "product=postcard_4x6&quantity=x"} {
 		if code := h.do(anon, "GET", "/api/print/estimate?"+q, nil, nil); code != 422 {
@@ -82,6 +91,15 @@ func TestPrintFileUpload(t *testing.T) {
 	if code := upload(staff, "postcard_4x6", pngOf(t, 1274, 1874), &low); code != 422 || !strings.Contains(low.Error, "at least 300") {
 		t.Fatalf("299 DPI upload = %d %q", code, low.Error)
 	}
+	// Only PNGs: a JPEG the right size is refused too.
+	var jpg bytes.Buffer
+	if err := jpeg.Encode(&jpg, image.NewGray(image.Rect(0, 0, 1875, 1275)), nil); err != nil {
+		t.Fatal(err)
+	}
+	var notPNG struct{ Error string }
+	if code := upload(staff, "postcard_4x6", jpg.Bytes(), &notPNG); code != 422 || !strings.Contains(notPNG.Error, "PNG") {
+		t.Fatalf("jpeg upload = %d %q", code, notPNG.Error)
+	}
 	if code := upload(staff, "postcard_4x6", []byte("%PDF-1.7\n"+strings.Repeat("x", 100)), nil); code != 422 {
 		t.Fatalf("pdf upload = %d", code)
 	}
@@ -100,9 +118,9 @@ func TestPrintRequestFlow(t *testing.T) {
 	h := newHarness(t)
 	staff, admin := h.client("staff@hackclub.com"), h.client(adminEmail)
 	body := map[string]any{
-		"product": "postcard_4x6", "title": " Haven postcard ", "quantity": 1000,
+		"product": "postcard_4x6", "title": " Haven postcard ", "program": " Haven ", "quantity": 1000,
 		"front_url": "https://cdn.example/1/front.png", "back_url": "https://cdn.example/2/back.png",
-		"note": "Handing out at Haven events", "needed_by": "2026-11-10",
+		"note": "Handing out at Haven events", "deadline": "Haven in Boston, Nov 14-16",
 		"front_preview_url": "https://cdn.example/3/front-preview.jpg", "back_preview_url": "https://cdn.example/4/back-preview.jpg",
 		"landscape": true, "initial_quantity": 25, "address": usAddr,
 	}
@@ -113,7 +131,7 @@ func TestPrintRequestFlow(t *testing.T) {
 	if pr.InitialQuantity != 25 || pr.Address == nil || pr.Address.City != "Burlington" || !pr.Landscape || pr.FrontPreviewURL == "" {
 		t.Fatalf("first shipment = %+v", pr)
 	}
-	if pr.Title != "Haven postcard" || pr.Status != "submitted" || pr.EstimateCents != 8259+3699 || pr.NeededBy == nil || pr.NeededBy.Format("2006-01-02") != "2026-11-10" {
+	if pr.Title != "Haven postcard" || pr.Program != "Haven" || pr.Deadline != "Haven in Boston, Nov 14-16" || pr.Status != "submitted" || pr.EstimateCents != 8259+3699 {
 		t.Fatalf("created = %+v", pr)
 	}
 	e := h.events("print_request_created")
@@ -122,11 +140,11 @@ func TestPrintRequestFlow(t *testing.T) {
 	}
 	p := props(t, e[0])
 	if p["product"] != "postcard_4x6" || p["quantity"] != float64(1000) || p["has_back"] != true || p["estimate_cents"] != float64(11958) || p["note"] != nil || p["title"] != nil ||
-		p["initial_quantity"] != float64(25) || p["country"] != "US" || p["address"] != nil {
+		p["initial_quantity"] != float64(25) || p["country"] != "US" || p["address"] != nil || p["program"] != nil || p["deadline"] != nil || p["same_back"] != false {
 		t.Fatalf("props = %+v", p)
 	}
 
-	for k, v := range map[string]any{"product": "banner", "title": "", "quantity": 7, "front_url": "javascript:alert(1)", "back_url": "ftp://x", "note": "", "needed_by": "soon",
+	for k, v := range map[string]any{"product": "banner", "title": "", "program": " ", "deadline": "", "quantity": 7, "front_url": "javascript:alert(1)", "back_url": "ftp://x", "note": "",
 		"initial_quantity": 30, "address": map[string]any{"city": "Burlington"}, "front_preview_url": "ftp://x"} {
 		bad := map[string]any{}
 		for kk, vv := range body {
@@ -150,9 +168,13 @@ func TestPrintRequestFlow(t *testing.T) {
 			t.Errorf("%v = %d, want 422", change, code)
 		}
 	}
-	if code := h.do(staff, "POST", "/api/print-requests", map[string]any{"product": "poster_11x17", "title": "Sprig poster", "quantity": 100,
-		"front_url": "https://cdn.example/f.png", "note": "Libraries", "initial_quantity": 0}, nil); code != 201 {
+	// The same art on both sides is the default: the back is the front.
+	if code := h.do(staff, "POST", "/api/print-requests", map[string]any{"product": "poster_11x17", "title": "Sprig poster", "program": "Sprig", "deadline": "None",
+		"quantity": 100, "front_url": "https://cdn.example/f.png", "back_url": "https://cdn.example/f.png", "note": "Libraries", "initial_quantity": 0}, nil); code != 201 {
 		t.Fatalf("no first shipment = %d", code)
+	}
+	if e := h.events("print_request_created"); len(e) != 2 || props(t, e[1])["same_back"] != true {
+		t.Fatalf("same back events = %+v", e)
 	}
 	if code := h.do(h.client(""), "POST", "/api/print-requests", body, nil); code != 401 {
 		t.Fatalf("signed-out create = %d", code)
@@ -229,8 +251,8 @@ func TestPrintFirstShipmentUsesListedItem(t *testing.T) {
 	staff, admin := h.client("staff@hackclub.com"), h.client(adminEmail)
 	listed := h.mkItem("Pri/Spr/11x/Lar", true)
 	var pr store.PrintRequest
-	if code := h.do(staff, "POST", "/api/print-requests", map[string]any{"product": "poster_11x17", "title": "Sprig poster", "quantity": 100,
-		"front_url": "https://cdn.example/f.png", "note": "Libraries", "initial_quantity": 5, "address": deAddr}, &pr); code != 201 {
+	if code := h.do(staff, "POST", "/api/print-requests", map[string]any{"product": "poster_11x17", "title": "Sprig poster", "program": "Sprig", "deadline": "None",
+		"quantity": 100, "front_url": "https://cdn.example/f.png", "note": "Libraries", "initial_quantity": 5, "address": deAddr}, &pr); code != 201 {
 		t.Fatalf("create = %d", code)
 	}
 	var upd store.PrintRequest

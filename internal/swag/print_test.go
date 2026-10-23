@@ -86,11 +86,34 @@ func TestEstimatePrintTimeline(t *testing.T) {
 	// Friday, 2026-10-23, in New York.
 	now := time.Date(2026, 10, 23, 16, 0, 0, 0, time.UTC)
 	e, _ := EstimatePrint(pc, 1000, now)
-	if e.MinDays != 5 || e.MaxDays != 10 {
-		t.Fatalf("days = %d–%d", e.MinDays, e.MaxDays)
+	// 48 hours to check the art and order, then Vistaprint prints and ships and the warehouse receives it.
+	if e.ReviewDays != 2 || e.ToWarehouseDays != [2]int{4, 9} || e.MinDays != 6 || e.MaxDays != 11 {
+		t.Fatalf("days = %d + %v = %d–%d", e.ReviewDays, e.ToWarehouseDays, e.MinDays, e.MaxDays)
 	}
-	if e.ReadyFrom != "2026-10-30" || e.ReadyBy != "2026-11-06" {
+	if e.ReadyFrom != "2026-11-02" || e.ReadyBy != "2026-11-09" {
 		t.Fatalf("ready %s – %s", e.ReadyFrom, e.ReadyBy)
+	}
+	// Then the first shipment goes out like any request: the warehouse's handling and the mail.
+	d := e.WithDelivery(Estimate{HandlingDays: [2]int{1, 2}, TransitDays: [2]int{3, 5}, TransitSamples: 12}, now)
+	if d.ToYouDays != [2]int{4, 7} || d.ArriveFrom != "2026-11-06" || d.ArriveBy != "2026-11-18" {
+		t.Fatalf("delivery = %v, %s – %s", d.ToYouDays, d.ArriveFrom, d.ArriveBy)
+	}
+	// Without past shipments to go on, there's no last leg to add.
+	if d := e.WithDelivery(Estimate{}, now); d.ToYouDays != [2]int{} || d.ArriveBy != "" {
+		t.Fatalf("no history = %+v", d)
+	}
+}
+
+func TestPrintProductItem(t *testing.T) {
+	pc, _ := PrintProductByKey("postcard_4x6")
+	it := pc.Item("Pri/Hav/4x6/1st", "Haven postcard", true)
+	if it.Name != "Haven postcard" || it.SKU != "Pri/Hav/4x6/1st" || *it.WidthIn != 6 || *it.HeightIn != 4 || *it.ThicknessIn != 0.016 ||
+		it.Packs != "postcard" || it.MaxPerRequest != 100 || it.Finish != "linen" || !it.Visible {
+		t.Fatalf("postcard item = %+v", it)
+	}
+	poster, _ := PrintProductByKey("poster_11x17")
+	if it := poster.Item("", "Sprig poster", false); *it.WidthIn != 11 || *it.HeightIn != 17 || it.Packs != "" || it.MaxPerRequest != 25 {
+		t.Fatalf("poster item = %+v", it)
 	}
 }
 

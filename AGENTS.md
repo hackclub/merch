@@ -551,8 +551,10 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   someone else's), `submission_created`,
   `print_file_uploaded` (print art stored on the CDN: `product`, `fit`, `dpi`, `bytes`, `type`),
   `print_request_created` (`print_request_id`, `product`, `quantity`, `estimate_cents`, `has_back`,
-  `has_needed_by`, and with a date `days_until_needed` against the estimate's `max_days`;
-  `initial_quantity` and the first shipment's `country`; never the name, note or address). They carry the page's `visit` (the
+  `same_back` (the same art on both sides, the default), `has_needed_by` (always false since the
+  form asks for a written deadline; older requests with a date also have `days_until_needed` against
+  the estimate's `max_days`); `initial_quantity` and the first shipment's `country`; never the item
+  name, program, deadline, note or address). They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
 - Admin events (`internal/httpapi/insights.go`). Request events belong to the requester's
   `user_id`, with `admin_id` for who acted, and carry `request_id`, `country`, `purpose`, `source`,
@@ -643,8 +645,8 @@ and where, so they see it in person once it arrives.
   11.25x17.25 in (3375x5175 px), either way round. That's Vistaprint's postcard size guide, and the Haven
   postcard and poster files (1885x1282, 3382x5182 px) match it. The flow offers a full-size SVG template
   with the bleed, trim and safe lines (`templateSVG` in `$lib/print`).
-- **Art checks** (`swag.CheckArt`, mirrored by `checkArt` in `$lib/print` for instant feedback): PNG or
-  JPEG only (the 3D preview needs a raster), and **at least 300 DPI** (Zach, 2026-10-23: refused below,
+- **Art checks** (`swag.CheckArt`, mirrored by `checkArt` in `$lib/print` for instant feedback): PNG
+  only (Zach, 2026-10-23; the 3D preview needs a raster), and **at least 300 DPI** (higher is fine) (Zach, 2026-10-23: refused below,
   in the browser and on the server). Full-bleed art is ready; art at the trimmed size prints with a
   warning (white slivers); anything else is the wrong shape. Picked files show at once with their zones
   marked: the bleed (red, cut off), the trim line, the ⅛" inside it that a drifting cut can take
@@ -657,14 +659,20 @@ and where, so they see it in person once it arrives.
   orders from zach@hackclub.com's order confirmations (2025-05 to 2026-10, after the 30% ProAdvantage
   discount, before tax), read between the quantities ordered on a straight line. For example: 1,000
   postcards $82.59, 5,000 $295.40, 10,000 $536.20; 3,000 posters $1,007.30. Express shipping to the
-  warehouse adds what those orders paid ($37–91 postcards, $50–113 posters). The ready date is 1 business
-  day for HQ to check and order, 3–7 at Vistaprint (order to delivery on those orders), and 1–2 for the
-  warehouse to receive it: 5–10 business days. When Vistaprint prices change, add the new orders to
+  warehouse adds what those orders paid ($37–91 postcards, $50–113 posters). The ready date is 2 business
+  days (48 hours) for HQ to check and order, 3–7 at Vistaprint (order to delivery on those orders), and
+  1–2 for the warehouse to receive it: 6–11 business days. With a first shipment (`?first=25&country=DE`),
+  the estimate adds its leg from the warehouse to them (`PrintEstimate.WithDelivery`: handling and
+  transit from shipping history for that package and country, `to_you_days`, `arrive_from`/`arrive_by`),
+  and the form lists each leg and the arrival dates. When Vistaprint prices change, add the new orders to
   `prices` and keep `TestEstimatePrintPrices` in step.
 - **Requests** (`print_requests`; `POST /api/print-requests`, `GET /api/print-requests` on My requests):
-  product, name, quantity, front and optional back URLs, how they'll use it (required), an optional
-  needed-by date, the first shipment (`initial_quantity`, postcards in the shop's packs, and `address`),
-  and the estimate when sent. Status: `submitted → ordered → stocked`, or `rejected`; admins move it and
+  product, the item's warehouse name (`title`), the `program` it's for, quantity, front and back URLs
+  (the same art on both sides by default, so `back_url` = `front_url`; or a different back), how
+  they'll use it (required; the form asks for detail because people tend to print too few), the
+  program's final `deadline` in their words (required; replaced the optional needed-by date on
+  2026-10-23), the first shipment (`initial_quantity`, postcards in the shop's packs, and `address`,
+  whose line 1 has the Places autocomplete), and the estimate when sent. Status: `submitted → ordered → stocked`, or `rejected`; admins move it and
   add a note the requester sees on the Admin page's submissions tab (`/api/admin/print-requests`).
   **Stocked needs the SKU** and does two things (`sendFirstShipment`, once; saving again retries): lists
   the SKU in the shop if no item has it (visible, named after the request, its trimmed previews as images,

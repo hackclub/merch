@@ -12,7 +12,7 @@
 </script>
 
 {#if page.url.searchParams.get('printed')}
-	<p class="ok">Sent! We'll check your art and order it from Vistaprint, usually within a business day. It shows up here as it moves along.</p>
+	<p class="ok">Sent! We'll check your art and order it from Vistaprint within 48 hours. It shows up here as it moves along.</p>
 {/if}
 {#if prints.length}
 	<h2>Printing</h2>
@@ -22,8 +22,9 @@
 				<strong>{p.title}</strong>
 				<span class="badge {p.status}">{printStatusLabel[p.status]}</span>
 			</div>
-			<p>{p.quantity.toLocaleString('en-US')} × {p.product === 'postcard_4x6' ? '4x6 postcard' : '11x17 poster'} · <a href={p.front_url} target="_blank" rel="noreferrer">front</a>{#if p.back_url} · <a href={p.back_url} target="_blank" rel="noreferrer">back</a>{/if}</p>
-			<p class="muted">Sent {new Date(p.created_at).toLocaleDateString()}{p.needed_by ? ` · needed by ${p.needed_by.slice(0, 10)}` : ''}</p>
+			<p>{p.quantity.toLocaleString('en-US')} × {p.product === 'postcard_4x6' ? '4x6 postcard' : '11x17 poster'} · <a href={p.front_url} target="_blank" rel="noreferrer">{p.back_url === p.front_url ? 'art (both sides)' : 'front'}</a>{#if p.back_url && p.back_url !== p.front_url} · <a href={p.back_url} target="_blank" rel="noreferrer">back</a>{/if}</p>
+			<p class="muted">{p.program ? `For ${p.program} · ` : ''}Sent {new Date(p.created_at).toLocaleDateString()}{p.needed_by ? ` · needed by ${p.needed_by.slice(0, 10)}` : ''}</p>
+			{#if p.deadline}<p class="muted" data-private>Deadline: {p.deadline}</p>{/if}
 			{#if p.initial_quantity}
 				<p>{p.shipment_request_id ? `The first ${p.initial_quantity} are on their way to you: request #${p.shipment_request_id} below.` : `We'll send you the first ${p.initial_quantity} when they reach our warehouse.`}</p>
 			{/if}

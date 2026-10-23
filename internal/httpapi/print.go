@@ -6,8 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	_ "image/jpeg" // print art comes as PNG or JPEG
-	_ "image/png"
+	_ "image/png" // print art comes as PNG
 	"net/http"
 	"strconv"
 	"strings"
@@ -57,7 +56,33 @@ func (s *server) printEstimate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	// With a first shipment (?first=25&country=DE), add its leg from the warehouse to them.
+	if first, _ := strconv.Atoi(r.URL.Query().Get("first")); first > 0 {
+		country := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("country")))
+		if country == "" {
+			country = "US"
+		}
+		if ship, ok := s.printDelivery(r.Context(), p, first, country); ok {
+			e = e.WithDelivery(ship, s.Now())
+		}
+	}
 	writeJSON(w, http.StatusOK, e)
+}
+
+// printDelivery is how a first shipment of n should go from the warehouse to
+// country, packed like the item the run will be listed as.
+func (s *server) printDelivery(ctx context.Context, p swag.PrintProduct, n int, country string) (swag.Estimate, bool) {
+	it := p.Item("", p.Name, false)
+	packing, err := swag.Pack([]swag.Line{{ItemID: 1, Quantity: n}}, map[int64]swag.Item{1: it}, swag.IsInternational(country))
+	if err != nil {
+		return swag.Estimate{}, false
+	}
+	h, err := s.shippingHistory(ctx)
+	if err != nil {
+		s.Log.Warn("print delivery estimate: no shipping history", "err", err)
+		return swag.Estimate{}, false
+	}
+	return h.Estimate(country, packing, s.Now()), true
 }
 
 // printFile is a piece of print art on the CDN, untouched, and how it fits.
@@ -72,10 +97,8 @@ type printFile struct {
 	swag.ArtCheck
 }
 
-var printArtTypes = map[string]string{"image/png": ".png", "image/jpeg": ".jpg"}
-
 // uploadPrintFile stores one side's print-ready art on the CDN as is, once it's
-// a PNG or JPEG the shape of the product at a printable resolution.
+// a PNG the shape of the product at a printable resolution.
 func (s *server) uploadPrintFile(w http.ResponseWriter, r *http.Request, v viewer) {
 	if s.Images == nil {
 		writeErr(w, http.StatusServiceUnavailable, "uploads are off: set HACKCLUB_CDN_API_KEY")
@@ -95,10 +118,9 @@ func (s *server) uploadPrintFile(w http.ResponseWriter, r *http.Request, v viewe
 		return
 	}
 	ctype := http.DetectContentType(body.Data)
-	ext, known := printArtTypes[ctype]
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(body.Data))
-	if !known || err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, "upload a PNG or JPEG (export PDFs as a 300 DPI PNG)")
+	if ctype != "image/png" || err != nil {
+		writeErr(w, http.StatusUnprocessableEntity, "upload a PNG (export other files as a 300 DPI PNG)")
 		return
 	}
 	check := swag.CheckArt(p, cfg.Width, cfg.Height)
@@ -107,7 +129,7 @@ func (s *server) uploadPrintFile(w http.ResponseWriter, r *http.Request, v viewe
 		return
 	}
 	base := strings.TrimSuffix(imageName(body.Filename), ".jpg")
-	url, err := s.Images.Upload(r.Context(), base+ext, ctype, body.Data)
+	url, err := s.Images.Upload(r.Context(), base+".png", ctype, body.Data)
 	if err != nil {
 		s.Log.Error("cdn upload failed", "product", p.Key, "err", err)
 		writeErr(w, http.StatusBadGateway, "cdn.hackclub.com refused the file: "+err.Error())
@@ -128,11 +150,13 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 	var body struct {
 		Product  string `json:"product"`
 		Title    string `json:"title"`
+		Program  string `json:"program"`
+		Deadline string `json:"deadline"`
 		Quantity int    `json:"quantity"`
 		FrontURL string `json:"front_url"`
 		BackURL  string `json:"back_url"`
 		Note     string `json:"note"`
-		NeededBy string `json:"needed_by"` // YYYY-MM-DD, optional
+		NeededBy string `json:"needed_by"` // YYYY-MM-DD, optional; the form now asks for Deadline
 		// How many to send them once it's stocked, and where (needed when there are any).
 		InitialQuantity int           `json:"initial_quantity"`
 		Address         *swag.Address `json:"address"`
@@ -144,6 +168,7 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 		return
 	}
 	title, note := strings.TrimSpace(body.Title), strings.TrimSpace(body.Note)
+	program, deadline := strings.TrimSpace(body.Program), strings.TrimSpace(body.Deadline)
 	p, ok := swag.PrintProductByKey(body.Product)
 	if !ok {
 		writeErr(w, http.StatusUnprocessableEntity, "unknown product")
@@ -174,6 +199,12 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 	case title == "" || len(title) > 200:
 		writeErr(w, http.StatusUnprocessableEntity, "give it a name (up to 200 characters)")
 		return
+	case program == "" || len(program) > 200:
+		writeErr(w, http.StatusUnprocessableEntity, "say which program it's for (up to 200 characters)")
+		return
+	case deadline == "" || len(deadline) > 2000:
+		writeErr(w, http.StatusUnprocessableEntity, "give the program's final deadline (up to 2000 characters)")
+		return
 	case note == "" || len(note) > 5000:
 		writeErr(w, http.StatusUnprocessableEntity, "say how they'll be used (up to 5000 characters)")
 		return
@@ -200,7 +231,7 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 		return
 	}
 	pr, err := s.Store.CreatePrintRequest(r.Context(), store.PrintRequest{
-		UserID: v.user.ID, Product: p.Key, Title: title, Quantity: body.Quantity, FrontURL: strings.TrimSpace(body.FrontURL),
+		UserID: v.user.ID, Product: p.Key, Title: title, Program: program, Deadline: deadline, Quantity: body.Quantity, FrontURL: strings.TrimSpace(body.FrontURL),
 		BackURL: strings.TrimSpace(body.BackURL), Note: note, NeededBy: due, EstimateCents: e.TotalCents,
 		InitialQuantity: body.InitialQuantity, Address: body.Address, FrontPreviewURL: body.FrontPreviewURL,
 		BackPreviewURL: body.BackPreviewURL, Landscape: body.Landscape,
@@ -210,7 +241,7 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 		return
 	}
 	props := map[string]any{"print_request_id": pr.ID, "product": p.Key, "quantity": pr.Quantity, "estimate_cents": pr.EstimateCents,
-		"has_back": pr.BackURL != "", "has_needed_by": due != nil, "initial_quantity": pr.InitialQuantity}
+		"has_back": pr.BackURL != "", "same_back": pr.BackURL == pr.FrontURL, "has_needed_by": due != nil, "initial_quantity": pr.InitialQuantity}
 	if pr.Address != nil {
 		props["country"] = pr.Address.Country
 	}
@@ -298,10 +329,7 @@ func (s *server) printItem(ctx context.Context, pr *store.PrintRequest) (swag.It
 		return firstItem(items), err
 	}
 	p, _ := swag.PrintProductByKey(pr.Product)
-	w, h, t := p.WidthIn, p.HeightIn, p.ThicknessIn
-	if pr.Landscape {
-		w, h = h, w
-	}
+	it := p.Item(pr.SKU, pr.Title, pr.Landscape)
 	images := []string{}
 	for _, u := range []string{pr.FrontPreviewURL, pr.BackPreviewURL} {
 		if u != "" {
@@ -311,11 +339,7 @@ func (s *server) printItem(ctx context.Context, pr *store.PrintRequest) (swag.It
 	if len(images) == 0 {
 		images = []string{pr.FrontURL}
 	}
-	it := swag.Item{SKU: pr.SKU, Name: pr.Title, Images: images, Visible: true, MaxPerRequest: 25,
-		WidthIn: &w, HeightIn: &h, Finish: p.Finish, ThicknessIn: &t}
-	if p.Postcard {
-		it.Packs, it.MaxPerRequest = "postcard", 100
-	}
+	it.Images = images
 	return s.Store.CreateItem(ctx, it)
 }
 
