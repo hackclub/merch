@@ -241,7 +241,7 @@
 		{#if !catalog.settings.requests_open}
 			<p class="error">Requests are closed right now. Check back soon!</p>
 		{/if}
-		{#if asking}
+		{#if open}
 			<fieldset class="ask" id="purpose">
 				<legend>What kind of request is this?</legend>
 				{#each PURPOSES as p (p.value)}
