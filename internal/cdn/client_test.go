@@ -48,3 +48,42 @@ func TestUploadErrorIncludesMessage(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// UploadStream sends the file as it reads it, with an exact Content-Length when
+// the size is known, so a big print file never sits in memory.
+func TestUploadStream(t *testing.T) {
+	payload := strings.Repeat("png!", 1<<18) // 1 MB
+	var gotLen int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotLen = r.ContentLength
+		f, hdr, err := r.FormFile("file")
+		if err != nil { // a cut-off body
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		data, _ := io.ReadAll(f)
+		if hdr.Filename != "poster.png" || string(data) != payload || hdr.Header.Get("Content-Type") != "image/png" {
+			t.Errorf("file = %s, %d bytes, %s", hdr.Filename, len(data), hdr.Header.Get("Content-Type"))
+		}
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte(`{"url":"https://cdn.hackclub.com/u2/poster.png"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "k", nil)
+	url, err := c.UploadStream(context.Background(), "poster.png", "image/png", strings.NewReader(payload), int64(len(payload)))
+	if err != nil || url != "https://cdn.hackclub.com/u2/poster.png" {
+		t.Fatalf("UploadStream = %q, %v", url, err)
+	}
+	if gotLen <= int64(len(payload)) {
+		t.Fatalf("Content-Length = %d, want the payload plus its multipart framing", gotLen)
+	}
+	// Unknown size: sent chunked.
+	if _, err := c.UploadStream(context.Background(), "poster.png", "image/png", strings.NewReader(payload), -1); err != nil || gotLen != -1 {
+		t.Fatalf("chunked = %v, Content-Length %d", err, gotLen)
+	}
+	// A body that ends early (the requester went away) fails rather than storing half a file.
+	if _, err := c.UploadStream(context.Background(), "poster.png", "image/png", strings.NewReader(payload[:100]), int64(len(payload))); err == nil {
+		t.Fatal("short body uploaded")
+	}
+}

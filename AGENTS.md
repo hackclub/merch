@@ -665,8 +665,9 @@ and where, so they see it in person once it arrives.
   leave it off, so the wheel still scrolls the page there. Files upload untouched to the CDN only on Submit (`POST
   /api/print/files?product=…&filename=…`, signed in, the PNG's own bytes as `image/png`, up to 60 MB,
   checked again from its header), then the trimmed JPEG the browser drew for the 3D view (at most 2048 px
-  across) uploads as `&kind=preview` (`image/jpeg`) for the shop item (`preview_url`). The server never
-  decodes the whole art: on 2026-10-23 decoding a 3375x5175 poster PNG (70-140 MB of pixels) on top of its
+  across) uploads as `&kind=preview` (`image/jpeg`) for the shop item (`preview_url`). The server streams both
+  through to the CDN as they arrive (`cdn.UploadStream`, exact `Content-Length`; a 23.6 MB poster costs
+  about 1 MB), checking only the first 64 KB (type, pixel size, DPI), and never decodes the whole art: on 2026-10-23 decoding a 3375x5175 poster PNG (70-140 MB of pixels) on top of its
   base64 JSON got the production pod OOM-killed, and the submit came back a 500 from the proxy.
 - **Estimate** (`swag.EstimatePrint`, `GET /api/print/estimate`): prices are Hack Club's own Vistaprint
   orders from zach@hackclub.com's order confirmations (2025-05 to 2026-10, after the 30% ProAdvantage

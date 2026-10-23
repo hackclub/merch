@@ -123,6 +123,7 @@ func (f *fakeWarehouse) GetOrder(_ context.Context, id string) (*theseus.Order, 
 type fakeCDN struct {
 	mu      sync.Mutex
 	uploads []fakeUpload
+	discard bool // streams are counted, not kept (for measuring memory)
 }
 
 type fakeUpload struct {
@@ -135,6 +136,24 @@ func (f *fakeCDN) Upload(_ context.Context, name, contentType string, data []byt
 	defer f.mu.Unlock()
 	f.uploads = append(f.uploads, fakeUpload{name, contentType, data})
 	return fmt.Sprintf("https://cdn.example/%d/%s", len(f.uploads), name), nil
+}
+
+func (f *fakeCDN) UploadStream(ctx context.Context, name, contentType string, r io.Reader, size int64) (string, error) {
+	if f.discard {
+		n, err := io.Copy(io.Discard, r)
+		if err != nil {
+			return "", err
+		}
+		if size >= 0 && n != size {
+			return "", fmt.Errorf("got %d bytes, want %d", n, size)
+		}
+		return f.Upload(ctx, name, contentType, nil)
+	}
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return "", err
+	}
+	return f.Upload(ctx, name, contentType, data)
 }
 
 // ---- harness ----

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"image"
 	_ "image/jpeg" // previews come as JPEG
 	_ "image/png"  // print art comes as PNG
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -102,11 +104,13 @@ const (
 	maxPrintPreviewSide = 2048
 )
 
-// uploadPrintFile stores one side's print-ready art on the CDN as is, once it's
-// a PNG the shape of the product at a printable resolution; with kind=preview,
-// the browser's trimmed JPEG of it. The body is the file's own bytes (not
-// base64 JSON), and the art is never decoded whole: a 3375 x 5175 poster is
-// 70-140 MB of pixels, which got the pod OOM-killed (2026-10-23).
+// uploadPrintFile streams one side's print-ready art to the CDN as is, once
+// its header shows a PNG the shape of the product at a printable resolution;
+// with kind=preview, the browser's trimmed JPEG of it. The body is the file's
+// own bytes, checked from its first 64 KB and passed through to the CDN as it
+// arrives: never held whole, never decoded. (Decoding a 3375 x 5175 poster,
+// 70-140 MB of pixels, on top of a base64 JSON copy got the pod OOM-killed on
+// 2026-10-23.)
 func (s *server) uploadPrintFile(w http.ResponseWriter, r *http.Request, v viewer) {
 	if s.Images == nil {
 		writeErr(w, http.StatusServiceUnavailable, "uploads are off: set HACKCLUB_CDN_API_KEY")
@@ -123,12 +127,18 @@ func (s *server) uploadPrintFile(w http.ResponseWriter, r *http.Request, v viewe
 	if preview {
 		limit = maxPrintPreview
 	}
-	data, ok := readBody(w, r, limit)
-	if !ok {
+	tooBig := func() {
+		writeErr(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("that file is over %d MB", limit>>20))
+	}
+	if r.ContentLength > limit {
+		tooBig()
 		return
 	}
-	ctype := http.DetectContentType(data)
-	cfg, _, derr := image.DecodeConfig(bytes.NewReader(data))
+	body := &counted{r: http.MaxBytesReader(w, r.Body, limit)}
+	in := bufio.NewReaderSize(body, 64<<10)
+	head, _ := in.Peek(64 << 10) // or all of a smaller file
+	ctype := http.DetectContentType(head)
+	cfg, _, derr := image.DecodeConfig(bytes.NewReader(head))
 	base := strings.TrimSuffix(imageName(q.Get("filename")), ".jpg")
 	kind, name, check := "print", base+".png", swag.ArtCheck{}
 	if preview {
@@ -147,37 +157,43 @@ func (s *server) uploadPrintFile(w http.ResponseWriter, r *http.Request, v viewe
 			return
 		}
 	}
-	url, err := s.Images.Upload(r.Context(), name, ctype, data)
+	url, err := s.Images.UploadStream(r.Context(), name, ctype, in, r.ContentLength)
 	if err != nil {
+		var over *http.MaxBytesError
+		if errors.As(body.err, &over) {
+			tooBig()
+			return
+		}
+		if body.err != nil && body.err != io.EOF {
+			writeErr(w, http.StatusBadRequest, "the upload didn't finish: try again")
+			return
+		}
 		s.Log.Error("cdn upload failed", "product", p.Key, "kind", kind, "err", err)
 		writeErr(w, http.StatusBadGateway, "cdn.hackclub.com refused the file: "+err.Error())
 		return
 	}
-	props := map[string]any{"product": p.Key, "kind": kind, "bytes": len(data), "type": ctype}
+	props := map[string]any{"product": p.Key, "kind": kind, "bytes": body.n, "type": ctype}
 	if !preview {
 		props["fit"], props["dpi"] = check.Fit, check.DPI
 	}
 	s.track(r, v.user, "print_file_uploaded", props)
-	writeJSON(w, http.StatusCreated, printFile{URL: url, Bytes: int64(len(data)), Width: cfg.Width, Height: cfg.Height, ArtCheck: check})
+	writeJSON(w, http.StatusCreated, printFile{URL: url, Bytes: body.n, Width: cfg.Width, Height: cfg.Height, ArtCheck: check})
 }
 
-// readBody reads a raw request body of up to limit bytes, sized up front so
-// it's held once.
-func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
-	var buf bytes.Buffer
-	if n := r.ContentLength; n > 0 && n <= limit {
-		buf.Grow(int(n))
+// counted reads r, counting bytes and keeping its first error other than EOF.
+type counted struct {
+	r   io.Reader
+	n   int64
+	err error
+}
+
+func (c *counted) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	if err != nil && err != io.EOF && c.err == nil {
+		c.err = err
 	}
-	if _, err := buf.ReadFrom(http.MaxBytesReader(w, r.Body, limit)); err != nil {
-		var tooBig *http.MaxBytesError
-		if errors.As(err, &tooBig) {
-			writeErr(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("that file is over %d MB", limit>>20))
-		} else {
-			writeErr(w, http.StatusBadRequest, "couldn't read the upload")
-		}
-		return nil, false
-	}
-	return buf.Bytes(), true
+	return n, err
 }
 
 func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v viewer) {

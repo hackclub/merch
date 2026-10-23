@@ -9,7 +9,9 @@ import (
 	"image"
 	"image/jpeg"
 	"image/png"
+	"math/rand"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -144,6 +146,10 @@ func TestPrintFileUpload(t *testing.T) {
 	}
 	if len(h.cdn.uploads) != 2 {
 		t.Fatalf("%d uploads, want 2", len(h.cdn.uploads))
+	}
+	// Too big, by its declared length, is refused before any of it is read or stored.
+	if code := h.raw(staff, path+"&kind=preview", "image/jpeg", make([]byte, maxPrintPreview+1), nil); code != http.StatusRequestEntityTooLarge || len(h.cdn.uploads) != 2 {
+		t.Fatalf("oversized upload = %d, %d uploads", code, len(h.cdn.uploads))
 	}
 	// Images skip the JSON-only guard on this route alone.
 	if code := h.raw(staff, "/api/requests", "image/png", art, nil); code != http.StatusUnsupportedMediaType {
@@ -322,5 +328,33 @@ func TestPrintGlossyPoster(t *testing.T) {
 	}
 	if items, _ := h.store.ItemsBySKU(context.Background(), []string{"Pri/Spr/11x/Gls"}); len(items) != 1 || items[0].Finish != "gloss" {
 		t.Fatalf("items = %+v", items)
+	}
+}
+
+// Print art streams through to the CDN: a 24 MB poster costs the server a few
+// MB of buffers, not the file (or its pixels) in memory.
+func TestPrintFileUploadStreams(t *testing.T) {
+	h := newHarness(t)
+	h.cdn.discard = true
+	img := image.NewNRGBA(image.Rect(0, 0, 3375, 5175))
+	rand.New(rand.NewSource(1)).Read(img.Pix[:len(img.Pix)/3]) // noise, so it doesn't compress away
+	var b bytes.Buffer
+	(&png.Encoder{CompressionLevel: png.BestSpeed}).Encode(&b, img)
+	art := b.Bytes()
+	img = nil
+	staff := h.client("staff@hackclub.com")
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	var f printFile
+	code := h.raw(staff, "/api/print/files?product=poster_11x17&filename=poster.png", "image/png", art, &f)
+	runtime.ReadMemStats(&after)
+	if code != 201 || f.Bytes != int64(len(art)) || f.Fit != swag.ArtBleed {
+		t.Fatalf("upload = %d %+v", code, f)
+	}
+	got := after.TotalAlloc - before.TotalAlloc
+	t.Logf("a %.1f MB upload allocated %.2f MB (client and server)", float64(len(art))/1e6, float64(got)/1e6)
+	if got > uint64(len(art))/4 {
+		t.Fatalf("a %.1f MB upload allocated %.1f MB: it should stream", float64(len(art))/1e6, float64(got)/1e6)
 	}
 }

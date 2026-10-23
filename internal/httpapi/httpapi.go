@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"mime"
@@ -50,6 +51,8 @@ type Warehouse interface {
 // ImageStore hosts item images (cdn.hackclub.com in production).
 type ImageStore interface {
 	Upload(ctx context.Context, filename, contentType string, data []byte) (url string, err error)
+	// UploadStream sends size bytes (-1: unknown) read from r as they arrive.
+	UploadStream(ctx context.Context, filename, contentType string, r io.Reader, size int64) (url string, err error)
 }
 
 type Deps struct {
