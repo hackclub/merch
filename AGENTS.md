@@ -551,7 +551,8 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   rule it broke), `request_cancelled`, `customs_invoice` (someone downloaded a request's customs
   invoice PDF: `request_id`, `country`, `status`, `lines`, `value_cents`, `admin` when an admin got
   someone else's), `submission_created`,
-  `print_file_uploaded` (print art stored on the CDN: `product`, `fit`, `dpi`, `bytes`, `type`),
+  `print_file_uploaded` (print art stored on the CDN: `product`, `kind` = `print` or `preview`, `bytes`,
+  `type`, and for print files `fit` and `dpi`),
   `print_request_created` (`print_request_id`, `product`, `finish`, `quantity`, `estimate_cents`, `has_back`,
   `same_back` (the same art on both sides, the default), `has_needed_by` (always false since the
   form asks for a written deadline; older requests with a date also have `days_until_needed` against
@@ -662,8 +663,11 @@ and where, so they see it in person once it arrives.
   and a pinch zoom smoothly, dragging up or down swings the camera over or under the print (the
   viewer's `tilt`), a double-click resets it, and it stops spinning once grabbed. Product pages
   leave it off, so the wheel still scrolls the page there. Files upload untouched to the CDN only on Submit (`POST
-  /api/print/files`, signed in, up to 60 MB each, checked again), and the server also uploads a trimmed,
-  shrunk JPEG (`preview_url`, `imgprep.WebInset` by `swag.TrimInset`) for the shop item.
+  /api/print/files?product=…&filename=…`, signed in, the PNG's own bytes as `image/png`, up to 60 MB,
+  checked again from its header), then the trimmed JPEG the browser drew for the 3D view (at most 2048 px
+  across) uploads as `&kind=preview` (`image/jpeg`) for the shop item (`preview_url`). The server never
+  decodes the whole art: on 2026-10-23 decoding a 3375x5175 poster PNG (70-140 MB of pixels) on top of its
+  base64 JSON got the production pod OOM-killed, and the submit came back a 500 from the proxy.
 - **Estimate** (`swag.EstimatePrint`, `GET /api/print/estimate`): prices are Hack Club's own Vistaprint
   orders from zach@hackclub.com's order confirmations (2025-05 to 2026-10, after the 30% ProAdvantage
   discount, before tax), read between the quantities ordered on a straight line. For example: 1,000
@@ -867,7 +871,8 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   drive was unmounted, Docker hung at "waiting for external data drive". On 2026-09-29 it was
   reset to the internal disk (`~/.orbstack/vmconfig.json`); the old config is saved as
   `vmconfig.json.bak-porygonwork-2026-09-29`.
-- CSRF: mutating `/api/*` calls must be `Content-Type: application/json`, and their `Origin`
+- CSRF: mutating `/api/*` calls must be `Content-Type: application/json` (or `image/png` /
+  `image/jpeg` on `/api/print/files` alone, which also need a CORS preflight), and their `Origin`
   (if present) must be `BASE_URL` or one of `EXTRA_BASE_URLS`. In dev those are the Vite
   origins (`http://localhost:5173`, `http://porygon:5173`).
 - Security headers and rate limits (`internal/httpapi/guard.go`): every response gets

@@ -183,7 +183,9 @@ func New(d Deps) http.Handler {
 
 // csrf rejects state-changing API calls that aren't same-origin JSON. Browsers
 // can't send cross-site application/json without a CORS preflight we never
-// grant, and SameSite=Lax session cookies cover the rest.
+// grant, and SameSite=Lax session cookies cover the rest. Print art uploads
+// as the image's own bytes (image/png, image/jpeg), which need the same
+// preflight, so /api/print/files admits those too.
 func (s *server) csrf(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && strings.HasPrefix(r.URL.Path, "/api/") {
@@ -192,7 +194,7 @@ func (s *server) csrf(next http.Handler) http.Handler {
 				return
 			}
 			mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
-			if mt != "application/json" {
+			if mt != "application/json" && !(r.URL.Path == "/api/print/files" && (mt == "image/png" || mt == "image/jpeg")) {
 				writeErr(w, http.StatusUnsupportedMediaType, "send application/json")
 				return
 			}

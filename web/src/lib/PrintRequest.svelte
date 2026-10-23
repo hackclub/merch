@@ -4,7 +4,7 @@
 	// Files upload untouched on Submit (POST /api/print/files), then the request (POST /api/print-requests).
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { api, ApiError, fileToBase64, isInternational } from './api';
+	import { api, ApiError, isInternational } from './api';
 	import { blankAddress, prefillAddress } from './address';
 	import { applyPlace } from './addressSearch';
 	import AddressLine1 from './AddressLine1.svelte';
@@ -19,8 +19,9 @@
 	} from './print';
 
 	type Side = 'front' | 'back';
-	// A picked file: its size, how it fits, the whole art for the flat view, and the trimmed art for 3D.
-	type Art = { file: File; width: number; height: number; check: ArtCheck; url: string; trimmed: string };
+	// A picked file: its size, how it fits, the whole art for the flat view, and the trimmed art for 3D
+	// (a JPEG at most 2048 px across, which also uploads as the shop item's picture).
+	type Art = { file: File; width: number; height: number; check: ArtCheck; url: string; trimmed: string; preview: Blob | null };
 
 	let products = $state<PrintProduct[]>([]);
 	let key = $state('postcard_4x6');
@@ -82,7 +83,7 @@
 	});
 
 	// The art with its bleed cut off, at most 2048 px across, for the 3D view's texture.
-	async function trim(bitmap: ImageBitmap, p: PrintProduct): Promise<string> {
+	async function trim(bitmap: ImageBitmap, p: PrintProduct): Promise<Blob | null> {
 		const c = trimCrop(p, bitmap.width, bitmap.height);
 		const scale = Math.min(1, 2048 / Math.max(c.sw, c.sh));
 		const canvas = document.createElement('canvas');
@@ -90,7 +91,7 @@
 		canvas.height = Math.round(c.sh * scale);
 		canvas.getContext('2d')!.drawImage(bitmap, c.sx, c.sy, c.sw, c.sh, 0, 0, canvas.width, canvas.height);
 		const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.9));
-		return blob ? URL.createObjectURL(blob) : '';
+		return blob;
 	}
 
 	async function pickFile(side: Side, e: Event) {
@@ -110,7 +111,8 @@
 		try {
 			const bitmap = await createImageBitmap(file);
 			const check = checkArt(product, bitmap.width, bitmap.height);
-			art[side] = { file, width: bitmap.width, height: bitmap.height, check, url: URL.createObjectURL(file), trimmed: await trim(bitmap, product) };
+			const preview = await trim(bitmap, product);
+			art[side] = { file, width: bitmap.width, height: bitmap.height, check, url: URL.createObjectURL(file), trimmed: preview ? URL.createObjectURL(preview) : '', preview };
 			bitmap.close();
 			track('print_art', printArtProps(product.key, side, check, file.size));
 		} catch {
@@ -192,7 +194,11 @@
 
 	async function upload(side: Side, a: Art): Promise<{ url: string; preview_url: string }> {
 		submitting = `Uploading the ${side}…`;
-		return api.post('/api/print/files', { product: key, filename: a.file.name, data: await fileToBase64(a.file) });
+		// The PNG as is, then the trimmed JPEG the browser drew of it: the server never decodes the whole art.
+		const path = `/api/print/files?product=${key}&filename=${encodeURIComponent(a.file.name)}`;
+		const f = await api.upload<{ url: string }>(path, a.file);
+		const p = a.preview ? await api.upload<{ url: string }>(`${path}&kind=preview`, a.preview) : null;
+		return { url: f.url, preview_url: p?.url ?? '' };
 	}
 
 	async function submit(e: SubmitEvent) {

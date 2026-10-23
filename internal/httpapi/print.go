@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"image"
-	_ "image/png" // print art comes as PNG
+	_ "image/jpeg" // previews come as JPEG
+	_ "image/png"  // print art comes as PNG
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/hackclub/merch/internal/imgprep"
 	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/swag"
 )
@@ -85,65 +85,99 @@ func (s *server) printDelivery(ctx context.Context, p swag.PrintProduct, n int, 
 	return h.Estimate(country, packing, s.Now()), true
 }
 
-// printFile is a piece of print art on the CDN, untouched, and how it fits.
-// PreviewURL is the same art trimmed and shrunk to a web JPEG, for the shop
+// printFile is a piece of print art on the CDN, untouched, and how it fits;
+// or (kind=preview) the trimmed web JPEG of it the browser drew, for the shop
 // item the run becomes.
 type printFile struct {
-	URL        string `json:"url"`
-	PreviewURL string `json:"preview_url"`
-	Bytes      int64  `json:"bytes"`
-	Width      int    `json:"width"`
-	Height     int    `json:"height"`
+	URL    string `json:"url"`
+	Bytes  int64  `json:"bytes"`
+	Width  int    `json:"width"`
+	Height int    `json:"height"`
 	swag.ArtCheck
 }
 
+// A preview is the art trimmed and shrunk in the browser (as for its 3D view).
+const (
+	maxPrintPreview     = 4 << 20
+	maxPrintPreviewSide = 2048
+)
+
 // uploadPrintFile stores one side's print-ready art on the CDN as is, once it's
-// a PNG the shape of the product at a printable resolution.
+// a PNG the shape of the product at a printable resolution; with kind=preview,
+// the browser's trimmed JPEG of it. The body is the file's own bytes (not
+// base64 JSON), and the art is never decoded whole: a 3375 x 5175 poster is
+// 70-140 MB of pixels, which got the pod OOM-killed (2026-10-23).
 func (s *server) uploadPrintFile(w http.ResponseWriter, r *http.Request, v viewer) {
 	if s.Images == nil {
 		writeErr(w, http.StatusServiceUnavailable, "uploads are off: set HACKCLUB_CDN_API_KEY")
 		return
 	}
-	var body struct {
-		Product  string `json:"product"`
-		Filename string `json:"filename"`
-		Data     []byte `json:"data"` // base64
-	}
-	if !readJSONLimit(w, r, &body, maxPrintFile*4/3+4096) {
-		return
-	}
-	p, ok := swag.PrintProductByKey(body.Product)
+	q := r.URL.Query()
+	p, ok := swag.PrintProductByKey(q.Get("product"))
 	if !ok {
 		writeErr(w, http.StatusUnprocessableEntity, "unknown product")
 		return
 	}
-	ctype := http.DetectContentType(body.Data)
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(body.Data))
-	if ctype != "image/png" || err != nil {
-		writeErr(w, http.StatusUnprocessableEntity, "upload a PNG (export other files as a 300 DPI PNG)")
+	preview := q.Get("kind") == "preview"
+	limit := int64(maxPrintFile)
+	if preview {
+		limit = maxPrintPreview
+	}
+	data, ok := readBody(w, r, limit)
+	if !ok {
 		return
 	}
-	check := swag.CheckArt(p, cfg.Width, cfg.Height)
-	if check.Problem != "" {
-		writeErr(w, http.StatusUnprocessableEntity, "This file won't print well: "+check.Problem+".")
-		return
+	ctype := http.DetectContentType(data)
+	cfg, _, derr := image.DecodeConfig(bytes.NewReader(data))
+	base := strings.TrimSuffix(imageName(q.Get("filename")), ".jpg")
+	kind, name, check := "print", base+".png", swag.ArtCheck{}
+	if preview {
+		if ctype != "image/jpeg" || derr != nil || max(cfg.Width, cfg.Height) > maxPrintPreviewSide {
+			writeErr(w, http.StatusUnprocessableEntity, fmt.Sprintf("a preview is a JPEG up to %d px across", maxPrintPreviewSide))
+			return
+		}
+		kind, name = "preview", base+"-preview.jpg"
+	} else {
+		if ctype != "image/png" || derr != nil {
+			writeErr(w, http.StatusUnprocessableEntity, "upload a PNG (export other files as a 300 DPI PNG)")
+			return
+		}
+		if check = swag.CheckArt(p, cfg.Width, cfg.Height); check.Problem != "" {
+			writeErr(w, http.StatusUnprocessableEntity, "This file won't print well: "+check.Problem+".")
+			return
+		}
 	}
-	base := strings.TrimSuffix(imageName(body.Filename), ".jpg")
-	url, err := s.Images.Upload(r.Context(), base+".png", ctype, body.Data)
+	url, err := s.Images.Upload(r.Context(), name, ctype, data)
 	if err != nil {
-		s.Log.Error("cdn upload failed", "product", p.Key, "err", err)
+		s.Log.Error("cdn upload failed", "product", p.Key, "kind", kind, "err", err)
 		writeErr(w, http.StatusBadGateway, "cdn.hackclub.com refused the file: "+err.Error())
 		return
 	}
-	// Without a preview, the item falls back to the print file; that's no reason to refuse the art.
-	preview := ""
-	if jpg, err := imgprep.WebInset(body.Data, swag.TrimInset(p, cfg.Width, cfg.Height)); err != nil {
-		s.Log.Warn("print preview failed", "product", p.Key, "err", err)
-	} else if preview, err = s.Images.Upload(r.Context(), base+"-preview.jpg", "image/jpeg", jpg); err != nil {
-		s.Log.Warn("print preview upload failed", "product", p.Key, "err", err)
+	props := map[string]any{"product": p.Key, "kind": kind, "bytes": len(data), "type": ctype}
+	if !preview {
+		props["fit"], props["dpi"] = check.Fit, check.DPI
 	}
-	s.track(r, v.user, "print_file_uploaded", map[string]any{"product": p.Key, "fit": check.Fit, "dpi": check.DPI, "bytes": len(body.Data), "type": ctype})
-	writeJSON(w, http.StatusCreated, printFile{URL: url, PreviewURL: preview, Bytes: int64(len(body.Data)), Width: cfg.Width, Height: cfg.Height, ArtCheck: check})
+	s.track(r, v.user, "print_file_uploaded", props)
+	writeJSON(w, http.StatusCreated, printFile{URL: url, Bytes: int64(len(data)), Width: cfg.Width, Height: cfg.Height, ArtCheck: check})
+}
+
+// readBody reads a raw request body of up to limit bytes, sized up front so
+// it's held once.
+func readBody(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
+	var buf bytes.Buffer
+	if n := r.ContentLength; n > 0 && n <= limit {
+		buf.Grow(int(n))
+	}
+	if _, err := buf.ReadFrom(http.MaxBytesReader(w, r.Body, limit)); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			writeErr(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("that file is over %d MB", limit>>20))
+		} else {
+			writeErr(w, http.StatusBadRequest, "couldn't read the upload")
+		}
+		return nil, false
+	}
+	return buf.Bytes(), true
 }
 
 func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v viewer) {

@@ -27,6 +27,17 @@ describe('api', () => {
 		expect(JSON.parse(init.body)).toEqual({ a: 1 });
 	});
 
+	it('uploads a file as its own bytes and type, not base64 JSON', async () => {
+		const fetch = stubFetch(201, { url: 'https://cdn.example/1/a.png' });
+		const file = new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' });
+		const out = await api.upload<{ url: string }>('/api/print/files?product=postcard_4x6', file);
+		expect(out.url).toBe('https://cdn.example/1/a.png');
+		const [, init] = fetch.mock.calls[0];
+		expect(init.method).toBe('POST');
+		expect(init.headers['Content-Type']).toBe('image/png');
+		expect(init.body).toBe(file);
+	});
+
 	it('throws ApiError carrying the server message', async () => {
 		stubFetch(422, { error: 'you requested swag recently' });
 		await expect(api.get('/api/requests')).rejects.toEqual(new ApiError(422, 'you requested swag recently'));

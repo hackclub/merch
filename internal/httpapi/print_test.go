@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -56,61 +57,97 @@ func TestPrintProductsAndEstimate(t *testing.T) {
 	}
 }
 
+// raw posts body as contentType: the print form sends art as the file's own bytes, not base64 JSON.
+func (h *harness) raw(c *http.Client, path, contentType string, body []byte, out any) int {
+	h.t.Helper()
+	req, _ := http.NewRequest("POST", h.srv.URL+path, bytes.NewReader(body))
+	req.Header.Set("Content-Type", contentType)
+	resp, err := c.Do(req)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if out != nil {
+		json.NewDecoder(resp.Body).Decode(out)
+	}
+	return resp.StatusCode
+}
+
+func jpegOf(t *testing.T, w, h int) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	if err := jpeg.Encode(&b, image.NewGray(image.Rect(0, 0, w, h)), nil); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
+}
+
 func TestPrintFileUpload(t *testing.T) {
 	h := newHarness(t)
 	staff := h.client("staff@hackclub.com")
-	upload := func(c *http.Client, product string, data []byte, out any) int {
-		return h.do(c, "POST", "/api/print/files", map[string]any{"product": product, "filename": "Front Side.png", "data": base64.StdEncoding.EncodeToString(data)}, out)
-	}
+	const path = "/api/print/files?product=postcard_4x6&filename=Front%20Side.png"
 	art := pngOf(t, 1875, 1275)
 	var f printFile
-	if code := upload(staff, "postcard_4x6", art, &f); code != 201 {
+	if code := h.raw(staff, path, "image/png", art, &f); code != 201 {
 		t.Fatalf("upload = %d", code)
 	}
-	if f.URL != "https://cdn.example/1/front-side.png" || f.PreviewURL != "https://cdn.example/2/front-side-preview.jpg" || f.Width != 1875 || f.Height != 1275 || f.Fit != swag.ArtBleed || f.DPI != 300 || f.Bytes != int64(len(art)) {
+	if f.URL != "https://cdn.example/1/front-side.png" || f.Width != 1875 || f.Height != 1275 || f.Fit != swag.ArtBleed || f.DPI != 300 || f.Bytes != int64(len(art)) {
 		t.Fatalf("file = %+v", f)
 	}
-	if up := h.cdn.uploads[0]; up.contentType != "image/png" || !bytes.Equal(up.data, art) {
-		t.Fatalf("uploaded %s, %d bytes", up.contentType, len(up.data))
+	// Stored untouched, and never decoded whole on the server: the browser sends the preview.
+	if len(h.cdn.uploads) != 1 || h.cdn.uploads[0].contentType != "image/png" || !bytes.Equal(h.cdn.uploads[0].data, art) {
+		t.Fatalf("uploads = %d", len(h.cdn.uploads))
 	}
-	// The preview is the trimmed card, shrunk: 1800 x 1200 px of art without its bleed.
-	if up := h.cdn.uploads[1]; up.contentType != "image/jpeg" {
+	// The preview is the trimmed card the browser drew for the 3D view, stored as sent.
+	preview := jpegOf(t, 1800, 1200)
+	var pf printFile
+	if code := h.raw(staff, path+"&kind=preview", "image/jpeg", preview, &pf); code != 201 || pf.URL != "https://cdn.example/2/front-side-preview.jpg" {
+		t.Fatalf("preview = %d %+v", code, pf)
+	}
+	if up := h.cdn.uploads[1]; up.contentType != "image/jpeg" || !bytes.Equal(up.data, preview) {
 		t.Fatalf("preview uploaded as %s", up.contentType)
-	} else if cfg, _, err := image.DecodeConfig(bytes.NewReader(up.data)); err != nil || cfg.Width != 1600 || cfg.Height != 1066 {
-		t.Fatalf("preview = %+v, %v", cfg, err)
 	}
-	if e := h.events("print_file_uploaded"); len(e) != 1 || props(t, e[0])["fit"] != "bleed" || props(t, e[0])["product"] != "postcard_4x6" {
+	e := h.events("print_file_uploaded")
+	if len(e) != 2 || props(t, e[0])["fit"] != "bleed" || props(t, e[0])["kind"] != "print" || props(t, e[1])["kind"] != "preview" || props(t, e[0])["product"] != "postcard_4x6" {
 		t.Fatalf("events = %+v", e)
 	}
-	// A square won't print as a postcard; under 300 DPI won't print sharp; a PDF can't be previewed;
-	// nobody signed out uploads.
-	if code := upload(staff, "postcard_4x6", pngOf(t, 500, 500), nil); code != 422 {
+	// A square won't print as a postcard; under 300 DPI won't print sharp; only PNGs print; previews are
+	// web-sized JPEGs; the old base64 JSON isn't art; nobody signed out uploads.
+	if code := h.raw(staff, path, "image/png", pngOf(t, 500, 500), nil); code != 422 {
 		t.Fatalf("square upload = %d", code)
 	}
 	var low struct{ Error string }
-	if code := upload(staff, "postcard_4x6", pngOf(t, 1274, 1874), &low); code != 422 || !strings.Contains(low.Error, "at least 300") {
+	if code := h.raw(staff, path, "image/png", pngOf(t, 1274, 1874), &low); code != 422 || !strings.Contains(low.Error, "at least 300") {
 		t.Fatalf("299 DPI upload = %d %q", code, low.Error)
 	}
-	// Only PNGs: a JPEG the right size is refused too.
-	var jpg bytes.Buffer
-	if err := jpeg.Encode(&jpg, image.NewGray(image.Rect(0, 0, 1875, 1275)), nil); err != nil {
-		t.Fatal(err)
-	}
 	var notPNG struct{ Error string }
-	if code := upload(staff, "postcard_4x6", jpg.Bytes(), &notPNG); code != 422 || !strings.Contains(notPNG.Error, "PNG") {
+	if code := h.raw(staff, path, "image/jpeg", jpegOf(t, 1875, 1275), &notPNG); code != 422 || !strings.Contains(notPNG.Error, "PNG") {
 		t.Fatalf("jpeg upload = %d %q", code, notPNG.Error)
 	}
-	if code := upload(staff, "postcard_4x6", []byte("%PDF-1.7\n"+strings.Repeat("x", 100)), nil); code != 422 {
+	if code := h.raw(staff, path, "image/png", []byte("%PDF-1.7\n"+strings.Repeat("x", 100)), nil); code != 422 {
 		t.Fatalf("pdf upload = %d", code)
 	}
-	if code := upload(staff, "banner", art, nil); code != 422 {
+	if code := h.raw(staff, path+"&kind=preview", "image/jpeg", jpegOf(t, 3000, 2000), nil); code != 422 {
+		t.Fatalf("oversized preview = %d", code)
+	}
+	if code := h.raw(staff, path+"&kind=preview", "image/png", art, nil); code != 422 {
+		t.Fatalf("png preview = %d", code)
+	}
+	if code := h.do(staff, "POST", path, map[string]any{"data": base64.StdEncoding.EncodeToString(art)}, nil); code != 422 {
+		t.Fatalf("json upload = %d", code)
+	}
+	if code := h.raw(staff, "/api/print/files?product=banner&filename=x.png", "image/png", art, nil); code != 422 {
 		t.Fatalf("unknown product upload = %d", code)
 	}
-	if code := upload(h.client(""), "postcard_4x6", art, nil); code != 401 {
+	if code := h.raw(h.client(""), path, "image/png", art, nil); code != 401 {
 		t.Fatalf("signed-out upload = %d", code)
 	}
 	if len(h.cdn.uploads) != 2 {
 		t.Fatalf("%d uploads, want 2", len(h.cdn.uploads))
+	}
+	// Images skip the JSON-only guard on this route alone.
+	if code := h.raw(staff, "/api/requests", "image/png", art, nil); code != http.StatusUnsupportedMediaType {
+		t.Fatalf("png to /api/requests = %d", code)
 	}
 }
 

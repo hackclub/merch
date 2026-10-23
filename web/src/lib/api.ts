@@ -28,7 +28,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 		credentials: 'same-origin',
 		headers: { Accept: 'application/json', 'X-Merch-Visit': visitId() }
 	};
-	if (body !== undefined) {
+	if (body instanceof Blob) {
+		// A file goes as its own bytes: base64 in JSON is a third bigger, and the server holds it twice.
+		init.headers['Content-Type'] = body.type;
+		init.body = body;
+	} else if (body !== undefined) {
 		init.headers['Content-Type'] = 'application/json';
 		init.body = JSON.stringify(body);
 	}
@@ -46,7 +50,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
 	get: <T>(path: string) => request<T>('GET', path),
 	post: <T>(path: string, body: unknown = {}) => request<T>('POST', path, body),
-	put: <T>(path: string, body: unknown) => request<T>('PUT', path, body)
+	put: <T>(path: string, body: unknown) => request<T>('PUT', path, body),
+	/** POSTs a file as its own bytes and type (only /api/print/files takes these). */
+	upload: <T>(path: string, file: Blob) => request<T>('POST', path, file)
 };
 
 /** Base64 of a file's bytes, for JSON uploads (the API only accepts application/json). */
