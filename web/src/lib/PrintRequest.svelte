@@ -350,7 +350,7 @@
 						</tbody>
 					</table>
 					<p><strong>{arrivalLine(estimate)}</strong></p>
-					<p class="muted">Estimated from Hack Club's own Vistaprint orders, 2025–26, and how our packages have shipped.</p>
+					<p class="muted">Estimated from Hack Club's own print orders, 2025–26, and how our packages have shipped.</p>
 				{:else if estimateError}
 					<p class="error">{estimateError}</p>
 				{/if}

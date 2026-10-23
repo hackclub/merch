@@ -13,8 +13,8 @@ import (
 type PrintProduct struct {
 	Key         string   `json:"key"`
 	Name        string   `json:"name"`
-	Paper       string   `json:"paper"`  // what it's printed on, for people
-	Vendor      string   `json:"vendor"` // the Vistaprint product we order
+	Paper       string   `json:"paper"` // what it's printed on, for people
+	Vendor      string   `json:"-"`     // the Vistaprint product HQ orders; staff aren't shown the printer
 	WidthIn     float64  `json:"width_in"`
 	HeightIn    float64  `json:"height_in"`
 	BleedIn     float64  `json:"bleed_in"` // art runs this far past the trim on every side

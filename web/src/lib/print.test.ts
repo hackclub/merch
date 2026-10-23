@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { checkArt, finishOptions, placeholderArt, placeholderSheet, firstShipmentOptions, guides, printArtProps, estimateLine, arrivalLine, timelineRows, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
+import { checkArt, finishOptions, printStatusLabel, placeholderArt, placeholderSheet, firstShipmentOptions, guides, printArtProps, estimateLine, arrivalLine, timelineRows, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
 
 const postcard: PrintProduct = {
-	key: 'postcard_4x6', name: '4x6 postcard', paper: 'Premium linen card stock', vendor: 'Vistaprint', width_in: 4, height_in: 6,
+	key: 'postcard_4x6', name: '4x6 postcard', paper: 'Premium linen card stock', width_in: 4, height_in: 6,
 	bleed_in: 0.125, safe_in: 0.125, dpi: 300, finish: 'linen', finishes: ['linen'], thickness_in: 0.016, postcard: true, min_quantity: 50, max_quantity: 25000,
 	step: 50, bleed_width_in: 4.25, bleed_height_in: 6.25, safe_width_in: 3.75, safe_height_in: 5.75, bleed_width_px: 1275, bleed_height_px: 1875
 };
@@ -75,7 +75,7 @@ describe('templateSVG', () => {
 		expect(svg).toContain('6.25" x 4.25"');
 	});
 	it("doesn't name the printer, and asks for a PNG", () => {
-		const svg = templateSVG({ ...postcard, vendor: 'Vistaprint Standard Postcards' }, false);
+		const svg = templateSVG(postcard, false);
 		expect(svg).not.toMatch(/vistaprint/i);
 		expect(svg).not.toMatch(/jpe?g/i);
 		expect(svg).toContain('Export a PNG');
@@ -98,12 +98,12 @@ describe('estimate text', () => {
 	});
 	it('lays out each leg: review and order, Vistaprint to our warehouse, our warehouse to them', () => {
 		expect(timelineRows(delivered)).toEqual([
-			['Review and order from Vistaprint', 'Within 48 hours'],
-			['Vistaprint prints and ships to our warehouse', '4–9 business days'],
+			['We review it and order the print run', 'Within 48 hours'],
+			['Printed and shipped to our warehouse', '4–9 business days'],
 			['Our warehouse to you', '4–7 business days']
 		]);
 		// No first shipment: it ends at the warehouse.
-		expect(timelineRows(estimate).map((r) => r[0])).toEqual(['Review and order from Vistaprint', 'Vistaprint prints and ships to our warehouse']);
+		expect(timelineRows(estimate).map((r) => r[0])).toEqual(['We review it and order the print run', 'Printed and shipped to our warehouse']);
 	});
 	it('gives when the first ones reach them, or else when the run is in the warehouse', () => {
 		expect(arrivalLine(delivered)).toBe('Your first ones should arrive about Nov 6–18.');
@@ -129,6 +129,12 @@ describe('finishOptions', () => {
 			{ value: 'gloss', label: 'Glossy' }
 		]);
 		expect(finishOptions(postcard)).toEqual([]);
+	});
+});
+
+describe('wording', () => {
+	it("never names the printer people see in the staff print flow", () => {
+		expect(JSON.stringify([timelineRows({ ...estimate, to_you_days: [4, 7] }), printStatusLabel])).not.toMatch(/vistaprint/i);
 	});
 });
 

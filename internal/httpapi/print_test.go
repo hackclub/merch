@@ -36,6 +36,11 @@ func TestPrintProductsAndEstimate(t *testing.T) {
 	if code := h.do(anon, "GET", "/api/print/products", nil, &got); code != 200 || len(got.Products) != len(swag.PrintProducts) {
 		t.Fatalf("products = %d %+v", code, got)
 	}
+	// Staff never see which printer HQ orders from.
+	var raw json.RawMessage
+	if h.do(anon, "GET", "/api/print/products", nil, &raw); strings.Contains(strings.ToLower(string(raw)), "vistaprint") {
+		t.Fatalf("products name the printer: %s", raw)
+	}
 	pc := got.Products[0]
 	if pc.Key != "postcard_4x6" || pc.BleedWidthIn != 4.25 || pc.BleedHeightIn != 6.25 || pc.SafeWidthIn != 3.75 || pc.BleedWidthPx != 1275 || pc.BleedHeightPx != 1875 {
 		t.Fatalf("postcard = %+v", pc)

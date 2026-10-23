@@ -8,7 +8,6 @@ export type PrintProduct = {
 	key: string;
 	name: string;
 	paper: string;
-	vendor: string;
 	width_in: number; // trimmed, short side first
 	height_in: number;
 	bleed_in: number;
@@ -36,7 +35,7 @@ export type PrintEstimate = {
 	shipping_cents: number;
 	total_cents: number;
 	each_cents: number;
-	// The legs in business days: HQ reviews and orders; Vistaprint prints and ships to the warehouse,
+	// The legs in business days: HQ reviews and orders; the printer prints and ships to the warehouse,
 	// which receives it; the first shipment goes to them ([0, 0] without one, or without history).
 	review_days: number;
 	to_warehouse_days: [number, number];
@@ -74,7 +73,7 @@ export type PrintRequest = {
 
 export const printStatusLabel: Record<PrintRequest['status'], string> = {
 	submitted: 'Submitted',
-	ordered: 'Ordered from Vistaprint',
+	ordered: 'Sent to the printer',
 	stocked: 'In the warehouse',
 	rejected: 'Not printed'
 };
@@ -192,8 +191,8 @@ export function estimateLine(e: PrintEstimate): string {
 /** Each leg from sending the art to the first ones at their door, as [step, how long]. */
 export function timelineRows(e: PrintEstimate): [string, string][] {
 	const rows: [string, string][] = [
-		['Review and order from Vistaprint', `Within ${e.review_days * 24} hours`],
-		['Vistaprint prints and ships to our warehouse', spanText(e.to_warehouse_days)]
+		['We review it and order the print run', `Within ${e.review_days * 24} hours`],
+		['Printed and shipped to our warehouse', spanText(e.to_warehouse_days)]
 	];
 	if (e.to_you_days[1] > 0) rows.push(['Our warehouse to you', spanText(e.to_you_days)]);
 	return rows;

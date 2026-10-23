@@ -12,7 +12,7 @@
 </script>
 
 {#if page.url.searchParams.get('printed')}
-	<p class="ok">Sent! We'll check your art and order it from Vistaprint within 48 hours. It shows up here as it moves along.</p>
+	<p class="ok">Sent! We'll check your art and order the print run within 48 hours. It shows up here as it moves along.</p>
 {/if}
 {#if prints.length}
 	<h2>Printing</h2>
