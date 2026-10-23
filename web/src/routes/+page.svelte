@@ -282,10 +282,10 @@
 			<p class="error">Requests are closed right now. Check back soon!</p>
 		{/if}
 		{#if open}
-			<fieldset class="ask" id="purpose">
+			<fieldset class="ask purposes" id="purpose">
 				<legend>What kind of request is this?</legend>
-				{#each PURPOSES as p (p.value)}
-					<label class="choice" class:on={purpose === p.value}>
+				{#each PURPOSES as p, i (p.value)}
+					<label class="choice" class:on={purpose === p.value} class:beside={p.beside} class:paired={PURPOSES[i + 1]?.beside}>
 						<input type="radio" name="purpose" value={p.value} checked={purpose === p.value} onchange={() => choose(p.value)} />
 						{p.label}
 					</label>
@@ -566,6 +566,9 @@
 	h2 { margin: 2rem 0 1rem; padding-top: 1.5rem; border-top: 1px solid var(--smoke); font-size: 1.25rem; line-height: 1.3; }
 	.ask { margin: 2rem 0 0; padding: 1.5rem 0 0; border: 0; border-top: 1px solid var(--smoke); display: grid; gap: 0.5rem; }
 	.ask legend { float: left; width: 100%; margin-bottom: 0.5rem; padding: 0; font-weight: 700; font-size: 1.25rem; line-height: 1.3; }
+	/* Most options take the whole row; a `beside` one sits on the right of the one before it. */
+	.purposes { grid-template-columns: 1fr auto; }
+	.purposes .choice:not(.paired, .beside) { grid-column: 1 / -1; }
 	/* Staff's second question sits right under the first. */
 	.ask.need { margin-top: 1rem; padding-top: 0; border-top: 0; }
 	.group { margin-bottom: 1.5rem; }

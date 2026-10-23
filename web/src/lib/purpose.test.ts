@@ -8,7 +8,9 @@ const shirt: Item = { ...base, id: 2, sku: 'Swa/Shirt/HC', name: 'T-shirt', club
 describe('purpose', () => {
 	it('asks the four kinds of request, personal first, staff last', () => {
 		expect(PURPOSES.map((p) => p.value)).toEqual(['personal', 'event', 'club', 'staff']);
-		expect(PURPOSES.find((p) => p.value === 'staff')?.label).toBe("I'm Hack Club staff");
+		expect(PURPOSES.find((p) => p.value === 'staff')?.label).toBe("I'm HQ staff");
+		// Staff is the rare pick: it sits on the right of "I run a Hack Club", on one row.
+		expect(PURPOSES.filter((p) => p.beside).map((p) => p.value)).toEqual(['staff']);
 	});
 
 	it('gives staff everything clubs and events get', () => {

@@ -319,7 +319,7 @@
 			<h3>How many should we print?</h3>
 			<p>
 				We'll stock them at our warehouse and list them on the merch request form, where anyone can request them to help market your program.
-				You can request more yourself any time: pick “I'm Hack Club staff” on this site.
+				You can request more yourself any time: pick “I'm HQ staff” on this site.
 			</p>
 			<div class="presets">
 				{#each quantityPresets(product) as q (q)}

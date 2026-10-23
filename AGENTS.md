@@ -632,10 +632,10 @@ When Zach asks you to improve the shop from evidence, run this loop end to end:
 
 ## Print requests (staff)
 
-Staff who pick "I'm Hack Club staff", then "I want to get postcards / posters made", get the print flow
+Staff who pick "I'm HQ staff" (on the right of "I run a Hack Club"), then "I want to get postcards / posters made", get the print flow
 (`web/src/lib/PrintRequest.svelte`) in place of the swag list. HQ orders the run from Vistaprint, it ships
 to the warehouse, and it's listed in the shop, where anyone can request it to help market the program
-(staff included, through "I'm Hack Club staff", any time). The form also asks how many to send them first,
+(staff included, through "I'm HQ staff", any time). The form also asks how many to send them first,
 and where, so they see it in person once it arrives.
 
 - **Products** (`swag.PrintProducts`, `GET /api/print/products`): 4x6 postcards on Vistaprint's premium

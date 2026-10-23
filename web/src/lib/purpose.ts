@@ -5,8 +5,9 @@ const REASON =
 	'This will be reviewed before we send your shipment, usually with 6-10 hour turnaround. More detail helps us approve more requests. We may adjust quantities up or down based on what you put here. (For events people often don\'t request enough stickers, for example)';
 
 /** What a request is for. The request form asks this first, like the old Fillout forms. Mirrors swag.Purposes.
- * Clubs and events say how they'll use it (reason, with an example); personal requests don't. */
-export const PURPOSES: { value: Purpose; label: string; short: string; reason: string; example: string }[] = [
+ * Clubs and events say how they'll use it (reason, with an example); personal requests don't.
+ * A `beside` option sits on the right of the one before it, on one row (staff, the rare pick, next to clubs). */
+export const PURPOSES: { value: Purpose; label: string; short: string; reason: string; example: string; beside?: boolean }[] = [
 	{ value: 'personal', label: 'To share with friends (or at school, etc)', short: 'Personal', reason: '', example: '' },
 	{
 		value: 'event', label: "I'm running a hackathon or exhibiting at an event", short: 'Event',
@@ -19,7 +20,7 @@ export const PURPOSES: { value: Purpose; label: string; short: string; reason: s
 		example: 'e.g. Handing out stickers and mini-magazines at our school club fair on Sept 12.'
 	},
 	{
-		value: 'staff', label: "I'm Hack Club staff", short: 'Staff',
+		value: 'staff', label: "I'm HQ staff", short: 'Staff', beside: true,
 		reason: REASON,
 		example: 'e.g. Hack Club table at Maker Faire Bay Area on Nov 8, about 300 visitors.'
 	}
