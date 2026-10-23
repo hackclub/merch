@@ -25,7 +25,7 @@ Lists requests, newest first (at most 500). `status` is one of `awaiting_payment
 (abroad, postage not paid yet; you can't ship these), `pending` (waiting for review), `dispatched`, `rejected` or
 `cancelled`; leave it out to list all of them. Each request has:
 
-- `id`, `status`, `created_at`, `user_id`, `user_email`, `purpose` (`personal`, `club` or `event`)
+- `id`, `status`, `created_at`, `user_id`, `user_email`, `purpose` (`personal`, `club`, `event` or `staff`; anyone can pick `staff`, so check it's a `@hackclub.com` email)
   and `note`: what the requester wrote, word for word (how they'll use it; club and event
   requests must write one, personal ones have none). Read it before you judge the quantities.
 - `address` (name, street, city, state, postal code, country and phone).

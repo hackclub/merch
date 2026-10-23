@@ -134,10 +134,11 @@ const (
 	PurposePersonal Purpose = "personal" // for themselves and to share with friends
 	PurposeClub     Purpose = "club"     // they run a Hack Club
 	PurposeEvent    Purpose = "event"    // they run or exhibit at an event
+	PurposeStaff    Purpose = "staff"    // they're Hack Club staff (gets what clubs and events get)
 )
 
 // Purposes are the purposes a new request can have. Imported history has none ("").
-var Purposes = map[Purpose]bool{PurposePersonal: true, PurposeClub: true, PurposeEvent: true}
+var Purposes = map[Purpose]bool{PurposePersonal: true, PurposeClub: true, PurposeEvent: true, PurposeStaff: true}
 
 // Offered reports whether an item can be requested for the given purpose.
 func (it Item) Offered(p Purpose) bool {

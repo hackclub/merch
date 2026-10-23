@@ -236,6 +236,7 @@ describe('stickerNudge', () => {
 		expect(n?.text).toMatch(/^You picked 14 sticker designs, 14 of them a few each\. /);
 		expect(n?.text).toContain('packs of 50');
 		expect(stickerNudge(cart, items, 'club')).not.toBeNull();
+		expect(stickerNudge(cart, items, 'staff')).not.toBeNull();
 	});
 
 	it('leaves alone 5 or fewer loose designs, whole packs, and personal requests', () => {

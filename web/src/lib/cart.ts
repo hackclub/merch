@@ -1,4 +1,5 @@
 import type { Item, Line, Purpose } from './types';
+import { forGroups } from './purpose';
 
 /** item id -> quantity */
 export type Cart = Record<number, number>;
@@ -185,7 +186,7 @@ export const LOOSE_STICKER_DESIGNS = 5;
  * Reviewers regrouped these by hand (event requests asked for a median 13.5 designs; 4.5 shipped).
  */
 export function stickerNudge(cart: Cart, items: Item[], purpose: Purpose | ''): { designs: number; loose: number; text: string } | null {
-	if (purpose !== 'club' && purpose !== 'event') return null;
+	if (!forGroups(purpose)) return null;
 	const picked = items.filter((i) => i.packs === 'sticker' && (cart[i.id] ?? 0) > 0);
 	const loose = picked.filter((i) => cart[i.id] < 50).length;
 	if (loose <= LOOSE_STICKER_DESIGNS) return null;

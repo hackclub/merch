@@ -13,7 +13,7 @@
 	import { pickedLines } from '$lib/haul';
 	import { clearDraft, readDraft, resumeAddress, resumeStep, saveDraft, VERIFY_EMAIL_URL, verifyEmailProps } from '$lib/draft';
 	import { cardSides, itemPath, previewCount, showsAmountIn3D, thumbnail, tilePreview } from '$lib/items';
-	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
+	import { forGroups, itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
 	import { payShipping, type CardForm } from '$lib/payment';
@@ -345,7 +345,7 @@
 			<section class="group" aria-labelledby="group-{section.key}">
 				<h3 id="group-{section.key}">{section.title}</h3>
 				{#if section.blurb}<p class="blurb">{section.blurb}</p>{/if}
-				{#if section.key === 'stickers' && (purpose === 'club' || purpose === 'event') && !nudge}
+				{#if section.key === 'stickers' && forGroups(purpose) && !nudge}
 					<p class="blurb">For clubs and events: pick a few favorite designs in packs of 50. They're much easier for our team to ship than a few each of many designs.</p>
 				{/if}
 				{#each rows as { item } (item.id)}
@@ -442,7 +442,7 @@
 					<label><span class="reason">{purposeInfo?.reason}</span>
 						<textarea bind:value={note} rows="3" required placeholder={purposeInfo?.example}></textarea></label>
 				{/if}
-				{#if haul.length && !side.current}<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
+				{#if haul.length && !side.current}<Haul3D lines={haul} includes={catalog.includes} table={forGroups(purpose)} />
 					<button type="button" class="link" onclick={clearAll}>Clear request</button>{/if}
 				<div class="understand">
 					<p>Hack Club is a charity. The most effective way we can get more teenagers into Hack Club is to help people like you spread it!</p>
@@ -503,7 +503,7 @@
 					<button type="button" class="link" onclick={clearAll}>Clear</button>
 				</span>
 			</div>
-			<Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
+			<Haul3D lines={haul} includes={catalog.includes} table={forGroups(purpose)} />
 		</aside>
 	{/if}
 </div>

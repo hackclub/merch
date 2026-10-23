@@ -1,13 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { itemsFor, needsReason, offered, parsePurpose, PURPOSES, purposeLabel } from './purpose';
+import { forGroups, itemsFor, needsReason, offered, parsePurpose, PURPOSES, purposeLabel } from './purpose';
 import type { Item } from './types';
 
 const base: Item = { id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, allow_backorder: false, clip: '' };
 const shirt: Item = { ...base, id: 2, sku: 'Swa/Shirt/HC', name: 'T-shirt', club_only: true };
 
 describe('purpose', () => {
-	it('asks the three kinds of request, personal first', () => {
-		expect(PURPOSES.map((p) => p.value)).toEqual(['personal', 'event', 'club']);
+	it('asks the four kinds of request, personal first, staff last', () => {
+		expect(PURPOSES.map((p) => p.value)).toEqual(['personal', 'event', 'club', 'staff']);
+		expect(PURPOSES.find((p) => p.value === 'staff')?.label).toBe("I'm Hack Club staff");
+	});
+
+	it('gives staff everything clubs and events get', () => {
+		expect(offered(shirt, 'staff')).toBe(true);
+		expect(needsReason('staff')).toBe(true);
+		expect(forGroups('staff')).toBe(true);
+		expect(forGroups('club')).toBe(true);
+		expect(forGroups('event')).toBe(true);
+		expect(forGroups('personal')).toBe(false);
+		expect(forGroups('')).toBe(false);
+		expect(parsePurpose('staff')).toBe('staff');
+		expect(purposeLabel('staff')).toBe('Staff');
 	});
 
 	it('asks clubs and events, not personal requests, how they will use it', () => {

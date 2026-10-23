@@ -67,6 +67,7 @@ func TestValidateErrors(t *testing.T) {
 		{"unknown purpose", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: "resale", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrBadPurpose},
 		{"club request without a reason", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposeClub, Reason: "  ", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrNoReason},
 		{"event request without a reason", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposeEvent, Reason: "none", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrNoReason},
+		{"staff request without a reason", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposeStaff, Reason: "none", Lines: []Line{{ItemID: 1, Quantity: 1}}}, ErrNoReason},
 		{"club-only item for personal use", ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposePersonal, Lines: []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}}, ErrUnknownItem},
 	}
 	for _, tc := range cases {
@@ -405,5 +406,20 @@ func TestValidateStock(t *testing.T) {
 		case tc.want != "" && (!errors.Is(err, ErrOutOfStock) || err.Error() != tc.want):
 			t.Errorf("%s: %v, want %q", tc.name, err, tc.want)
 		}
+	}
+}
+
+// Hack Club staff get everything clubs and events get.
+func TestStaffRequests(t *testing.T) {
+	if !Purposes[PurposeStaff] || PurposeStaff != "staff" {
+		t.Fatal("staff is a purpose")
+	}
+	if !(Item{ClubOnly: true}).Offered(PurposeStaff) {
+		t.Error("staff can request club-only items")
+	}
+	in := ValidateInput{Settings: settings(), Catalog: catalog(), Purpose: PurposeStaff, Reason: "Booth at a maker faire.",
+		Lines: []Line{{ItemID: 4, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}}
+	if err := Validate(in); err != nil {
+		t.Errorf("staff shirt request: %v", err)
 	}
 }

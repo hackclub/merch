@@ -17,11 +17,19 @@ export const PURPOSES: { value: Purpose; label: string; short: string; reason: s
 		value: 'club', label: 'I run a Hack Club', short: 'Hack Club',
 		reason: REASON,
 		example: 'e.g. Handing out stickers and mini-magazines at our school club fair on Sept 12.'
+	},
+	{
+		value: 'staff', label: "I'm Hack Club staff", short: 'Staff',
+		reason: REASON,
+		example: 'e.g. Hack Club table at Maker Faire Bay Area on Nov 8, about 300 visitors.'
 	}
 ];
 
-/** Club and event requests must say how they'll use what they ask for. Mirrors swag.ErrNoReason. */
-export const needsReason = (purpose: Purpose | ''): boolean => purpose === 'club' || purpose === 'event';
+/** Clubs, events and staff hand swag out to groups: they get every item, the sticker-pack nudge and the table haul. */
+export const forGroups = (purpose: Purpose | ''): boolean => purpose === 'club' || purpose === 'event' || purpose === 'staff';
+
+/** Group requests must say how they'll use what they ask for. Mirrors swag.ErrNoReason. */
+export const needsReason = forGroups;
 
 /** Club-only items (the full-size magazine, the T-shirt) aren't offered for personal requests. Mirrors Item.Offered. */
 export const offered = (item: Item, purpose: Purpose | ''): boolean => purpose !== 'personal' || !item.club_only;

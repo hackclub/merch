@@ -3,7 +3,7 @@
 	import { api, ApiError, fileToBase64, formatCents, statusLabel } from '$lib/api';
 	import { parseQuickPicks } from '$lib/cart';
 	import { linkify } from '$lib/markdown';
-	import { purposeLabel } from '$lib/purpose';
+	import { purposeLabel, PURPOSES } from '$lib/purpose';
 	import { byFilename, itemPath, moveImage, printFileText } from '$lib/items';
 	import InternalNote from '$lib/InternalNote.svelte';
 	import SpendDashboard from '$lib/SpendDashboard.svelte';
@@ -248,7 +248,7 @@
 			</select>
 			<select bind:value={filter.purpose} aria-label="Purpose">
 				<option value="">Any purpose</option>
-				{#each ['personal', 'club', 'event'] as p}<option value={p}>{purposeLabel(p)}</option>{/each}
+				{#each PURPOSES as p}<option value={p.value}>{p.short}</option>{/each}
 			</select>
 			<select bind:value={filter.source} aria-label="Source">
 				<option value="">App + imported</option><option value="app">App</option><option value="imported">Imported (Fillout)</option>
