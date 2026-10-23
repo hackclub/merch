@@ -186,8 +186,8 @@ export const printArtProps = (product: string, side: string, check: ArtCheck | n
 		? { product, side, fit: check.fit, dpi: check.dpi, problem: !!check.problem, warning: !!check.warning, mb: Math.round(bytes / 1e5) / 10 }
 		: { product, side, fit: 'unreadable', problem: true, type: type.slice(0, 40) };
 
-/** How many to send them first: postcards in the shop's packs (5s to 25, then 50s), posters a few at a time; up to the run. */
+/** How many to send them first: postcards in the shop's packs (5s to 25, then 50s), posters a few at a time; up to the run. There's always a first shipment. */
 export function firstShipmentOptions(p: PrintProduct, run: number): number[] {
 	const all = p.postcard ? [5, 10, 15, 20, 25, 50, 100, 150, 200, 250] : [1, 2, 3, 5, 10, 15, 20, 25];
-	return [0, ...all.filter((n) => n <= run)];
+	return all.filter((n) => n <= run);
 }

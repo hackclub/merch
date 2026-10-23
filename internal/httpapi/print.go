@@ -157,7 +157,7 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 		BackURL  string `json:"back_url"`
 		Note     string `json:"note"`
 		NeededBy string `json:"needed_by"` // YYYY-MM-DD, optional; the form now asks for Deadline
-		// How many to send them once it's stocked, and where (needed when there are any).
+		// How many to send them once it's stocked, and where (at least one: everyone sees their run in person).
 		InitialQuantity int           `json:"initial_quantity"`
 		Address         *swag.Address `json:"address"`
 		FrontPreviewURL string        `json:"front_preview_url"`
@@ -180,9 +180,7 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 		due = &d
 	}
 	addrErr := error(nil)
-	if body.InitialQuantity <= 0 {
-		body.Address = nil // nothing to send, so nowhere to send it
-	} else if body.Address == nil {
+	if body.Address == nil {
 		addrErr = errors.New("where should we send the first ones?")
 	} else {
 		body.Address.Country = strings.ToUpper(strings.TrimSpace(body.Address.Country))
@@ -220,10 +218,10 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 	case badPreview:
 		writeErr(w, http.StatusUnprocessableEntity, "previews must be uploaded files")
 		return
-	case body.InitialQuantity < 0 || body.InitialQuantity > body.Quantity:
-		writeErr(w, http.StatusUnprocessableEntity, fmt.Sprintf("send between 0 and all %d to you first", body.Quantity))
+	case body.InitialQuantity < 1 || body.InitialQuantity > body.Quantity:
+		writeErr(w, http.StatusUnprocessableEntity, fmt.Sprintf("say how many to send you first, up to all %d", body.Quantity))
 		return
-	case p.Postcard && body.InitialQuantity > 0 && !swag.PackQuantity("postcard", body.InitialQuantity):
+	case p.Postcard && !swag.PackQuantity("postcard", body.InitialQuantity):
 		writeErr(w, http.StatusUnprocessableEntity, "the first postcards come in "+swag.PackSizes("postcard"))
 		return
 	case addrErr != nil:

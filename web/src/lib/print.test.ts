@@ -84,11 +84,11 @@ describe('templateSVG', () => {
 
 describe('firstShipmentOptions', () => {
 	it('offers postcards in the packs the shop sends, up to the run', () => {
-		expect(firstShipmentOptions(postcard, 1000)).toEqual([0, 5, 10, 15, 20, 25, 50, 100, 150, 200, 250]);
-		expect(firstShipmentOptions(postcard, 100)).toEqual([0, 5, 10, 15, 20, 25, 50, 100]);
+		expect(firstShipmentOptions(postcard, 1000)).toEqual([5, 10, 15, 20, 25, 50, 100, 150, 200, 250]);
+		expect(firstShipmentOptions(postcard, 100)).toEqual([5, 10, 15, 20, 25, 50, 100]);
 	});
 	it('offers posters a few at a time', () => {
-		expect(firstShipmentOptions({ ...postcard, postcard: false }, 25)).toEqual([0, 1, 2, 3, 5, 10, 15, 20, 25]);
+		expect(firstShipmentOptions({ ...postcard, postcard: false }, 25)).toEqual([1, 2, 3, 5, 10, 15, 20, 25]);
 	});
 });
 

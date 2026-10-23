@@ -671,7 +671,7 @@ and where, so they see it in person once it arrives.
   (the same art on both sides by default, so `back_url` = `front_url`; or a different back), how
   they'll use it (required; the form asks for detail because people tend to print too few), the
   program's final `deadline` in their words (required; replaced the optional needed-by date on
-  2026-10-23), the first shipment (`initial_quantity`, postcards in the shop's packs, and `address`,
+  2026-10-23), the first shipment (`initial_quantity`, required since 2026-10-23: at least 1, postcards in the shop's packs; and `address`,
   whose line 1 has the Places autocomplete), and the estimate when sent. Status: `submitted → ordered → stocked`, or `rejected`; admins move it and
   add a note the requester sees on the Admin page's submissions tab (`/api/admin/print-requests`).
   **Stocked needs the SKU** and does two things (`sendFirstShipment`, once; saving again retries): lists

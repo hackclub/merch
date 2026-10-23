@@ -155,8 +155,8 @@ func TestPrintRequestFlow(t *testing.T) {
 			t.Errorf("bad %s = %d, want 422", k, code)
 		}
 	}
-	// More than the whole run, or a first shipment with nowhere to go, is refused; none needs no address.
-	for _, change := range []map[string]any{{"initial_quantity": 1050}, {"address": nil}, {"initial_quantity": -5}} {
+	// More than the whole run, none at all, or a first shipment with nowhere to go, is refused.
+	for _, change := range []map[string]any{{"initial_quantity": 1050}, {"address": nil}, {"initial_quantity": -5}, {"initial_quantity": 0}} {
 		bad := map[string]any{}
 		for kk, vv := range body {
 			bad[kk] = vv
@@ -170,8 +170,8 @@ func TestPrintRequestFlow(t *testing.T) {
 	}
 	// The same art on both sides is the default: the back is the front.
 	if code := h.do(staff, "POST", "/api/print-requests", map[string]any{"product": "poster_11x17", "title": "Sprig poster", "program": "Sprig", "deadline": "None",
-		"quantity": 100, "front_url": "https://cdn.example/f.png", "back_url": "https://cdn.example/f.png", "note": "Libraries", "initial_quantity": 0}, nil); code != 201 {
-		t.Fatalf("no first shipment = %d", code)
+		"quantity": 100, "front_url": "https://cdn.example/f.png", "back_url": "https://cdn.example/f.png", "note": "Libraries", "initial_quantity": 5, "address": usAddr}, nil); code != 201 {
+		t.Fatalf("same back = %d", code)
 	}
 	if e := h.events("print_request_created"); len(e) != 2 || props(t, e[1])["same_back"] != true {
 		t.Fatalf("same back events = %+v", e)

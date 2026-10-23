@@ -66,7 +66,7 @@
 		if (!product) return;
 		const q = quantity;
 		const k = product.key;
-		const first = initial > 0 ? `&first=${initial}&country=${encodeURIComponent(address.country.trim() || 'US')}` : '';
+		const first = `&first=${initial}&country=${encodeURIComponent(address.country.trim() || 'US')}`;
 		const timer = setTimeout(async () => {
 			try {
 				estimate = await api.get<PrintEstimate>(`/api/print/estimate?product=${k}&quantity=${q}${first}`);
@@ -154,7 +154,7 @@
 	$effect(() => {
 		if (!product) return;
 		const options = firstShipmentOptions(product, quantity);
-		if (!options.includes(initial)) initial = options.filter((n) => n <= initial).at(-1) ?? 0;
+		if (!options.includes(initial)) initial = options.filter((n) => n <= initial).at(-1) ?? options[0];
 	});
 	const problems = $derived((['front', 'back'] as const).filter((s) => art[s]?.check.problem || reading[s]));
 
@@ -174,7 +174,7 @@
 			await api.post<PrintRequest>('/api/print-requests', {
 				product: key, title, program, deadline, quantity, front_url: f.url, back_url: b.url, front_preview_url: f.preview_url, back_preview_url: b.preview_url,
 				landscape: front.width > front.height, note,
-				initial_quantity: initial, address: initial > 0 ? { ...address, country: address.country.trim().toUpperCase() } : null
+				initial_quantity: initial, address: { ...address, country: address.country.trim().toUpperCase() }
 			});
 			goto('/requests?printed=1');
 		} catch (err) {
@@ -313,28 +313,26 @@
 			<p>When the print run reaches our warehouse, we'll send you this many so you can see them in person. It goes out as a request on your account, like any other.</p>
 			<label>First shipment
 				<select name="initial_quantity" bind:value={initial}>
-					{#each firstShipmentOptions(product, quantity) as n (n)}<option value={n}>{n ? n.toLocaleString('en-US') : 'None, thanks'}</option>{/each}
+					{#each firstShipmentOptions(product, quantity) as n (n)}<option value={n}>{n.toLocaleString('en-US')}</option>{/each}
 				</select></label>
-			{#if initial > 0}
-				<div class="form-grid address" data-private>
-					<label>First name <input required bind:value={address.first_name} autocomplete="given-name" /></label>
-					<label>Last name <input required bind:value={address.last_name} autocomplete="family-name" /></label>
-				</div>
-				<div data-private>
-					<AddressLine1 bind:value={address.line_1} onpick={pickPlace} placeholder="Start typing the street address…"
-						hint="Pick it from the suggestions and we’ll fill in the rest." />
-				</div>
-				<div class="form-grid address" data-private>
-					<label>Address line 2 (optional) <input bind:value={address.line_2} autocomplete="address-line2" /></label>
-					<label>City <input required bind:value={address.city} autocomplete="address-level2" /></label>
-					<label>State / province <input bind:value={address.state} autocomplete="address-level1" /></label>
-					<label>ZIP / postal code <input required bind:value={address.postal_code} autocomplete="postal-code" /></label>
-					<label>Country code (US, CA, GB…) <input required maxlength="2" bind:value={address.country} autocomplete="country" /></label>
-					<label>Phone {isInternational(address.country) ? '(required for customs)' : '(optional)'}
-						<input required={isInternational(address.country)} bind:value={address.phone_number} autocomplete="tel" /></label>
-				</div>
-				{#if isInternational(address.country)}<p class="muted">Outside the US, you'll pay this shipment's postage by card on My requests once it's ready, like any international request.</p>{/if}
-			{/if}
+			<div class="form-grid address" data-private>
+				<label>First name <input required bind:value={address.first_name} autocomplete="given-name" /></label>
+				<label>Last name <input required bind:value={address.last_name} autocomplete="family-name" /></label>
+			</div>
+			<div data-private>
+				<AddressLine1 bind:value={address.line_1} onpick={pickPlace} placeholder="Start typing the street address…"
+					hint="Pick it from the suggestions and we’ll fill in the rest." />
+			</div>
+			<div class="form-grid address" data-private>
+				<label>Address line 2 (optional) <input bind:value={address.line_2} autocomplete="address-line2" /></label>
+				<label>City <input required bind:value={address.city} autocomplete="address-level2" /></label>
+				<label>State / province <input bind:value={address.state} autocomplete="address-level1" /></label>
+				<label>ZIP / postal code <input required bind:value={address.postal_code} autocomplete="postal-code" /></label>
+				<label>Country code (US, CA, GB…) <input required maxlength="2" bind:value={address.country} autocomplete="country" /></label>
+				<label>Phone {isInternational(address.country) ? '(required for customs)' : '(optional)'}
+					<input required={isInternational(address.country)} bind:value={address.phone_number} autocomplete="tel" /></label>
+			</div>
+			{#if isInternational(address.country)}<p class="muted">Outside the US, you'll pay this shipment's postage by card on My requests once it's ready, like any international request.</p>{/if}
 
 			<label>What's the name of the program this is for? <input required maxlength="200" name="print_program" bind:value={program} placeholder="Ex. Haven" /></label>
 			<label>What should we call this item in the warehouse? <input required maxlength="200" name="print_title" bind:value={title} placeholder="Ex. Haven postcard" /></label>
