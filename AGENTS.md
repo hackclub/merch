@@ -530,7 +530,9 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   downloaded and scene built), `ready_ms` (images in, drawn for real), `alive_ms`, `draws`,
   `render_p50`/`p95`/`max` (ms of main thread per draw; the GPU's share shows up as slow frames),
   `fps` and the frame stats above while it's moving, `px` (drawing buffer), `dpr`, `gl` (`shared`
-  or `own` renderer), `gpu` (the GPU's name), `lost`, `failed` (with `error`: why, as the error's name and message, no query strings); snapshots, so use the **`usage_view3d`** view). Join them to
+  or `own` renderer), `gpu` (the GPU's name), `lost`, `failed` (with `error`: why, as the error's name and message, no query strings); snapshots, so use the **`usage_view3d`** view), `view3d_interact` (the first time each
+  free-mode gesture is used on a 3D view: `view` = `product`, `kind`, `how` = `wheel`, `pinch`, `tilt`
+  or `reset`). Join them to
   `visit_start` on `visit` for the device: `visit_start` also has `cores`, `memory_gb` (Chrome),
   `net`, `save_data` and `reduced_motion`. `/admin` sends only page
   views, page time and these performance events.
@@ -654,9 +656,12 @@ and where, so they see it in person once it arrives.
   marked: the bleed (red, cut off), the trim line, the ⅛" inside it that a drifting cut can take
   (amber, not safe), and the safe area (dashed blue), with a legend saying what goes where; "As printed"
   shows it trimmed. The 3D view shows it with the bleed cut off (`Product3D`: a linen card that turns
-  over, or a sheet beside a phone, on the paper they picked). It sits under the product choice and
+  over, or a sheet beside a phone, on the paper they picked). It sits under the uploads and
   shows from the start, with stand-in art for the product (`placeholderArt` in `$lib/print`: the
-  trimmed sheet, its safe line, "Your 4x6 postcard") until they pick a printable file. Files upload untouched to the CDN only on Submit (`POST
+  trimmed sheet, its safe line, "Your 4x6 postcard") until they pick a printable file. It's in free mode (`Product3D` `free`, `$lib/orbit`): the wheel
+  and a pinch zoom smoothly, dragging up or down swings the camera over or under the print (the
+  viewer's `tilt`), a double-click resets it, and it stops spinning once grabbed. Product pages
+  leave it off, so the wheel still scrolls the page there. Files upload untouched to the CDN only on Submit (`POST
   /api/print/files`, signed in, up to 60 MB each, checked again), and the server also uploads a trimmed,
   shrunk JPEG (`preview_url`, `imgprep.WebInset` by `swag.TrimInset`) for the shop item.
 - **Estimate** (`swag.EstimatePrint`, `GET /api/print/estimate`): prices are Hack Club's own Vistaprint

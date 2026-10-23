@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { coverCrop, finishInfo, paperHeight, SURFACE_TILE_IN, type FinishInfo } from './paper';
+import { orbitOffset } from './orbit';
 import { GAP_IN, PHONE } from './scale';
 import { grow, sourceRect, type Size } from './sharedgl';
 
@@ -23,6 +24,8 @@ export type Viewer = {
 	angle: number;
 	/** 1 = whole scene in view; smaller is closer. */
 	zoom: number;
+	/** The camera swung over (+) or under (−) the print, radians (Product3D's free mode). */
+	tilt?: number;
 	resize(width: number, height: number): void;
 	render(): void;
 	dispose(): void;
@@ -55,13 +58,14 @@ export function createViewer(canvas: HTMLCanvasElement, opts: ViewerOptions, onR
 	const viewer: Viewer = {
 		angle: 0,
 		zoom: 1,
+		tilt: 0,
 		resize: stage.resize,
 		render() {
 			sheet.pivot.rotation.y = viewer.angle;
 			// Frame the whole scene at zoom 1; zooming moves toward the print's center.
 			const zoomed = 1 - viewer.zoom; // 0 at full view
 			const x = THREE.MathUtils.lerp(0, left + w / 2, Math.min(1, zoomed * 1.6));
-			stage.frame(x, sceneW, sceneH, viewer.zoom);
+			stage.frame(x, sceneW, sceneH, viewer.zoom, viewer.tilt);
 			stage.render();
 		},
 		dispose() {
@@ -94,7 +98,7 @@ export type Stage = {
 	/** Resizes the shadow frustum and floor when a tabletop scene grows or shrinks. */
 	fitLight(sceneW: number, sceneH: number): void;
 	/** Points the camera at x (mid-height) so an upright sceneW × sceneH area fills the view at zoom 1. */
-	frame(x: number, sceneW: number, sceneH: number, zoom: number): void;
+	frame(x: number, sceneW: number, sceneH: number, zoom: number, tilt?: number): void;
 	/** Points the camera down at a tabletop of width × depth (and stack height tallest) from elevation; returns its distance. */
 	frameTable(width: number, depth: number, tallest: number, zoom: number, opts?: TableFrameOptions): number;
 	render(): void;
@@ -210,7 +214,7 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 			camera.updateProjectionMatrix();
 		},
 		fitLight,
-		frame(x, w, h, zoom) {
+		frame(x, w, h, zoom, tilt = 0) {
 			const vfov = THREE.MathUtils.degToRad(camera.fov) / 2;
 			const fitH = (h * 0.56) / Math.tan(vfov);
 			const fitW = (w * 0.56) / (Math.tan(vfov) * camera.aspect);
@@ -219,7 +223,8 @@ export function createStage(canvas: HTMLCanvasElement, sceneW: number, sceneH: n
 			camera.far = dist * 4;
 			camera.updateProjectionMatrix();
 			target.set(x, h * 0.5, 0);
-			camera.position.set(target.x + dist * 0.05, target.y + dist * 0.16, dist);
+			const o = orbitOffset({ x: dist * 0.05, y: dist * 0.16, z: dist }, tilt);
+			camera.position.set(target.x + o.x, target.y + o.y, target.z + o.z);
 			camera.lookAt(target);
 		},
 		frameTable(width, depth, tallest, zoom, opts = {}) {

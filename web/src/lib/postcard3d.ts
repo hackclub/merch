@@ -13,6 +13,7 @@ export type PostcardOptions = Omit<ViewerOptions, 'thicknessIn'> & { kind: 'post
 export type PostcardViewer = {
 	angle: number;
 	zoom: number;
+	tilt: number; // the camera swung higher (+) or lower (−) over the table, radians (free mode)
 	flipped: number; // 0 front up, 1 the last stack turned over to its back
 	setCount(n: number): void;
 	resize(width: number, height: number): void;
@@ -64,6 +65,7 @@ export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOp
 	turntable.add(stacks);
 	let count = -1;
 	let extent = { width: w, depth: d, tallest: t };
+	let cardsX = 0; // where the stacks sit, before the turntable turns
 
 	function layout(n: number) {
 		turntable.remove(stacks);
@@ -73,6 +75,7 @@ export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOp
 		// The cards on the left, the phone lying beside them (when shown).
 		const sceneW = withPhone ? width + GAP + PHONE.w : width;
 		const shift = -sceneW / 2 + width / 2;
+		cardsX = shift;
 		let tallest = 0;
 		piles.forEach((s, i) => {
 			const h = Math.max(s.cards * t, t);
@@ -110,6 +113,7 @@ export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOp
 	const viewer: PostcardViewer = {
 		angle: 0,
 		zoom: 1,
+		tilt: 0,
 		flipped: 0,
 		setCount(n) {
 			if (n === count) return;
@@ -122,7 +126,12 @@ export function createPostcardViewer(canvas: HTMLCanvasElement, opts: PostcardOp
 			const pose = cardFlip(viewer.flipped, d);
 			flipper.position.set(flipRest.x, flipRest.y + pose.lift, flipRest.z);
 			flipper.rotation.x = pose.rotX;
-			stage.frameTable(extent.width, extent.depth, extent.tallest, viewer.zoom, { elevation: ELEVATION, room: 0.55, y: extent.tallest * 0.4 });
+			// Zooming in heads for the cards, wherever the turntable has carried them, rather than between them and the phone.
+			const toward = Math.min(1, (1 - viewer.zoom) * 1.6);
+			const focus = { x: cardsX * Math.cos(viewer.angle) * toward, z: -cardsX * Math.sin(viewer.angle) * toward };
+			stage.frameTable(extent.width, extent.depth, extent.tallest, viewer.zoom, {
+				elevation: THREE.MathUtils.clamp(ELEVATION + viewer.tilt, 0.08, 1.5), room: 0.55, y: extent.tallest * 0.4, ...focus
+			});
 			stage.render();
 		},
 		dispose() {

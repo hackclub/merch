@@ -7,13 +7,16 @@
 	// open: drag, arrow keys or the slider turn their pages. A trifold brochure
 	// (fold3d.ts) opens and folds itself back up on a loop until you touch it;
 	// then tap, drag or the arrows fold it. Falls back to the flat front image
-	// without WebGL.
+	// without WebGL. In free mode (the print request form), the wheel and a pinch
+	// zoom, dragging up or down swings the camera over or under the print, a
+	// double-click puts it back, and it stops spinning once you take hold of it.
 	import { onMount } from 'svelte';
 	import { settle, spreadLabel } from './book';
 	import { FOLD_STEPS, foldCycle, foldLabel } from './fold';
 	import type { BookViewer } from './book3d';
 	import { loadPreviewViewer, previewKind, type Preview3D } from './items';
-	import { meterView } from './track';
+	import { meterView, track } from './track';
+	import { firstUse, pinchZoom, tiltBy, wheelZoom, zoomStep, ZOOMS } from './orbit';
 	import { finishInfo } from './paper';
 	import { sizeLabel } from './scale';
 	import { packLabel } from './stickers';
@@ -26,7 +29,7 @@
 	import { modelLabel } from './model';
 
 	// count: how many stickers or postcards are requested; the view grows to match.
-	let { preview, name, count = 0 }: { preview: Preview3D; name: string; count?: number } = $props();
+	let { preview, name, count = 0, free = false }: { preview: Preview3D; name: string; count?: number; free?: boolean } = $props();
 
 	let canvas = $state<HTMLCanvasElement>();
 	let stage: HTMLDivElement;
@@ -36,7 +39,14 @@
 	let spinning = $state(true);
 	let dragging = $state(false);
 	let showingBack = $state(false);
-	let zoomLevel = $state(0); // index into ZOOMS
+	let zoomGoal = $state(1); // 1 = the whole scene; the buttons step through ZOOMS, the wheel and a pinch anywhere between
+	let tiltGoal = 0; // free mode: the camera swung over (+) or under (−) the print
+	const firstTime = firstUse();
+	// view3d_interact: the first time each free-mode gesture is used on this view.
+	const interact = (how: string) => firstTime(how) && track('view3d_interact', { view: 'product', kind: previewKind(preview), how });
+	const pointers = new Map<number, { x: number; y: number }>();
+	let pinch: { dist: number; zoom: number } | null = null;
+	let lastY = 0;
 	// Booklets: the spread we're heading to (0 = closed on the cover), and the
 	// one we're nearest, for the label.
 	let goal = $state(0);
@@ -72,7 +82,6 @@
 	const stepLabel = (k: number) => (book ? spreadLabel(k, book.pages.length) : foldLabel(k));
 	const isOpen = $derived(goal > 0);
 
-	const ZOOMS = [1, 0.5, 0.22];
 	const SPIN = 0.45; // radians per second
 	let target: number | null = null; // angle we're animating to (flip)
 	let resumeAt = 0;
@@ -112,6 +121,15 @@
 
 		const io = new IntersectionObserver(([e]) => (visible = e.isIntersecting));
 		io.observe(stage);
+		// Free mode zooms with the wheel rather than scrolling the page past it.
+		const wheel = (e: WheelEvent) => {
+			if (!free || !viewer) return;
+			e.preventDefault();
+			zoomGoal = wheelZoom(zoomGoal, e.deltaY * (e.deltaMode === 1 ? 33 : 1));
+			spinning = false;
+			interact('wheel');
+		};
+		stage.addEventListener('wheel', wheel, { passive: false });
 		const ro = new ResizeObserver(() => {
 			if (!viewer) return;
 			viewer.resize(stage.clientWidth, stage.clientHeight);
@@ -160,9 +178,10 @@
 					} else if (spinning && !fold && !dragging && now > resumeAt) {
 						viewer.angle += SPIN * dt;
 					}
-					const wantZoom = ZOOMS[zoomLevel];
-					viewer.zoom += (wantZoom - viewer.zoom) * Math.min(1, dt * 6);
-					if (Math.abs(wantZoom - viewer.zoom) < 0.0005) viewer.zoom = wantZoom;
+					viewer.zoom += (zoomGoal - viewer.zoom) * Math.min(1, dt * 6);
+					if (Math.abs(zoomGoal - viewer.zoom) < 0.0005) viewer.zoom = zoomGoal;
+					const tv = viewer as { tilt?: number };
+					if (tv.tilt !== undefined) tv.tilt += (tiltGoal - tv.tilt) * Math.min(1, dt * 12);
 					if (postcards) {
 						// The stack turns over at an even pace, about half a second.
 						const pv = viewer as PostcardViewer;
@@ -182,6 +201,7 @@
 			cancelAnimationFrame(raf);
 			io.disconnect();
 			ro.disconnect();
+			stage.removeEventListener('wheel', wheel);
 			viewer?.dispose();
 			meter.end();
 		};
@@ -192,10 +212,21 @@
 		if (fold) spinning = false; // once you take hold of it, it stays how you leave it
 	};
 
+	const spread = () => {
+		const [a, b] = [...pointers.values()];
+		return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+	};
+
 	function down(e: PointerEvent) {
+		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (free) {
+			spinning = false;
+			if (pointers.size === 2) pinch = { dist: spread(), zoom: zoomGoal };
+		}
 		dragging = true;
 		target = null;
 		lastX = e.clientX;
+		lastY = e.clientY;
 		// An open book's pages follow your finger; a closed one turns around.
 		turning = opens && isOpen;
 		if (fold) spinning = false;
@@ -204,6 +235,12 @@
 	}
 	function move(e: PointerEvent) {
 		if (!dragging || !viewer) return;
+		if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (pinch && pointers.size === 2) {
+			zoomGoal = pinchZoom(pinch.zoom, pinch.dist, spread());
+			interact('pinch');
+			return;
+		}
 		if (turning) {
 			// Dragging across most of a page turns one leaf; dragging a trifold right
 			// pulls it open (the flap opens that way), left folds it up.
@@ -213,10 +250,21 @@
 			bv.position = Math.min(leaves, Math.max(0, dragFrom.position + moved));
 		} else {
 			viewer.angle += (e.clientX - lastX) * 0.012;
+			if (free && e.clientY !== lastY) {
+				tiltGoal = tiltBy(tiltGoal, e.clientY - lastY);
+				interact('tilt');
+			}
 		}
 		lastX = e.clientX;
+		lastY = e.clientY;
 	}
 	function up(e: PointerEvent) {
+		pointers.delete(e.pointerId);
+		if (pinch) {
+			// Lifting one finger of a pinch ends it; the other doesn't start a turn.
+			if (pointers.size < 2) pinch = null;
+			if (pointers.size) return;
+		}
 		dragging = false;
 		if (turning && viewer) {
 			const bv = viewer as BookViewer;
@@ -237,12 +285,24 @@
 			turnTo(goal + (e.key === 'ArrowLeft' ? -1 : 1));
 		} else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
 			target = (target ?? viewer.angle) + (e.key === 'ArrowLeft' ? -0.35 : 0.35);
-		} else if (e.key === '+' || e.key === '=') zoomLevel = Math.min(ZOOMS.length - 1, zoomLevel + 1);
-		else if (e.key === '-') zoomLevel = Math.max(0, zoomLevel - 1);
+		} else if (free && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+			tiltGoal = tiltBy(tiltGoal, e.key === 'ArrowUp' ? -40 : 40);
+		} else if (e.key === '+' || e.key === '=') zoomGoal = zoomStep(zoomGoal, 1);
+		else if (e.key === '-') zoomGoal = zoomStep(zoomGoal, -1);
 		else return;
 		e.preventDefault();
 		pause();
 	}
+	// Free mode: a double-click puts the view back, facing the front.
+	function reset() {
+		if (!free || !viewer) return;
+		target = Math.round(viewer.angle / (2 * Math.PI)) * 2 * Math.PI + (postcards ? -0.25 : -0.45);
+		tiltGoal = 0;
+		zoomGoal = 1;
+		cardGoal = 0;
+		interact('reset');
+	}
+
 	function flip() {
 		if (!viewer) return;
 		if (postcards) {
@@ -262,6 +322,7 @@
 	<div
 		class="stage"
 		class:dragging
+		class:free
 		bind:this={stage}
 		role="slider"
 		tabindex="0"
@@ -269,7 +330,7 @@
 			? `${name} in 3D: ${sizeLabel(book.widthIn, book.heightIn)}, ${book.pages.length} pages. Left and right arrow keys turn the pages, plus and minus zoom.`
 			: fold
 				? `${name} in 3D: a trifold brochure, ${sizeLabel(fold.widthIn, fold.heightIn)} open. Left and right arrow keys fold and unfold it, plus and minus zoom.`
-				: `${name} in 3D: ${label.toLowerCase()}, next to a phone for scale. Drag or use the arrow keys to turn it, plus and minus to zoom.`}
+				: `${name} in 3D: ${label.toLowerCase()}, next to a phone for scale. Drag or use the arrow keys to turn it${free ? ', up and down to look over or under it' : ''}, plus and minus to zoom.`}
 		aria-valuenow={opens ? near : 0}
 		aria-valuemin={0}
 		aria-valuemax={leaves}
@@ -279,6 +340,7 @@
 		onpointerup={up}
 		onpointercancel={up}
 		onkeydown={key}
+		ondblclick={reset}
 	>
 		{#if failed}
 			<img class="fallback" src={front} alt={name} />
@@ -288,10 +350,10 @@
 		{/if}
 		{#if !failed}
 			<div class="controls">
-				<button type="button" class="ctl" aria-label="Zoom in" disabled={zoomLevel === ZOOMS.length - 1}
-					onpointerdown={(e) => e.stopPropagation()} onclick={() => (zoomLevel++, pause())}>+</button>
-				<button type="button" class="ctl" aria-label="Zoom out" disabled={zoomLevel === 0}
-					onpointerdown={(e) => e.stopPropagation()} onclick={() => (zoomLevel--, pause())}>−</button>
+				<button type="button" class="ctl" aria-label="Zoom in" disabled={zoomGoal <= ZOOMS[ZOOMS.length - 1]}
+					onpointerdown={(e) => e.stopPropagation()} onclick={() => ((zoomGoal = zoomStep(zoomGoal, 1)), pause())}>+</button>
+				<button type="button" class="ctl" aria-label="Zoom out" disabled={zoomGoal >= 1}
+					onpointerdown={(e) => e.stopPropagation()} onclick={() => ((zoomGoal = zoomStep(zoomGoal, -1)), pause())}>−</button>
 				{#if fold}
 					<button type="button" class="ctl" aria-label={spinning ? 'Stop folding' : 'Fold and unfold on its own'}
 						onpointerdown={(e) => e.stopPropagation()} onclick={() => ((spinning = !spinning), (cycleFrom = performance.now() - (goal === 2 ? 3600 : 0)))}>{spinning ? '❚❚' : '⟳'}</button>
@@ -327,7 +389,7 @@
 				<button type="button" class="secondary small" onclick={() => turnTo(isOpen ? 0 : FOLD_STEPS)}>{isOpen ? 'Fold it up' : 'Open it'}</button>
 			{/if}
 		{:else}
-			<span class="muted">{label} · drag to turn</span>
+			<span class="muted">{label} · {free ? 'drag to turn · scroll to zoom · double-click to reset' : 'drag to turn'}</span>
 			{#if back && !failed}
 				<button type="button" class="secondary small" onclick={flip}>{showingBack ? 'Show front' : 'Show back'}</button>
 			{/if}
@@ -343,6 +405,8 @@
 	}
 	.stage:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 	.stage.dragging { cursor: grabbing; }
+	/* Free mode takes every drag and pinch for itself rather than scrolling the page. */
+	.stage.free { touch-action: none; }
 	canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 0.4s; }
 	canvas.ready { opacity: 1; }
 	.fallback { position: absolute; inset: 8%; width: 84%; height: 84%; object-fit: contain; }

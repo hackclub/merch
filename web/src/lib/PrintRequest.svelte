@@ -240,12 +240,6 @@
 			</fieldset>
 		{/if}
 
-		{#if preview}
-			<div class="preview" data-track="print_preview">
-				{#key preview}<Product3D {preview} name={title || product.name} count={1} />{/key}
-			</div>
-		{/if}
-
 		<h3>Print specs</h3>
 		<table class="specs">
 			<tbody>
@@ -314,6 +308,12 @@
 					<li><span class="key unsafe"></span><span><strong>Not safe.</strong> The ⅛" inside the trim. Cuts can drift this far, so text and logos here may be cut off.</span></li>
 					<li><span class="key safe"></span><span><strong>Safe area.</strong> Everything important (text, logos, QR codes, faces) goes inside the dashed line.</span></li>
 				</ul>
+			{/if}
+
+			{#if preview}
+				<div class="preview" data-track="print_preview">
+					{#key preview}<Product3D {preview} name={title || product.name} count={1} free />{/key}
+				</div>
 			{/if}
 
 			<h3>How many should we print?</h3>
