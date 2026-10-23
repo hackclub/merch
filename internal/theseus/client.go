@@ -44,6 +44,10 @@ type SKU struct {
 	InStock     int    `json:"in_stock"`
 	Inbound     *int   `json:"inbound"`
 	UnitCost    string `json:"unit_cost"`
+	// What it declares for customs abroad, where it has them.
+	HSCode             string `json:"hs_code"`
+	CountryOfOrigin    string `json:"country_of_origin"`
+	CustomsDescription string `json:"customs_description"`
 }
 
 type Address struct {

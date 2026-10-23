@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { lineText, shipBody } from './ship';
+import { customsInvoiceURL, lineText, shipBody } from './ship';
 
 const lines = [
 	{ item_id: 1, sku: 'Sti/A', name: 'Sticker', quantity: 3 },
@@ -24,5 +24,17 @@ describe('lineText', () => {
 		expect(lineText({ ...lines[0], quantity: 2, requested_quantity: 3 })).toBe('2 × Sticker (you asked for 3)');
 		expect(lineText({ ...lines[0], quantity: 0, requested_quantity: 3 })).toBe('Sticker: not sent (you asked for 3)');
 		expect(lineText({ ...lines[0], quantity: 5, requested_quantity: 0 })).toBe('5 × Sticker (added by Hack Club)');
+	});
+});
+
+describe('customsInvoiceURL', () => {
+	const r = { id: 42, status: 'pending' as const, address: { country: 'DE' } };
+	it('links paid requests going abroad to their invoice', () => {
+		expect(customsInvoiceURL(r)).toBe('/api/requests/42/customs-invoice');
+		expect(customsInvoiceURL({ ...r, status: 'dispatched' })).toBe('/api/requests/42/customs-invoice');
+	});
+	it('has none in the US, before paying, or once closed', () => {
+		expect(customsInvoiceURL({ ...r, address: { country: 'US' } })).toBeNull();
+		for (const status of ['awaiting_payment', 'rejected', 'cancelled'] as const) expect(customsInvoiceURL({ ...r, status })).toBeNull();
 	});
 });

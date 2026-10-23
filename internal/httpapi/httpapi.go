@@ -120,6 +120,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/requests", s.requireUser(s.createRequest))
 	mux.Handle("POST /api/requests/{id}/cancel", s.requireUser(s.cancelRequest))
 	mux.Handle("POST /api/requests/{id}/pay", s.requireUser(s.payRequest))
+	mux.Handle("GET /api/requests/{id}/customs-invoice", s.requireUser(s.customsInvoice))
 	mux.Handle("GET /api/address/suggest", s.requireUser(s.addressSuggest))
 	mux.Handle("GET /api/address/place", s.requireUser(s.addressPlace))
 

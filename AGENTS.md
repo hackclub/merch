@@ -409,6 +409,15 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   costs from warehouse" (`POST /api/admin/requests/refresh`, up to 60 orders a click) and each
   request's refresh fetch them. The request list below loads every request once and filters in the
   browser (`$lib/dashboard`).
+- **Customs invoice** (`GET /api/requests/{id}/customs-invoice`, `internal/invoice`, a button on
+  My requests): a PDF pro forma invoice that a requester abroad can show customs once their
+  request is paid (`pending` or `dispatched`). It declares the contents a gift from Hack Club
+  (free of charge, not for resale) at each SKU's `unit_cost` from mail.hackclub.com. That's
+  Theseus's `declared_unit_cost`: the price it gives each line of the Zenventory order and the
+  value on its own customs receipts, so the invoice matches what the warehouse declares. Ships-with SKUs are listed too. The warehouse's `customs_description`, `hs_code` and
+  `country_of_origin` are used where it has them (in 2026-10, almost no SKU had an HS code or
+  origin). Fill those in on mail.hackclub.com rather than in this app. Never lower or zero a
+  value on the invoice: it must match what the parcel declares.
 - **History** (`shipping_history`, no names or addresses) comes from the Hack Club data warehouse:
   - `scripts/shipping-history/zenventory.sql`: AGH shipments, for postage and Asendia tracking.
   - `theseus-orders.sql`: orders placed through mail.hackclub.com, for handling time.
@@ -534,7 +543,9 @@ blocks landing):
   less made postage cheaper, `existing` when the refund was already on Stripe, e.g. one held for approval), `email_sent` and `email_failed` (a request email: `kind` = `received`, `dispatched` or `rejected`,
   `request_id`, `email_id` (its `sent_emails` row, with the full text), and Loops' `error`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
   postage, `postage_basis` (the country's rate card, or `international` without one), sample counts, `restock` when a line is backordered, or `error` when it won't pack), `request_created`, `request_refused` (the
-  rule it broke), `request_cancelled`, `submission_created`. They carry the page's `visit` (the
+  rule it broke), `request_cancelled`, `customs_invoice` (someone downloaded a request's customs
+  invoice PDF: `request_id`, `country`, `status`, `lines`, `value_cents`, `admin` when an admin got
+  someone else's), `submission_created`. They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
 - Admin events (`internal/httpapi/insights.go`). Request events belong to the requester's
   `user_id`, with `admin_id` for who acted, and carry `request_id`, `country`, `purpose`, `source`,

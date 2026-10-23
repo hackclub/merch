@@ -3,7 +3,7 @@
 	import { api, ApiError, formatCents, statusLabel } from '$lib/api';
 	import { purposeLabel } from '$lib/purpose';
 	import { arrivalText } from '$lib/shipping';
-	import { lineText } from '$lib/ship';
+	import { customsInvoiceURL, lineText } from '$lib/ship';
 	import { paidNotice, payShipping, type CardForm } from '$lib/payment';
 	import CardField from '$lib/CardField.svelte';
 	import Haul3D from '$lib/Haul3D.svelte';
@@ -97,6 +97,9 @@
 				{#if arrivalText(r.estimate)}<p>{arrivalText(r.estimate)}, by {r.estimate?.service}.</p>{/if}
 				{#if r.mailed_at}<p>Mailed {new Date(r.mailed_at).toLocaleDateString()}</p>{/if}
 				{#if r.tracking_number}<p>Tracking: {r.carrier} {r.tracking_number}</p>{/if}
+				{#if customsInvoiceURL(r)}
+					<p><a href={customsInvoiceURL(r)} target="_blank" rel="external noopener" data-track="customs-invoice">Customs invoice (PDF)</a> <span class="muted">· shows customs this is a gift, at what it cost Hack Club</span></p>
+				{/if}
 				{#if r.admin_note}<p class="muted">Note from Hack Club: {r.admin_note}</p>{/if}
 				{#if r.refunded_cents}<p>{formatCents(r.refunded_cents)} of your postage refunded to your card.</p>{/if}
 				{#if r.status === 'pending' || r.status === 'awaiting_payment'}
