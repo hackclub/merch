@@ -7,13 +7,14 @@
 	import AddressLine1 from '$lib/AddressLine1.svelte';
 	import { backorderNote, shortNote, soldOut, stockErrors } from '$lib/backorder';
 	import { applyPlace } from '$lib/addressSearch';
-	import { bag, setCart, setPurpose, setSizes } from '$lib/bag.svelte';
+	import { bag, setCart, setNeed, setPurpose, setSizes } from '$lib/bag.svelte';
 	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, stickerNudge, totalQuantity } from '$lib/cart';
 	import { feeTooltip, galleryRows, roughFee } from '$lib/gallery';
 	import { pickedLines } from '$lib/haul';
 	import { clearDraft, readDraft, resumeAddress, resumeStep, saveDraft, VERIFY_EMAIL_URL, verifyEmailProps } from '$lib/draft';
 	import { cardSides, itemPath, previewCount, showsAmountIn3D, thumbnail, tilePreview } from '$lib/items';
-	import { forGroups, itemsFor, needsReason, PURPOSES } from '$lib/purpose';
+	import { forGroups, itemsFor, needsReason, printing, PURPOSES, STAFF_NEEDS } from '$lib/purpose';
+	import PrintRequest from '$lib/PrintRequest.svelte';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
 	import { payShipping, type CardForm } from '$lib/payment';
@@ -75,6 +76,8 @@
 	const sizes = $derived(bag.sizes);
 	const purpose = $derived(bag.purpose);
 	const purposeInfo = $derived(PURPOSES.find((p) => p.value === purpose));
+	// Staff can get postcards or posters made instead: the print flow takes the place of the swag list.
+	const print = $derived(printing(purpose, bag.need));
 	// Personal requests don't offer club-only items (the full-size magazine, the T-shirt).
 	const shown = $derived(catalog ? itemsFor(catalog.items, purpose) : []);
 	const sections = $derived(sectionize(shown));
@@ -288,6 +291,17 @@
 					</label>
 				{/each}
 			</fieldset>
+			{#if purpose === 'staff'}
+				<fieldset class="ask need" id="staff-need">
+					<legend>What do you need?</legend>
+					{#each STAFF_NEEDS as n (n.value)}
+						<label class="choice" class:on={bag.need === n.value}>
+							<input type="radio" name="staff_need" value={n.value} checked={bag.need === n.value} onchange={() => setNeed(n.value)} />
+							{n.label}
+						</label>
+					{/each}
+				</fieldset>
+			{/if}
 		{/if}
 
 		{#snippet add(item: Item)}
@@ -333,6 +347,9 @@
 			</div>
 		{/snippet}
 
+		{#if print}
+			<PrintRequest />
+		{:else}
 		<h2>What would you like us to send you?</h2>
 		{#each sections as { section, rows, grid }, n (section.key)}
 			<!-- What we most want people to hand out comes first; everything else is an extra. -->
@@ -491,10 +508,11 @@
 				</div>
 			</form>
 		{/if}
+		{/if}
 	{:else if !error}
 		<p class="muted">Loading swag…</p>
 	{/if}
-	{#if catalog && count > 0 && haul.length && side.current}
+	{#if catalog && count > 0 && haul.length && side.current && !print}
 		<aside class="haul-side" class:big={bigHaul} aria-label="Your request so far">
 			<div class="haul-head">
 				<strong>Your request · {count} item{count === 1 ? '' : 's'}</strong>
@@ -548,6 +566,8 @@
 	h2 { margin: 2rem 0 1rem; padding-top: 1.5rem; border-top: 1px solid var(--smoke); font-size: 1.25rem; line-height: 1.3; }
 	.ask { margin: 2rem 0 0; padding: 1.5rem 0 0; border: 0; border-top: 1px solid var(--smoke); display: grid; gap: 0.5rem; }
 	.ask legend { float: left; width: 100%; margin-bottom: 0.5rem; padding: 0; font-weight: 700; font-size: 1.25rem; line-height: 1.3; }
+	/* Staff's second question sits right under the first. */
+	.ask.need { margin-top: 1rem; padding-top: 0; border-top: 0; }
 	.group { margin-bottom: 1.5rem; }
 	.group h3 { margin: 0 0 0.25rem; font-size: 1rem; line-height: 1.3; }
 	.group .blurb { margin: 0 0 0.25rem; }

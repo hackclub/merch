@@ -44,3 +44,17 @@ export const parsePurpose = (raw: string | null): Purpose | '' => PURPOSES.find(
 
 /** "Hack Club" for 'club'; '' for imported requests, which have no purpose. */
 export const purposeLabel = (p: string): string => PURPOSES.find((x) => x.value === p)?.short ?? '';
+
+/** What staff are here for: swag from the shop (the default), or postcards and posters printed for them. */
+export type StaffNeed = 'swag' | 'print';
+
+export const STAFF_NEEDS: { value: StaffNeed; label: string }[] = [
+	{ value: 'swag', label: 'I want to request swag' },
+	{ value: 'print', label: 'I want to get postcards / posters made' }
+];
+
+/** Reads a saved staff choice; requesting swag unless they picked printing. */
+export const parseNeed = (raw: string | null): StaffNeed => (raw === 'print' ? 'print' : 'swag');
+
+/** The print flow replaces the swag list only for staff who asked to get something made. */
+export const printing = (purpose: Purpose | '', need: StaffNeed): boolean => purpose === 'staff' && need === 'print';

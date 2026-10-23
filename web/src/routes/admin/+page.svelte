@@ -11,6 +11,7 @@
 	import { session } from '$lib/session.svelte';
 	import { arrivalText, costBreakdown, ozText } from '$lib/shipping';
 	import { lineText, shipBody } from '$lib/ship';
+	import PrintRequestsAdmin from '$lib/PrintRequestsAdmin.svelte';
 	import type { APIKey, Item, SentEmail, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
 	import { thumb } from '$lib/thumb';
 
@@ -562,6 +563,7 @@
 			</tbody>
 		</table>
 	{:else if tab === 'submissions'}
+		<PrintRequestsAdmin />
 		<table>
 			<thead><tr><th>Author</th><th>Material</th><th>Qty</th><th>Status / SKU / note</th><th></th></tr></thead>
 			<tbody>

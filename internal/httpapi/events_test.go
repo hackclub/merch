@@ -269,15 +269,17 @@ func TestVerifyEmailLoginIsLogged(t *testing.T) {
 	resp.Body.Close()
 	resp, _ = c.Get(h.srv.URL + "/auth/login?for=" + strings.Repeat("x", 100))
 	resp.Body.Close()
+	resp, _ = c.Get(h.srv.URL + "/auth/login?for=print") // staff signing in to send art for printing
+	resp.Body.Close()
 	l := h.events("login_start")
-	if len(l) != 2 {
+	if len(l) != 3 {
 		t.Fatalf("login_start = %+v", l)
 	}
 	got := map[any]bool{}
 	for _, e := range l {
 		got[props(t, e)["for"]] = true
 	}
-	if !got["request"] || !got[nil] {
-		t.Errorf("login_start for = %v, want request and nothing for an unknown value", got)
+	if !got["request"] || !got["print"] || !got[nil] {
+		t.Errorf("login_start for = %v, want request, print and nothing for an unknown value", got)
 	}
 }

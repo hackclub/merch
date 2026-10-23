@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { forGroups, itemsFor, needsReason, offered, parsePurpose, PURPOSES, purposeLabel } from './purpose';
+import { forGroups, itemsFor, needsReason, offered, parseNeed, parsePurpose, printing, PURPOSES, purposeLabel, STAFF_NEEDS } from './purpose';
 import type { Item } from './types';
 
 const base: Item = { id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, staff_only: false, allow_backorder: false, clip: '' };
@@ -59,5 +59,17 @@ describe('purpose', () => {
 	it('labels past requests, including imported ones with no purpose', () => {
 		expect(purposeLabel('event')).toBe('Event');
 		expect(purposeLabel('')).toBe('');
+	});
+
+	it('asks staff whether they want swag or something printed, swag first', () => {
+		expect(STAFF_NEEDS.map((n) => n.value)).toEqual(['swag', 'print']);
+		expect(STAFF_NEEDS[1].label).toBe('I want to get postcards / posters made');
+		expect(parseNeed('print')).toBe('print');
+		expect(parseNeed(null)).toBe('swag');
+		expect(parseNeed('banner')).toBe('swag');
+		expect(printing('staff', 'print')).toBe(true);
+		// Only staff get things printed; everyone else always requests swag.
+		expect(printing('club', 'print')).toBe(false);
+		expect(printing('staff', 'swag')).toBe(false);
 	});
 });

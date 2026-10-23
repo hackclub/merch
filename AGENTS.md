@@ -22,7 +22,7 @@ through the app, not into migrations or seed files. Before every commit, read `g
 
 | Who | How we know | What they do |
 | --- | --- | --- |
-| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. The form asks what it's for: personal, an event, a Hack Club, or Hack Club staff (`items.club_only` items, the sticker-pack nudge and the table haul are for the last three, which also say how they'll use it; `items.staff_only` items, like the Orpheus plushie, are for staff alone; anyone can pick staff, so reviewers check the email). Anyone can fill in the whole form signed out; Submit signs them in with Hack Club to verify their email, then sends it (abroad, they pay by card after). Address search is signed-in only (Places lookups cost money). US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card or Apple Pay on the form (Stripe) before we ship (see "Shipping estimates and packing"). |
+| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. The form asks what it's for: personal, an event, a Hack Club, or Hack Club staff (`items.club_only` items, the sticker-pack nudge and the table haul are for the last three, which also say how they'll use it; `items.staff_only` items, like the Orpheus plushie, are for staff alone; anyone can pick staff, so reviewers check the email). Anyone can fill in the whole form signed out; Submit signs them in with Hack Club to verify their email, then sends it (abroad, they pay by card after). Address search is signed-in only (Places lookups cost money). US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card or Apple Pay on the form (Stripe) before we ship (see "Shipping estimates and packing"). Staff get a second question: request swag (the default) or get postcards / posters made (see "Print requests"). |
 | YSWS author | Their HCA email matches `Hack Club Auth Email` in the **YSWS Authors** table of the Unified YSWS Projects DB (Airtable `app3A5kJwYqxMLOgh`) | Submit print-ready material (stickers, posters…) to be printed and stocked in the warehouse. |
 | Admin | Email is in `ADMIN_EMAILS` (admins are also authors) | Manage global limits, list warehouse SKUs as items, set visibility and order, review requests (ship → tracking), and review author submissions. |
 | Review agent | An API key an admin made (`Authorization: Bearer merch_…`) | Read pending requests, the requester and their history, add notes, ship (with changes) or reject. See "Agent API". |
@@ -46,7 +46,8 @@ cancelled requests don't count toward limits.
 cmd/server/          main: env config → migrate → wire deps → HTTP server
 internal/config/     env-var config (12-factor), no file reads
 internal/swag/       pure business rules: limits, intl shipping, status transitions,
-                     packing (packing.go) and shipping estimates (estimate.go)
+                     packing (packing.go), shipping estimates (estimate.go),
+                     print products, prices and art checks (print.go)
 internal/store/      Postgres persistence (pgx); per-user lock around limit check + insert
 internal/db/         pool, embedded goose migrations (internal/db/migrations/*.sql)
 internal/db/dbtest/  per-test throwaway database (CREATE DATABASE test_<rand> … DROP)
@@ -503,7 +504,9 @@ blocks landing):
   nothing clickable was hit), `field` (which field changed; the choice for radios, checkboxes and
   selects, only `chars` for typed text), `field_invalid` (the browser blocked a submit: `field`,
   `type`, `reason` such as `valueMissing` or `patternMismatch`; never the value), `cart` and `cart_size` (`item_id`, `sku`, `from`, `to`; from
-  every page, since all cart changes go through `$lib/bag.svelte`), `purpose`, `sticker_nudge` (a club or
+  every page, since all cart changes go through `$lib/bag.svelte`), `purpose`, `staff_need` (staff picked `value` = `swag` or `print`, `from`), `print_art` (a file
+picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`, `trim`, `wrong_shape` or
+`unreadable`, `dpi`, `problem`, `warning`, `mb`), `sticker_nudge` (a club or
   event request picked more than 5 sticker designs at under 50 each and was shown the packs-of-50
   suggestion under the stickers, with an "I understand." box (`field` `sticker_regroup_ok`) that Submit waits for:
   `designs`, `loose`), `verify_email` (a signed-out person pressed Submit on the filled-in form and
@@ -535,7 +538,7 @@ blocks landing):
   (the mux pattern), `url` (the path, never the query), `status`, `ms`, and on a 500 the
   `error` that `serverErr` logged. Use it for errors and slow routes.
 - Server events (`s.track` in `internal/httpapi`): `login_start` (`referrer`; `for` = `request`
-  when it's the request form's verify-email step), `sign_in`, `sign_in_refused`,
+  when it's the request form's verify-email step, `print` when staff sign in to send art for printing), `sign_in`, `sign_in_refused`,
   `sign_out`, `payment_started` (the card form is about to charge: `request_id`, `fee_cents`, `country`,
   `retry`), `payment_completed` (Stripe says it's paid in full; the request moved to `pending`; `wallet` = `apple_pay` when paid that way),
   `payment_refunded` (a rejected or cancelled request's card payment went back: `request_id`,
@@ -545,7 +548,11 @@ blocks landing):
   postage, `postage_basis` (the country's rate card, or `international` without one), sample counts, `restock` when a line is backordered, or `error` when it won't pack), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `customs_invoice` (someone downloaded a request's customs
   invoice PDF: `request_id`, `country`, `status`, `lines`, `value_cents`, `admin` when an admin got
-  someone else's), `submission_created`. They carry the page's `visit` (the
+  someone else's), `submission_created`,
+  `print_file_uploaded` (print art stored on the CDN: `product`, `fit`, `dpi`, `bytes`, `type`),
+  `print_request_created` (`print_request_id`, `product`, `quantity`, `estimate_cents`, `has_back`,
+  `has_needed_by`, and with a date `days_until_needed` against the estimate's `max_days`; never the name
+  or note). They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
 - Admin events (`internal/httpapi/insights.go`). Request events belong to the requester's
   `user_id`, with `admin_id` for who acted, and carry `request_id`, `country`, `purpose`, `source`,
@@ -556,7 +563,9 @@ blocks landing):
   `from_chars`; never the text). Catalog and limits, with the admin's `user_id`: `item_created` (`item_id`,
   `sku`, `visible`), `item_updated` (`changed`: `{field: {from, to}}`, lists as their lengths),
   `item_media_added` (`kind` = `image`, `page`, `photo` or `print_file`), `settings_updated` (`changed`),
-  `submission_updated` (`from`, `to`, `kind`, `has_sku`), `api_key_created` and `api_key_revoked`
+  `submission_updated` (`from`, `to`, `kind`, `has_sku`),
+  `print_request_updated` (`print_request_id`, `from`, `to`, `product`, `quantity`, `has_note`, `has_sku`,
+  `wait_h`), `api_key_created` and `api_key_revoked`
   (`api_key_id`), `requests_refreshed` (the dashboard pulled tracking and charges from
   mail.hackclub.com: `checked`, `updated`, `mailed`, `failed`, `left`). Notes are never logged, only `has_note`. What an agent does with an API key
   (see "Agent API") logs the same events with `api_key_id` added; its notes are
@@ -618,6 +627,40 @@ When Zach asks you to improve the shop from evidence, run this loop end to end:
    numbers that motivated it.
 4. **Check it later.** Compare the same query grouped by `release` before and after. Write what
    you found, and what you'd try next, in your final reply.
+
+## Print requests (staff)
+
+Staff who pick "I'm Hack Club staff", then "I want to get postcards / posters made", get the print flow
+(`web/src/lib/PrintRequest.svelte`) in place of the swag list. HQ orders the run from Vistaprint, it ships
+to the warehouse, and once it's in, an admin lists it in the shop like any item.
+
+- **Products** (`swag.PrintProducts`, `GET /api/print/products`): 4x6 postcards on Vistaprint's premium
+  linen card stock (what HQ always orders; printed both sides), and 11x17 posters ordered as Vistaprint
+  11x17 flyers, matte (how the Haven posters were ordered: same sheet, bulk prices). Art is ⅛" of bleed
+  on every side and a ⅛" safe margin inside the trim, at 300 DPI: 4.25x6.25 in (1275x1875 px) and
+  11.25x17.25 in (3375x5175 px), either way round. That's Vistaprint's postcard size guide, and the Haven
+  postcard and poster files (1885x1282, 3382x5182 px) match it. The flow offers a full-size SVG template
+  with the bleed, trim and safe lines (`templateSVG` in `$lib/print`).
+- **Art checks** (`swag.CheckArt`, mirrored by `checkArt` in `$lib/print` for instant feedback): PNG or
+  JPEG only (the 3D preview needs a raster). Full-bleed art is ready; art at the trimmed size prints with
+  a warning (white slivers); anything else is the wrong shape, and under 150 DPI is refused as blurry.
+  Picked files show at once, flat with the trim and safe lines, and in 3D with the bleed cut off
+  (`Product3D`: a linen card that turns over, or a sheet beside a phone). They upload untouched to the
+  CDN only on Submit (`POST /api/print/files`, signed in, up to 60 MB each, checked again on the server).
+- **Estimate** (`swag.EstimatePrint`, `GET /api/print/estimate`): prices are Hack Club's own Vistaprint
+  orders from zach@hackclub.com's order confirmations (2025-05 to 2026-10, after the 30% ProAdvantage
+  discount, before tax), read between the quantities ordered on a straight line. For example: 1,000
+  postcards $82.59, 5,000 $295.40, 10,000 $536.20; 3,000 posters $1,007.30. Express shipping to the
+  warehouse adds what those orders paid ($37–91 postcards, $50–113 posters). The ready date is 1 business
+  day for HQ to check and order, 3–7 at Vistaprint (order to delivery on those orders), and 1–2 for the
+  warehouse to receive it: 5–10 business days. When Vistaprint prices change, add the new orders to
+  `prices` and keep `TestEstimatePrintPrices` in step.
+- **Requests** (`print_requests`; `POST /api/print-requests`, `GET /api/print-requests` on My requests):
+  product, name, quantity, front and optional back URLs, how they'll use it (required), an optional
+  needed-by date, and the estimate when sent. Status: `submitted → ordered → stocked`, or `rejected`;
+  admins move it, add a note the requester sees and the SKU once stocked, on the Admin page's
+  submissions tab (`/api/admin/print-requests`). Anyone signed in can send one, like the staff purpose,
+  so reviewers check the email.
 
 ## Agent API
 

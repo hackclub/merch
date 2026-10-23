@@ -124,6 +124,13 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET /api/address/suggest", s.requireUser(s.addressSuggest))
 	mux.Handle("GET /api/address/place", s.requireUser(s.addressPlace))
 
+	// staff getting postcards and posters printed (print.go)
+	mux.HandleFunc("GET /api/print/products", s.printProducts)
+	mux.HandleFunc("GET /api/print/estimate", s.printEstimate)
+	mux.Handle("POST /api/print/files", s.requireUser(s.uploadPrintFile))
+	mux.Handle("GET /api/print-requests", s.requireUser(s.myPrintRequests))
+	mux.Handle("POST /api/print-requests", s.requireUser(s.createPrintRequest))
+
 	// YSWS authors
 	mux.Handle("GET /api/author/submissions", s.requireAuthor(s.mySubmissions))
 	mux.Handle("POST /api/author/submissions", s.requireAuthor(s.createSubmission))
@@ -148,6 +155,8 @@ func New(d Deps) http.Handler {
 	mux.Handle("PUT /api/admin/settings", s.requireAdmin(s.adminUpdateSettings))
 	mux.Handle("GET /api/admin/submissions", s.requireAdmin(s.adminSubmissions))
 	mux.Handle("PUT /api/admin/submissions/{id}", s.requireAdmin(s.adminUpdateSubmission))
+	mux.Handle("GET /api/admin/print-requests", s.requireAdmin(s.adminPrintRequests))
+	mux.Handle("PUT /api/admin/print-requests/{id}", s.requireAdmin(s.adminUpdatePrintRequest))
 	mux.Handle("GET /api/admin/api-keys", s.requireAdmin(s.adminAPIKeys))
 	mux.Handle("POST /api/admin/api-keys", s.requireAdmin(s.adminCreateAPIKey))
 	mux.Handle("POST /api/admin/api-keys/{id}/revoke", s.requireAdmin(s.adminRevokeAPIKey))
@@ -289,8 +298,9 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	rand.Read(b)
 	state := base64.RawURLEncoding.EncodeToString(b)
 	props := map[string]any{"referrer": clip(r.Referer(), 300)}
-	if r.URL.Query().Get("for") == "request" { // Submit on the request form: sign-in verifies their email
-		props["for"] = "request"
+	switch f := r.URL.Query().Get("for"); f {
+	case "request", "print": // Submit on the request form verifies their email; staff sign in to upload art for printing
+		props["for"] = f
 	}
 	s.track(r, nil, "login_start", props)
 	http.SetCookie(w, &http.Cookie{

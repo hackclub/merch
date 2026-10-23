@@ -48,7 +48,8 @@ func costly(r *http.Request) bool {
 		return true
 	case r.Method != http.MethodPost:
 		return false
-	case p == "/api/shipping/estimate", p == "/api/requests", p == "/api/author/submissions":
+	case p == "/api/shipping/estimate", p == "/api/requests", p == "/api/author/submissions",
+		p == "/api/print/files", p == "/api/print-requests":
 		return true
 	case strings.HasPrefix(p, "/api/requests/") && strings.HasSuffix(p, "/pay"):
 		return true

@@ -10,6 +10,7 @@
 	import { requestHaul } from '$lib/haul';
 	import { page } from '$app/state';
 	import { session } from '$lib/session.svelte';
+	import MyPrintRequests from '$lib/MyPrintRequests.svelte';
 	import type { Item, SwagRequest } from '$lib/types';
 
 	let requests = $state<SwagRequest[] | null>(null);
@@ -72,6 +73,7 @@
 {:else}
 	{#if error}<p class="error">{error}</p>{/if}
 	{#if thanks}<p>{thanks}</p>{/if}
+	<MyPrintRequests />
 	{#each requests ?? [] as r (r.id)}
 		{@const haul = requestHaul(r.lines, items)}
 		<div class="card request" class:with-3d={haul.length}>
