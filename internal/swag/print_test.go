@@ -106,14 +106,36 @@ func TestEstimatePrintTimeline(t *testing.T) {
 
 func TestPrintProductItem(t *testing.T) {
 	pc, _ := PrintProductByKey("postcard_4x6")
-	it := pc.Item("Pri/Hav/4x6/1st", "Haven postcard", true)
+	it := pc.Item("Pri/Hav/4x6/1st", "Haven postcard", "", true)
 	if it.Name != "Haven postcard" || it.SKU != "Pri/Hav/4x6/1st" || *it.WidthIn != 6 || *it.HeightIn != 4 || *it.ThicknessIn != 0.016 ||
 		it.Packs != "postcard" || it.MaxPerRequest != 100 || it.Finish != "linen" || !it.Visible {
 		t.Fatalf("postcard item = %+v", it)
 	}
 	poster, _ := PrintProductByKey("poster_11x17")
-	if it := poster.Item("", "Sprig poster", false); *it.WidthIn != 11 || *it.HeightIn != 17 || it.Packs != "" || it.MaxPerRequest != 25 {
+	if it := poster.Item("", "Sprig poster", "", false); *it.WidthIn != 11 || *it.HeightIn != 17 || it.Packs != "" || it.MaxPerRequest != 25 || it.Finish != "matte" {
 		t.Fatalf("poster item = %+v", it)
+	}
+	if it := poster.Item("", "Sprig poster", "gloss", false); it.Finish != "gloss" {
+		t.Fatalf("glossy poster item = %+v", it)
+	}
+}
+
+func TestPrintFinishes(t *testing.T) {
+	pc, _ := PrintProductByKey("postcard_4x6")
+	poster, _ := PrintProductByKey("poster_11x17")
+	// Posters come matte (the default, how the Haven posters were printed) or glossy; postcards only on linen.
+	if len(poster.Finishes) != 2 || poster.Finishes[0] != "matte" || poster.Finishes[1] != "gloss" || poster.Finish != "matte" {
+		t.Fatalf("poster finishes = %v, default %q", poster.Finishes, poster.Finish)
+	}
+	for _, tc := range []struct {
+		p    PrintProduct
+		in   string
+		want string
+		ok   bool
+	}{{poster, "", "matte", true}, {poster, "gloss", "gloss", true}, {poster, "linen", "", false}, {pc, "", "linen", true}, {pc, "gloss", "", false}} {
+		if got, ok := tc.p.PickFinish(tc.in); got != tc.want || ok != tc.ok {
+			t.Errorf("%s PickFinish(%q) = %q, %v; want %q, %v", tc.p.Key, tc.in, got, ok, tc.want, tc.ok)
+		}
 	}
 }
 

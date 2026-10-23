@@ -14,7 +14,7 @@
 	import Product3D from './Product3D.svelte';
 	import type { Preview3D } from './items';
 	import {
-		arrivalLine, checkArt, estimateLine, firstShipmentOptions, guides, printArtProps, quantityPresets, sheetFor, templateSVG, timelineRows, trimCrop,
+		arrivalLine, checkArt, estimateLine, finishOptions, firstShipmentOptions, guides, printArtProps, quantityPresets, sheetFor, templateSVG, timelineRows, trimCrop,
 		type ArtCheck, type PrintEstimate, type PrintProduct, type PrintRequest
 	} from './print';
 
@@ -29,6 +29,7 @@
 	let reading = $state<Record<Side, string>>({ front: '', back: '' }); // why a file couldn't be read
 	// The same art on both sides unless they upload a different back.
 	let backMode = $state<'same' | 'different'>('same');
+	let finish = $state('linen'); // the paper, from the product's finishes
 	let title = $state(''); // what the item is called in the warehouse
 	let program = $state('');
 	let deadline = $state('');
@@ -52,6 +53,7 @@
 	function pickProduct(k: string) {
 		key = k;
 		const p = products.find((x) => x.key === k)!;
+		finish = p.finish;
 		quantity = quantityPresets(p)[2];
 		initial = p.postcard ? 25 : 5;
 		// Art for a postcard isn't the shape of a poster: check it again.
@@ -145,7 +147,7 @@
 	const preview = $derived.by((): Preview3D | null => {
 		if (!product || !front || !sheet || front.check.problem) return null;
 		const back = backMode === 'same' ? front.trimmed : art.back && !art.back.check.problem ? art.back.trimmed : undefined;
-		const opts = { front: front.trimmed, back, widthIn: sheet.widthIn, heightIn: sheet.heightIn, finish: product.finish, phone: true };
+		const opts = { front: front.trimmed, back, widthIn: sheet.widthIn, heightIn: sheet.heightIn, finish, phone: true };
 		return product.postcard
 			? { postcards: { kind: 'postcards', ...opts, thicknessIn: product.thickness_in } }
 			: { sheet: { ...opts, thicknessIn: product.thickness_in } };
@@ -172,7 +174,7 @@
 			const b = backMode === 'same' ? f : await upload('back', art.back!);
 			submitting = 'Sending…';
 			await api.post<PrintRequest>('/api/print-requests', {
-				product: key, title, program, deadline, quantity, front_url: f.url, back_url: b.url, front_preview_url: f.preview_url, back_preview_url: b.preview_url,
+				product: key, finish, title, program, deadline, quantity, front_url: f.url, back_url: b.url, front_preview_url: f.preview_url, back_preview_url: b.preview_url,
 				landscape: front.width > front.height, note,
 				initial_quantity: initial, address: { ...address, country: address.country.trim().toUpperCase() }
 			});
@@ -199,6 +201,15 @@
 			{/each}
 		</fieldset>
 
+		{#if finishOptions(product).length}
+			<fieldset class="inline-choices">
+				<legend>Paper</legend>
+				{#each finishOptions(product) as f (f.value)}
+					<label class="inline"><input type="radio" name="print_finish" value={f.value} checked={finish === f.value} onchange={() => (finish = f.value)} /> {f.label}</label>
+				{/each}
+			</fieldset>
+		{/if}
+
 		<h3>Print specs</h3>
 		<table class="specs">
 			<tbody>
@@ -219,7 +230,7 @@
 
 		<form onsubmit={submit}>
 			<h3>Your art</h3>
-			<fieldset class="back-mode">
+			<fieldset class="inline-choices">
 				<legend>Back</legend>
 				<label class="inline"><input type="radio" name="print_back" value="same" checked={backMode === 'same'} onchange={() => pickBack('same')} /> Same art on both sides</label>
 				<label class="inline"><input type="radio" name="print_back" value="different" checked={backMode === 'different'} onchange={() => pickBack('different')} /> A different back</label>
@@ -405,10 +416,11 @@
 	.key.unsafe { background: rgba(255, 166, 0, 0.42); }
 	.key.safe { border: 1.5px dashed #338eda; }
 	.address { margin-top: 0.75rem; }
-	.back-mode { margin: 0 0 0.75rem; padding: 0; border: 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
-	.back-mode legend { padding: 0; margin-bottom: 0.25rem; font-weight: 700; }
-	form .back-mode label.inline { display: flex; gap: 0.4rem; align-items: center; margin-top: 0; }
-	.back-mode input { width: auto; margin: 0; accent-color: var(--red); }
+	.inline-choices { margin: 0 0 0.75rem; padding: 0; border: 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+	.inline-choices legend { padding: 0; margin-bottom: 0.25rem; font-weight: 700; }
+	.inline-choices label.inline { display: flex; gap: 0.4rem; align-items: center; margin-top: 0; }
+	.inline-choices input { width: auto; margin: 0; accent-color: var(--red); }
+	.ask + .inline-choices { margin-top: 1rem; }
 	.estimate .timeline td:first-child { width: auto; }
 	form label .hint { font-weight: 400; }
 	.address label { margin-top: 0; }

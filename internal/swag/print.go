@@ -11,21 +11,22 @@ import (
 // listed like any other item. Sizes are the trimmed sheet, short side first;
 // art can be either way round.
 type PrintProduct struct {
-	Key         string  `json:"key"`
-	Name        string  `json:"name"`
-	Paper       string  `json:"paper"`  // what it's printed on, for people
-	Vendor      string  `json:"vendor"` // the Vistaprint product we order
-	WidthIn     float64 `json:"width_in"`
-	HeightIn    float64 `json:"height_in"`
-	BleedIn     float64 `json:"bleed_in"` // art runs this far past the trim on every side
-	SafeIn      float64 `json:"safe_in"`  // text and logos stay this far inside the trim
-	DPI         int     `json:"dpi"`      // the resolution to export at
-	Finish      string  `json:"finish"`   // the 3D preview's paper (see web/src/lib/paper.ts)
-	ThicknessIn float64 `json:"thickness_in"`
-	Postcard    bool    `json:"postcard"` // shown as a stack of cards in 3D, rather than a sheet
-	MinQuantity int     `json:"min_quantity"`
-	MaxQuantity int     `json:"max_quantity"`
-	Step        int     `json:"step"` // quantities come in multiples of this
+	Key         string   `json:"key"`
+	Name        string   `json:"name"`
+	Paper       string   `json:"paper"`  // what it's printed on, for people
+	Vendor      string   `json:"vendor"` // the Vistaprint product we order
+	WidthIn     float64  `json:"width_in"`
+	HeightIn    float64  `json:"height_in"`
+	BleedIn     float64  `json:"bleed_in"` // art runs this far past the trim on every side
+	SafeIn      float64  `json:"safe_in"`  // text and logos stay this far inside the trim
+	DPI         int      `json:"dpi"`      // the resolution to export at
+	Finish      string   `json:"finish"`   // the default paper, as the 3D preview names it (see web/src/lib/paper.ts)
+	Finishes    []string `json:"finishes"` // the papers they can pick from, the default first
+	ThicknessIn float64  `json:"thickness_in"`
+	Postcard    bool     `json:"postcard"` // shown as a stack of cards in 3D, rather than a sheet
+	MinQuantity int      `json:"min_quantity"`
+	MaxQuantity int      `json:"max_quantity"`
+	Step        int      `json:"step"` // quantities come in multiples of this
 
 	prices   []pricePoint // what Hack Club paid Vistaprint, after its ProAdvantage discount
 	shipping []pricePoint // express shipping to the warehouse, up to each quantity
@@ -44,7 +45,7 @@ var PrintProducts = []PrintProduct{
 	{
 		Key: "postcard_4x6", Name: "4x6 postcard", Paper: "Premium linen card stock, printed on both sides",
 		Vendor: "Vistaprint Standard Postcards, 4\" x 6\", linen", WidthIn: 4, HeightIn: 6, BleedIn: 0.125, SafeIn: 0.125,
-		DPI: 300, Finish: "linen", ThicknessIn: 0.016, Postcard: true, MinQuantity: 50, MaxQuantity: 25000, Step: 50,
+		DPI: 300, Finish: "linen", Finishes: []string{"linen"}, ThicknessIn: 0.016, Postcard: true, MinQuantity: 50, MaxQuantity: 25000, Step: 50,
 		prices: []pricePoint{
 			{50, 2589}, {250, 5459}, {500, 6789}, {1000, 8259}, {1500, 13159}, {2000, 17569}, {2500, 19319},
 			{3000, 22329}, {4000, 26459}, {5000, 29540}, {7000, 39620}, {10000, 53620}, {15000, 82670},
@@ -52,14 +53,28 @@ var PrintProducts = []PrintProduct{
 		shipping: []pricePoint{{1000, 3699}, {2000, 4299}, {5000, 5299}, {10000, 7799}, {25000, 9099}},
 	},
 	{
-		Key: "poster_11x17", Name: "11x17 poster", Paper: "Thick matte paper, printed on one side or both",
-		Vendor: "Vistaprint Flyers, 11\" x 17\", matte", WidthIn: 11, HeightIn: 17, BleedIn: 0.125, SafeIn: 0.125,
-		DPI: 300, Finish: "matte", ThicknessIn: 0.008, MinQuantity: 25, MaxQuantity: 5000, Step: 25,
+		Key: "poster_11x17", Name: "11x17 poster", Paper: "Thick paper, matte or glossy",
+		Vendor: "Vistaprint Flyers, 11\" x 17\", matte or glossy", WidthIn: 11, HeightIn: 17, BleedIn: 0.125, SafeIn: 0.125,
+		DPI: 300, Finish: "matte", Finishes: []string{"matte", "gloss"}, ThicknessIn: 0.008, MinQuantity: 25, MaxQuantity: 5000, Step: 25,
 		prices: []pricePoint{
 			{25, 3499}, {100, 10000}, {500, 24709}, {1500, 51170}, {2000, 65450}, {3000, 100730},
 		},
 		shipping: []pricePoint{{500, 4999}, {2000, 8199}, {5000, 11299}},
 	},
+}
+
+// PickFinish is the paper a request asked for: one of p's Finishes, or its
+// default when they didn't say. ok is false for a paper p doesn't come on.
+func (p PrintProduct) PickFinish(f string) (string, bool) {
+	if f == "" {
+		return p.Finish, true
+	}
+	for _, x := range p.Finishes {
+		if x == f {
+			return f, true
+		}
+	}
+	return "", false
 }
 
 // PrintProductByKey finds a product in PrintProducts.
@@ -178,14 +193,17 @@ func newYork(t time.Time) time.Time {
 }
 
 // Item is how a run of p is listed in the shop once it's stocked under sku:
-// its trimmed size (turned when the art is landscape), paper, and for
-// postcards, the shop's packs.
-func (p PrintProduct) Item(sku, name string, landscape bool) Item {
+// its trimmed size (turned when the art is landscape), paper (finish, or the
+// product's default), and for postcards, the shop's packs.
+func (p PrintProduct) Item(sku, name, finish string, landscape bool) Item {
 	w, h, t := p.WidthIn, p.HeightIn, p.ThicknessIn
 	if landscape {
 		w, h = h, w
 	}
-	it := Item{SKU: sku, Name: name, Visible: true, MaxPerRequest: 25, WidthIn: &w, HeightIn: &h, Finish: p.Finish, ThicknessIn: &t}
+	if finish == "" {
+		finish = p.Finish
+	}
+	it := Item{SKU: sku, Name: name, Visible: true, MaxPerRequest: 25, WidthIn: &w, HeightIn: &h, Finish: finish, ThicknessIn: &t}
 	if p.Postcard {
 		it.Packs, it.MaxPerRequest = "postcard", 100
 	}

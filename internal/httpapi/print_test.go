@@ -118,7 +118,7 @@ func TestPrintRequestFlow(t *testing.T) {
 	h := newHarness(t)
 	staff, admin := h.client("staff@hackclub.com"), h.client(adminEmail)
 	body := map[string]any{
-		"product": "postcard_4x6", "title": " Haven postcard ", "program": " Haven ", "quantity": 1000,
+		"product": "postcard_4x6", "title": " Haven postcard ", "program": " Haven ", "quantity": 1000, "finish": "",
 		"front_url": "https://cdn.example/1/front.png", "back_url": "https://cdn.example/2/back.png",
 		"note": "Handing out at Haven events", "deadline": "Haven in Boston, Nov 14-16",
 		"front_preview_url": "https://cdn.example/3/front-preview.jpg", "back_preview_url": "https://cdn.example/4/back-preview.jpg",
@@ -131,7 +131,7 @@ func TestPrintRequestFlow(t *testing.T) {
 	if pr.InitialQuantity != 25 || pr.Address == nil || pr.Address.City != "Burlington" || !pr.Landscape || pr.FrontPreviewURL == "" {
 		t.Fatalf("first shipment = %+v", pr)
 	}
-	if pr.Title != "Haven postcard" || pr.Program != "Haven" || pr.Deadline != "Haven in Boston, Nov 14-16" || pr.Status != "submitted" || pr.EstimateCents != 8259+3699 {
+	if pr.Title != "Haven postcard" || pr.Finish != "linen" || pr.Program != "Haven" || pr.Deadline != "Haven in Boston, Nov 14-16" || pr.Status != "submitted" || pr.EstimateCents != 8259+3699 {
 		t.Fatalf("created = %+v", pr)
 	}
 	e := h.events("print_request_created")
@@ -140,11 +140,11 @@ func TestPrintRequestFlow(t *testing.T) {
 	}
 	p := props(t, e[0])
 	if p["product"] != "postcard_4x6" || p["quantity"] != float64(1000) || p["has_back"] != true || p["estimate_cents"] != float64(11958) || p["note"] != nil || p["title"] != nil ||
-		p["initial_quantity"] != float64(25) || p["country"] != "US" || p["address"] != nil || p["program"] != nil || p["deadline"] != nil || p["same_back"] != false {
+		p["initial_quantity"] != float64(25) || p["country"] != "US" || p["address"] != nil || p["program"] != nil || p["deadline"] != nil || p["same_back"] != false || p["finish"] != "linen" {
 		t.Fatalf("props = %+v", p)
 	}
 
-	for k, v := range map[string]any{"product": "banner", "title": "", "program": " ", "deadline": "", "quantity": 7, "front_url": "javascript:alert(1)", "back_url": "ftp://x", "note": "",
+	for k, v := range map[string]any{"finish": "gloss", "product": "banner", "title": "", "program": " ", "deadline": "", "quantity": 7, "front_url": "javascript:alert(1)", "back_url": "ftp://x", "note": "",
 		"initial_quantity": 30, "address": map[string]any{"city": "Burlington"}, "front_preview_url": "ftp://x"} {
 		bad := map[string]any{}
 		for kk, vv := range body {
@@ -265,5 +265,25 @@ func TestPrintFirstShipmentUsesListedItem(t *testing.T) {
 	}
 	if items, _ := h.store.ItemsBySKU(context.Background(), []string{"Pri/Spr/11x/Lar"}); len(items) != 1 {
 		t.Fatalf("items = %d, want the one listed", len(items))
+	}
+}
+
+// A glossy poster run is listed glossy, so the shop's 3D view shows it shiny.
+func TestPrintGlossyPoster(t *testing.T) {
+	h := newHarness(t)
+	staff, admin := h.client("staff@hackclub.com"), h.client(adminEmail)
+	var pr store.PrintRequest
+	if code := h.do(staff, "POST", "/api/print-requests", map[string]any{"product": "poster_11x17", "finish": "gloss", "title": "Sprig poster", "program": "Sprig",
+		"deadline": "None", "quantity": 100, "front_url": "https://cdn.example/f.png", "note": "Libraries", "initial_quantity": 5, "address": usAddr}, &pr); code != 201 || pr.Finish != "gloss" {
+		t.Fatalf("create = %d %+v", code, pr)
+	}
+	if e := h.events("print_request_created"); len(e) != 1 || props(t, e[0])["finish"] != "gloss" {
+		t.Fatalf("events = %+v", e)
+	}
+	if code := h.do(admin, "PUT", fmt.Sprintf("/api/admin/print-requests/%d", pr.ID), map[string]any{"status": "stocked", "sku": "Pri/Spr/11x/Gls"}, nil); code != 200 {
+		t.Fatalf("stocked = %d", code)
+	}
+	if items, _ := h.store.ItemsBySKU(context.Background(), []string{"Pri/Spr/11x/Gls"}); len(items) != 1 || items[0].Finish != "gloss" {
+		t.Fatalf("items = %+v", items)
 	}
 }

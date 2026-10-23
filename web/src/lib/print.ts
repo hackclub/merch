@@ -14,7 +14,8 @@ export type PrintProduct = {
 	bleed_in: number;
 	safe_in: number;
 	dpi: number;
-	finish: string;
+	finish: string; // the default paper, as the 3D preview names it
+	finishes: string[]; // the papers they can pick from, the default first
 	thickness_in: number;
 	postcard: boolean;
 	min_quantity: number;
@@ -54,6 +55,7 @@ export type PrintRequest = {
 	user_name?: string;
 	product: string;
 	title: string; // what the item is called in the warehouse and the shop
+	finish: string; // the paper; '' on older requests
 	program: string;
 	deadline: string; // the program's final deadline, in their words
 	quantity: number;
@@ -175,6 +177,15 @@ export const arrivalLine = (e: PrintEstimate) =>
 	e.arrive_from && e.arrive_by
 		? `Your first ones should arrive about ${dateRange(e.arrive_from, e.arrive_by)}.`
 		: `In our warehouse about ${dateRange(e.ready_from, e.ready_by)}.`;
+
+const finishLabels: Record<string, string> = { matte: 'Matte', gloss: 'Glossy', linen: 'Linen', uncoated: 'Uncoated' };
+
+/** The papers to pick from, when there's a choice (posters: matte or glossy). */
+export const finishOptions = (p: PrintProduct): { value: string; label: string }[] =>
+	p.finishes.length > 1 ? p.finishes.map((f) => ({ value: f, label: finishLabels[f] ?? f })) : [];
+
+/** "Glossy", for lists of requests. */
+export const finishLabel = (f: string) => finishLabels[f] ?? f;
 
 /** Quick picks for how many to print. */
 export const quantityPresets = (p: PrintProduct): number[] =>

@@ -550,7 +550,7 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   invoice PDF: `request_id`, `country`, `status`, `lines`, `value_cents`, `admin` when an admin got
   someone else's), `submission_created`,
   `print_file_uploaded` (print art stored on the CDN: `product`, `fit`, `dpi`, `bytes`, `type`),
-  `print_request_created` (`print_request_id`, `product`, `quantity`, `estimate_cents`, `has_back`,
+  `print_request_created` (`print_request_id`, `product`, `finish`, `quantity`, `estimate_cents`, `has_back`,
   `same_back` (the same art on both sides, the default), `has_needed_by` (always false since the
   form asks for a written deadline; older requests with a date also have `days_until_needed` against
   the estimate's `max_days`); `initial_quantity` and the first shipment's `country`; never the item
@@ -640,7 +640,9 @@ and where, so they see it in person once it arrives.
 
 - **Products** (`swag.PrintProducts`, `GET /api/print/products`): 4x6 postcards on Vistaprint's premium
   linen card stock (what HQ always orders; printed both sides), and 11x17 posters ordered as Vistaprint
-  11x17 flyers, matte (how the Haven posters were ordered: same sheet, bulk prices). Art is ⅛" of bleed
+  11x17 flyers, matte (how the Haven posters were ordered: same sheet, bulk prices) or glossy: the
+  requester picks (`finishes`, saved as `print_requests.finish`, and the stocked item gets that
+  `finish`; glossy is priced off the matte orders, since HQ has none glossy yet). Art is ⅛" of bleed
   on every side and a ⅛" safe margin inside the trim, at 300 DPI: 4.25x6.25 in (1275x1875 px) and
   11.25x17.25 in (3375x5175 px), either way round. That's Vistaprint's postcard size guide, and the Haven
   postcard and poster files (1885x1282, 3382x5182 px) match it. The flow offers a full-size SVG template

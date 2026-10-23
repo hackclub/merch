@@ -2,7 +2,7 @@
 	// Admin: staff print requests (postcards, posters) to check, order from Vistaprint, and stock.
 	import { onMount } from 'svelte';
 	import { api, ApiError, formatCents } from './api';
-	import { printStatusLabel, type PrintRequest } from './print';
+	import { finishLabel, printStatusLabel, type PrintRequest } from './print';
 
 	let prints = $state<PrintRequest[]>([]);
 	let error = $state('');
@@ -32,7 +32,7 @@
 		{#each prints as p (p.id)}
 			<tr>
 				<td data-private>{p.user_name}<div class="muted">{p.user_email}</div></td>
-				<td><strong>{p.title}</strong> <span class="muted">({p.product})</span>
+				<td><strong>{p.title}</strong> <span class="muted">({p.product}{p.finish ? `, ${finishLabel(p.finish).toLowerCase()}` : ''})</span>
 					{#if p.program}<div>For {p.program}</div>{/if}
 					<div class="muted" data-private>{p.note}</div>
 					{#if p.deadline}<div data-private>Deadline: {p.deadline}</div>{/if}

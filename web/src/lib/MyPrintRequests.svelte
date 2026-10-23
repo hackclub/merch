@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { api } from './api';
-	import { printStatusLabel, type PrintRequest } from './print';
+	import { finishLabel, printStatusLabel, type PrintRequest } from './print';
 
 	let prints = $state<PrintRequest[]>([]);
 	onMount(async () => {
@@ -22,7 +22,7 @@
 				<strong>{p.title}</strong>
 				<span class="badge {p.status}">{printStatusLabel[p.status]}</span>
 			</div>
-			<p>{p.quantity.toLocaleString('en-US')} × {p.product === 'postcard_4x6' ? '4x6 postcard' : '11x17 poster'} · <a href={p.front_url} target="_blank" rel="noreferrer">{p.back_url === p.front_url ? 'art (both sides)' : 'front'}</a>{#if p.back_url && p.back_url !== p.front_url} · <a href={p.back_url} target="_blank" rel="noreferrer">back</a>{/if}</p>
+			<p>{p.quantity.toLocaleString('en-US')} × {p.product === 'postcard_4x6' ? '4x6 postcard' : `${p.finish ? `${finishLabel(p.finish).toLowerCase()} ` : ''}11x17 poster`} · <a href={p.front_url} target="_blank" rel="noreferrer">{p.back_url === p.front_url ? 'art (both sides)' : 'front'}</a>{#if p.back_url && p.back_url !== p.front_url} · <a href={p.back_url} target="_blank" rel="noreferrer">back</a>{/if}</p>
 			<p class="muted">{p.program ? `For ${p.program} · ` : ''}Sent {new Date(p.created_at).toLocaleDateString()}{p.needed_by ? ` · needed by ${p.needed_by.slice(0, 10)}` : ''}</p>
 			{#if p.deadline}<p class="muted" data-private>Deadline: {p.deadline}</p>{/if}
 			{#if p.initial_quantity}

@@ -19,6 +19,7 @@ type PrintRequest struct {
 	UserName      string     `json:"user_name,omitempty"`
 	Product       string     `json:"product"`
 	Title         string     `json:"title"`    // what it's called in the warehouse and the shop
+	Finish        string     `json:"finish"`   // the paper; '' on older requests (the product's default)
 	Program       string     `json:"program"`  // the program it's for
 	Deadline      string     `json:"deadline"` // the program's final deadline, in their words
 	Quantity      int        `json:"quantity"`
@@ -47,7 +48,7 @@ const printRequestSelect = `
 	SELECT p.id, p.user_id, u.email, u.name, p.product, p.title, p.quantity, p.front_url, p.back_url, p.note,
 		p.needed_by, p.estimate_cents, p.status, p.admin_note, p.sku, p.created_at, p.updated_at,
 		p.initial_quantity, p.address, p.shipment_request_id, p.front_preview_url, p.back_preview_url, p.landscape,
-		p.program, p.deadline
+		p.program, p.deadline, p.finish
 	FROM print_requests p JOIN users u ON u.id = p.user_id`
 
 func scanPrintRequest(row pgx.Row) (*PrintRequest, error) {
@@ -55,7 +56,7 @@ func scanPrintRequest(row pgx.Row) (*PrintRequest, error) {
 	err := row.Scan(&p.ID, &p.UserID, &p.UserEmail, &p.UserName, &p.Product, &p.Title, &p.Quantity, &p.FrontURL, &p.BackURL, &p.Note,
 		&p.NeededBy, &p.EstimateCents, &p.Status, &p.AdminNote, &p.SKU, &p.CreatedAt, &p.UpdatedAt,
 		&p.InitialQuantity, &p.Address, &p.ShipmentRequestID, &p.FrontPreviewURL, &p.BackPreviewURL, &p.Landscape,
-		&p.Program, &p.Deadline)
+		&p.Program, &p.Deadline, &p.Finish)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -66,10 +67,10 @@ func (s *Store) CreatePrintRequest(ctx context.Context, p PrintRequest) (*PrintR
 	var id int64
 	err := s.pool.QueryRow(ctx, `
 		INSERT INTO print_requests (user_id, product, title, quantity, front_url, back_url, note, needed_by, estimate_cents,
-			initial_quantity, address, front_preview_url, back_preview_url, landscape, program, deadline)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
+			initial_quantity, address, front_preview_url, back_preview_url, landscape, program, deadline, finish)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id`,
 		p.UserID, p.Product, p.Title, p.Quantity, p.FrontURL, p.BackURL, p.Note, p.NeededBy, p.EstimateCents,
-		p.InitialQuantity, p.Address, p.FrontPreviewURL, p.BackPreviewURL, p.Landscape, p.Program, p.Deadline).Scan(&id)
+		p.InitialQuantity, p.Address, p.FrontPreviewURL, p.BackPreviewURL, p.Landscape, p.Program, p.Deadline, p.Finish).Scan(&id)
 	if err != nil {
 		return nil, mapErr(err)
 	}

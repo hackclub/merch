@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { checkArt, firstShipmentOptions, guides, printArtProps, estimateLine, arrivalLine, timelineRows, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
+import { checkArt, finishOptions, firstShipmentOptions, guides, printArtProps, estimateLine, arrivalLine, timelineRows, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
 
 const postcard: PrintProduct = {
 	key: 'postcard_4x6', name: '4x6 postcard', paper: 'Premium linen card stock', vendor: 'Vistaprint', width_in: 4, height_in: 6,
-	bleed_in: 0.125, safe_in: 0.125, dpi: 300, finish: 'linen', thickness_in: 0.016, postcard: true, min_quantity: 50, max_quantity: 25000,
+	bleed_in: 0.125, safe_in: 0.125, dpi: 300, finish: 'linen', finishes: ['linen'], thickness_in: 0.016, postcard: true, min_quantity: 50, max_quantity: 25000,
 	step: 50, bleed_width_in: 4.25, bleed_height_in: 6.25, safe_width_in: 3.75, safe_height_in: 5.75, bleed_width_px: 1275, bleed_height_px: 1875
 };
 
@@ -119,5 +119,15 @@ describe('printArtProps', () => {
 		expect(printArtProps('postcard_4x6', 'back', null, 0, 'application/pdf')).toEqual({
 			product: 'postcard_4x6', side: 'back', fit: 'unreadable', problem: true, type: 'application/pdf'
 		});
+	});
+});
+
+describe('finishOptions', () => {
+	it('offers matte or glossy posters, and nothing to pick for linen postcards', () => {
+		expect(finishOptions({ ...postcard, finish: 'matte', finishes: ['matte', 'gloss'] })).toEqual([
+			{ value: 'matte', label: 'Matte' },
+			{ value: 'gloss', label: 'Glossy' }
+		]);
+		expect(finishOptions(postcard)).toEqual([]);
 	});
 });
