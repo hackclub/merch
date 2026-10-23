@@ -172,7 +172,7 @@
 			{#if !catalog?.settings.requests_open}
 				<p class="error">Requests are closed right now. Check back soon!</p>
 			{:else if !offered(item, bag.purpose)}
-				<p class="muted">This is only for people running a Hack Club or an event. <a href="/">Change what your request is for</a>.</p>
+				<p class="muted">This is only for {item.staff_only ? 'Hack Club staff' : 'people running a Hack Club or an event'}. <a href="/">Change what your request is for</a>.</p>
 			{:else}
 				{#if soldOut(item, catalog?.stock)}
 					<p class="error" data-track="out_of_stock">Out of stock.</p>

@@ -66,7 +66,8 @@ to 500). Use it to audit what people are told: wording that's confusing, wrong, 
 ### `GET /api/agent/items`
 
 Every item: its limits (`max_per_request`, `max_per_user`, `min_per_request`), who it's
-for (`club_only`), `visible`, sizes (`variants`) and what it `ships_with`.
+for (`club_only`: clubs, events and staff; `staff_only`: staff alone, like the Orpheus
+plushie, so check the requester's `@hackclub.com` email), `visible`, sizes (`variants`) and what it `ships_with`.
 
 ### `POST /api/agent/requests/{id}/notes`
 

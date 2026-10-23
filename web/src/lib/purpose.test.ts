@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { forGroups, itemsFor, needsReason, offered, parsePurpose, PURPOSES, purposeLabel } from './purpose';
 import type { Item } from './types';
 
-const base: Item = { id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, allow_backorder: false, clip: '' };
+const base: Item = { id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, staff_only: false, allow_backorder: false, clip: '' };
 const shirt: Item = { ...base, id: 2, sku: 'Swa/Shirt/HC', name: 'T-shirt', club_only: true };
 
 describe('purpose', () => {
@@ -40,6 +40,14 @@ describe('purpose', () => {
 		expect(itemsFor([base, shirt], 'event')).toEqual([base, shirt]);
 		// Before they've answered, show everything.
 		expect(itemsFor([base, shirt], '')).toEqual([base, shirt]);
+	});
+
+	it('offers staff-only items (the plushie) only to staff', () => {
+		const plush: Item = { ...base, id: 3, sku: 'Swa/HC/Plu/Orp', name: 'Orpheus Plushie', staff_only: true };
+		expect(offered(plush, 'staff')).toBe(true);
+		for (const p of ['personal', 'club', 'event', ''] as const) expect(offered(plush, p)).toBe(false);
+		expect(itemsFor([base, shirt, plush], 'club')).toEqual([base, shirt]);
+		expect(itemsFor([base, shirt, plush], 'staff')).toEqual([base, shirt, plush]);
 	});
 
 	it('reads a saved purpose, defaulting to sharing with friends', () => {

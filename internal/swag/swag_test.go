@@ -423,3 +423,23 @@ func TestStaffRequests(t *testing.T) {
 		t.Errorf("staff shirt request: %v", err)
 	}
 }
+
+// Staff-only items (the Orpheus plushie) are only for Hack Club staff requests.
+func TestStaffOnlyItems(t *testing.T) {
+	plush := Item{ID: 9, SKU: "Swa/HC/Plu/Orp", Name: "Orpheus Plushie", Visible: true, MaxPerRequest: 5, StaffOnly: true}
+	for p, want := range map[Purpose]bool{PurposeStaff: true, PurposeClub: false, PurposeEvent: false, PurposePersonal: false} {
+		if got := plush.Offered(p); got != want {
+			t.Errorf("Offered(%s) = %v, want %v", p, got, want)
+		}
+	}
+	cat := catalog()
+	cat[9] = plush
+	in := ValidateInput{Settings: settings(), Catalog: cat, Purpose: PurposeClub, Reason: "Club fair.", Lines: []Line{{ItemID: 9, Quantity: 1}}}
+	if err := Validate(in); !errors.Is(err, ErrUnknownItem) || !strings.Contains(err.Error(), "only for Hack Club staff") {
+		t.Errorf("club plushie = %v", err)
+	}
+	in.Purpose = PurposeStaff
+	if err := Validate(in); err != nil {
+		t.Errorf("staff plushie = %v", err)
+	}
+}

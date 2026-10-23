@@ -556,6 +556,24 @@ func TestClubOnlyItemsArentForPersonalRequests(t *testing.T) {
 	}
 }
 
+func TestStaffOnlyItemsAreForStaffRequests(t *testing.T) {
+	h := newHarness(t)
+	admin, user := h.client(adminEmail), h.client(userEmail)
+	var plush swag.Item
+	if code := h.do(admin, "POST", "/api/admin/items", swag.Item{SKU: "Swa/HC/Plu/Orp", Name: "Orpheus Plushie", MaxPerRequest: 5, Visible: true, StaffOnly: true, AllowBackorder: true}, &plush); code != 201 || !plush.StaffOnly {
+		t.Fatalf("create staff-only item = %d %+v", code, plush)
+	}
+	lines := []swag.Line{{ItemID: plush.ID, Quantity: 1}}
+	var errBody map[string]string
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "club", "note": "Club fair.", "address": usAddr, "lines": lines}, &errBody); code != 422 || !strings.Contains(errBody["error"], "Hack Club staff") {
+		t.Fatalf("club = %d %v", code, errBody)
+	}
+	var r store.Request
+	if code := h.do(user, "POST", "/api/requests", map[string]any{"purpose": "staff", "note": "Giveaway at our booth.", "address": usAddr, "lines": lines}, &r); code != 201 || r.Purpose != swag.PurposeStaff {
+		t.Fatalf("staff = %d %+v", code, r)
+	}
+}
+
 func TestDispatchFailureLeavesRequestPending(t *testing.T) {
 	h := newHarness(t)
 	it := h.mkItem("Sti/A", true)

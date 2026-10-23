@@ -37,7 +37,7 @@ export const SECTIONS: Section[] = [
 	{ key: 'cards', title: 'More cards and flyers', blurb: '', extra: true, match: (i) => i.packs === 'postcard' || (flat(i) && !poster(i)), rank: (i) => Number(i.packs !== 'postcard') },
 	{ key: 'posters', title: 'Posters', blurb: '', extra: true, match: flat },
 	{ key: 'booklets', title: 'Magazine and brochure', blurb: '', extra: true, match: (i) => !!i.binding },
-	{ key: 'wear', title: 'Shirts and pins', blurb: '', extra: true, skus: ['Swa/'] },
+	{ key: 'wear', title: 'Shirts, pins and plushies', blurb: '', extra: true, skus: ['Swa/'] },
 	{ key: 'more', title: 'More', blurb: '', extra: true },
 	{
 		key: 'stickers',

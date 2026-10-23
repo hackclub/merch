@@ -97,6 +97,8 @@ type Item struct {
 	// ClubOnly items (the full-size magazine, the T-shirt) aren't offered for
 	// personal requests, only to people running a club or an event.
 	ClubOnly bool `json:"club_only"`
+	// StaffOnly items (the Orpheus plushie) are offered only to Hack Club staff.
+	StaffOnly bool `json:"staff_only"`
 
 	// AllowBackorder lets requests take more than the warehouse has; they ship
 	// once the restock arrives. Without it, requests stop at what's in stock.
@@ -142,6 +144,9 @@ var Purposes = map[Purpose]bool{PurposePersonal: true, PurposeClub: true, Purpos
 
 // Offered reports whether an item can be requested for the given purpose.
 func (it Item) Offered(p Purpose) bool {
+	if it.StaffOnly {
+		return p == PurposeStaff
+	}
 	return p != PurposePersonal || !it.ClubOnly
 }
 
@@ -230,6 +235,9 @@ func Validate(in ValidateInput) error {
 			return ErrUnknownItem
 		}
 		if !item.Offered(in.Purpose) {
+			if item.StaffOnly {
+				return fmt.Errorf("%w: %s is only for Hack Club staff", ErrUnknownItem, item.Name)
+			}
 			return fmt.Errorf("%w: %s is only for clubs and events", ErrUnknownItem, item.Name)
 		}
 		k := key{l.ItemID, ""}

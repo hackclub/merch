@@ -109,9 +109,9 @@ func TestItems(t *testing.T) {
 	}
 
 	five := 5
-	a.Name, a.MaxPerUser, a.SortOrder, a.ClubOnly = "Renamed", &five, 3, true
+	a.Name, a.MaxPerUser, a.SortOrder, a.ClubOnly, a.StaffOnly = "Renamed", &five, 3, true, true
 	upd, err := s.UpdateItem(ctx, a)
-	if err != nil || upd.Name != "Renamed" || upd.MaxPerUser == nil || *upd.MaxPerUser != 5 || !upd.ClubOnly {
+	if err != nil || upd.Name != "Renamed" || upd.MaxPerUser == nil || *upd.MaxPerUser != 5 || !upd.ClubOnly || !upd.StaffOnly {
 		t.Fatalf("UpdateItem = %+v, %v", upd, err)
 	}
 	if _, err := s.UpdateItem(ctx, swag.Item{ID: 999, SKU: "x", Name: "x", MaxPerRequest: 1}); !errors.Is(err, ErrNotFound) {

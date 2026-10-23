@@ -31,8 +31,10 @@ export const forGroups = (purpose: Purpose | ''): boolean => purpose === 'club' 
 /** Group requests must say how they'll use what they ask for. Mirrors swag.ErrNoReason. */
 export const needsReason = forGroups;
 
-/** Club-only items (the full-size magazine, the T-shirt) aren't offered for personal requests. Mirrors Item.Offered. */
-export const offered = (item: Item, purpose: Purpose | ''): boolean => purpose !== 'personal' || !item.club_only;
+/** Club-only items (the full-size magazine, the T-shirt) aren't offered for personal requests;
+ * staff-only items (the Orpheus plushie) are offered only to staff. Mirrors Item.Offered. */
+export const offered = (item: Item, purpose: Purpose | ''): boolean =>
+	item.staff_only ? purpose === 'staff' : purpose !== 'personal' || !item.club_only;
 
 /** The items to show for a purpose; everything until one is picked. */
 export const itemsFor = (items: Item[], purpose: Purpose | ''): Item[] => items.filter((i) => offered(i, purpose));
