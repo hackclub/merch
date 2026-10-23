@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkArt, finishOptions, firstShipmentOptions, guides, printArtProps, estimateLine, arrivalLine, timelineRows, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
+import { checkArt, finishOptions, placeholderArt, placeholderSheet, firstShipmentOptions, guides, printArtProps, estimateLine, arrivalLine, timelineRows, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
 
 const postcard: PrintProduct = {
 	key: 'postcard_4x6', name: '4x6 postcard', paper: 'Premium linen card stock', vendor: 'Vistaprint', width_in: 4, height_in: 6,
@@ -129,5 +129,23 @@ describe('finishOptions', () => {
 			{ value: 'gloss', label: 'Glossy' }
 		]);
 		expect(finishOptions(postcard)).toEqual([]);
+	});
+});
+
+describe('placeholder art for the 3D preview before any upload', () => {
+	it('shows postcards landscape and posters portrait, at their trimmed size', () => {
+		expect(placeholderSheet(postcard)).toEqual({ widthIn: 6, heightIn: 4 });
+		expect(placeholderSheet({ ...postcard, postcard: false, width_in: 11, height_in: 17 })).toEqual({ widthIn: 11, heightIn: 17 });
+	});
+	it('draws the trimmed card with its safe line and what goes there, at most 2048 px', () => {
+		const a = placeholderArt(postcard);
+		expect([a.width, a.height]).toEqual([900, 600]);
+		expect(a.svg).toContain('width="900" height="600"');
+		expect(a.svg).toContain('Your 4x6 postcard');
+		expect(a.svg).toContain('stroke-dasharray'); // the safe line, ⅛" in
+		expect(a.svg).not.toMatch(/vistaprint/i);
+		const poster = placeholderArt({ ...postcard, name: '11x17 poster', postcard: false, width_in: 11, height_in: 17 });
+		expect(Math.max(poster.width, poster.height)).toBeLessThanOrEqual(2048);
+		expect(poster.width / poster.height).toBeCloseTo(11 / 17, 2);
 	});
 });

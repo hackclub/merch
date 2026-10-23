@@ -154,6 +154,33 @@ export function templateSVG(p: PrintProduct, landscape: boolean): string {
 </svg>`;
 }
 
+/** How the 3D preview holds a product before any art is picked: postcards landscape, posters portrait. */
+export const placeholderSheet = (p: PrintProduct) =>
+	p.postcard ? { widthIn: p.height_in, heightIn: p.width_in } : { widthIn: p.width_in, heightIn: p.height_in };
+
+/**
+ * Stand-in art for the 3D preview until they pick a file: the trimmed sheet in the shop's tile grey,
+ * its safe line, and what goes there. At most 2048 px across, for a WebGL texture.
+ */
+export function placeholderArt(p: PrintProduct): { svg: string; width: number; height: number } {
+	const { widthIn, heightIn } = placeholderSheet(p);
+	const ppi = Math.min(150, 2048 / Math.max(widthIn, heightIn));
+	const [w, h] = [Math.round(widthIn * ppi), Math.round(heightIn * ppi)];
+	const safe = p.safe_in * ppi;
+	const line = Math.max(2, Math.round(ppi / 50));
+	const big = Math.round(Math.min(w, h) * 0.085);
+	const small = Math.round(big * 0.5);
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+<rect width="${w}" height="${h}" fill="#f0f1ec"/>
+<rect x="${fmt(safe)}" y="${fmt(safe)}" width="${fmt(w - 2 * safe)}" height="${fmt(h - 2 * safe)}" fill="none" stroke="#338eda" stroke-width="${line}" stroke-dasharray="${line * 6} ${line * 4}"/>
+<g font-family="sans-serif" text-anchor="middle" fill="#1f2d3d">
+<text x="${w / 2}" y="${fmt(h / 2 - big * 0.2)}" font-size="${big}" font-weight="700">Your ${p.name}</text>
+<text x="${w / 2}" y="${fmt(h / 2 + small * 1.6)}" font-size="${small}" fill="#8492a6">Pick a PNG to see your art here</text>
+</g>
+</svg>`;
+	return { svg, width: w, height: h };
+}
+
 const usd = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** "About $119.58 for 1,000 (12¢ each)". */

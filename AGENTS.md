@@ -654,7 +654,9 @@ and where, so they see it in person once it arrives.
   marked: the bleed (red, cut off), the trim line, the ⅛" inside it that a drifting cut can take
   (amber, not safe), and the safe area (dashed blue), with a legend saying what goes where; "As printed"
   shows it trimmed. The 3D view shows it with the bleed cut off (`Product3D`: a linen card that turns
-  over, or a sheet beside a phone). Files upload untouched to the CDN only on Submit (`POST
+  over, or a sheet beside a phone, on the paper they picked). It sits under the product choice and
+  shows from the start, with stand-in art for the product (`placeholderArt` in `$lib/print`: the
+  trimmed sheet, its safe line, "Your 4x6 postcard") until they pick a printable file. Files upload untouched to the CDN only on Submit (`POST
   /api/print/files`, signed in, up to 60 MB each, checked again), and the server also uploads a trimmed,
   shrunk JPEG (`preview_url`, `imgprep.WebInset` by `swag.TrimInset`) for the shop item.
 - **Estimate** (`swag.EstimatePrint`, `GET /api/print/estimate`): prices are Hack Club's own Vistaprint

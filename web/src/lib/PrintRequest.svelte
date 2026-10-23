@@ -14,7 +14,7 @@
 	import Product3D from './Product3D.svelte';
 	import type { Preview3D } from './items';
 	import {
-		arrivalLine, checkArt, estimateLine, finishOptions, firstShipmentOptions, guides, printArtProps, quantityPresets, sheetFor, templateSVG, timelineRows, trimCrop,
+		arrivalLine, checkArt, estimateLine, finishOptions, firstShipmentOptions, guides, placeholderArt, placeholderSheet, printArtProps, quantityPresets, sheetFor, templateSVG, timelineRows, trimCrop,
 		type ArtCheck, type PrintEstimate, type PrintProduct, type PrintRequest
 	} from './print';
 
@@ -142,12 +142,42 @@
 
 	const front = $derived(art.front);
 	const sides = $derived<Side[]>(backMode === 'same' ? ['front'] : ['front', 'back']);
-	const sheet = $derived(product && front ? sheetFor(product, front.width, front.height) : null);
+	// Stand-in art for the 3D view until they pick a file, drawn for the product they chose.
+	let placeholder = $state('');
+	$effect(() => {
+		if (!product) return;
+		const { svg, width, height } = placeholderArt(product);
+		let url = '';
+		let live = true;
+		const img = new Image(width, height);
+		const src = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+		img.onload = () => {
+			const canvas = Object.assign(document.createElement('canvas'), { width, height });
+			canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+			URL.revokeObjectURL(src);
+			canvas.toBlob((b) => {
+				if (!b || !live) return;
+				url = URL.createObjectURL(b);
+				placeholder = url;
+			}, 'image/png');
+		};
+		img.src = src;
+		return () => {
+			live = false;
+			// The outgoing 3D view may still be loading it.
+			if (url) setTimeout(() => URL.revokeObjectURL(url), 30_000);
+		};
+	});
 	// What the 3D view shows: one card (turn it over for the back) or the sheet, next to a phone for scale.
+	// Their art once it's printable; until then, the placeholder at the product's size.
 	const preview = $derived.by((): Preview3D | null => {
-		if (!product || !front || !sheet || front.check.problem) return null;
-		const back = backMode === 'same' ? front.trimmed : art.back && !art.back.check.problem ? art.back.trimmed : undefined;
-		const opts = { front: front.trimmed, back, widthIn: sheet.widthIn, heightIn: sheet.heightIn, finish, phone: true };
+		if (!product) return null;
+		const ready = front && !front.check.problem ? front : null;
+		if (!ready && !placeholder) return null;
+		const sheet = ready ? sheetFor(product, ready.width, ready.height) : placeholderSheet(product);
+		const face = ready ? ready.trimmed : placeholder;
+		const back = backMode === 'same' || !ready ? face : art.back && !art.back.check.problem ? art.back.trimmed : undefined;
+		const opts = { front: face, back, widthIn: sheet.widthIn, heightIn: sheet.heightIn, finish, phone: true };
 		return product.postcard
 			? { postcards: { kind: 'postcards', ...opts, thicknessIn: product.thickness_in } }
 			: { sheet: { ...opts, thicknessIn: product.thickness_in } };
@@ -208,6 +238,12 @@
 					<label class="inline"><input type="radio" name="print_finish" value={f.value} checked={finish === f.value} onchange={() => (finish = f.value)} /> {f.label}</label>
 				{/each}
 			</fieldset>
+		{/if}
+
+		{#if preview}
+			<div class="preview" data-track="print_preview">
+				{#key preview}<Product3D {preview} name={title || product.name} count={1} />{/key}
+			</div>
 		{/if}
 
 		<h3>Print specs</h3>
@@ -278,12 +314,6 @@
 					<li><span class="key unsafe"></span><span><strong>Not safe.</strong> The ⅛" inside the trim. Cuts can drift this far, so text and logos here may be cut off.</span></li>
 					<li><span class="key safe"></span><span><strong>Safe area.</strong> Everything important (text, logos, QR codes, faces) goes inside the dashed line.</span></li>
 				</ul>
-			{/if}
-
-			{#if preview}
-				<div class="preview">
-					{#key preview}<Product3D {preview} name={title || product.name} count={1} />{/key}
-				</div>
 			{/if}
 
 			<h3>How many should we print?</h3>
