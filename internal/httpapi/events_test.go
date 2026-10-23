@@ -260,3 +260,24 @@ func TestAPICallsAreLogged(t *testing.T) {
 		t.Errorf("unknown route api event = %v", nope)
 	}
 }
+
+// Signed-out people fill the whole request form; Submit sends them to verify their email first.
+func TestVerifyEmailLoginIsLogged(t *testing.T) {
+	h := newHarness(t)
+	c := &http.Client{Jar: newJar(), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, _ := c.Get(h.srv.URL + "/auth/login?for=request")
+	resp.Body.Close()
+	resp, _ = c.Get(h.srv.URL + "/auth/login?for=" + strings.Repeat("x", 100))
+	resp.Body.Close()
+	l := h.events("login_start")
+	if len(l) != 2 {
+		t.Fatalf("login_start = %+v", l)
+	}
+	got := map[any]bool{}
+	for _, e := range l {
+		got[props(t, e)["for"]] = true
+	}
+	if !got["request"] || !got[nil] {
+		t.Errorf("login_start for = %v, want request and nothing for an unknown value", got)
+	}
+}

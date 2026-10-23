@@ -22,7 +22,7 @@ through the app, not into migrations or seed files. Before every commit, read `g
 
 | Who | How we know | What they do |
 | --- | --- | --- |
-| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card or Apple Pay on the form (Stripe) before we ship (see "Shipping estimates and packing"). |
+| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. Anyone can fill in the whole form signed out; Submit signs them in with Hack Club to verify their email, then sends it (abroad, they pay by card after). Address search is signed-in only (Places lookups cost money). US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card or Apple Pay on the form (Stripe) before we ship (see "Shipping estimates and packing"). |
 | YSWS author | Their HCA email matches `Hack Club Auth Email` in the **YSWS Authors** table of the Unified YSWS Projects DB (Airtable `app3A5kJwYqxMLOgh`) | Submit print-ready material (stickers, posters…) to be printed and stocked in the warehouse. |
 | Admin | Email is in `ADMIN_EMAILS` (admins are also authors) | Manage global limits, list warehouse SKUs as items, set visibility and order, review requests (ship → tracking), and review author submissions. |
 | Review agent | An API key an admin made (`Authorization: Bearer merch_…`) | Read pending requests, the requester and their history, add notes, ship (with changes) or reject. See "Agent API". |
@@ -497,7 +497,11 @@ blocks landing):
   every page, since all cart changes go through `$lib/bag.svelte`), `purpose`, `sticker_nudge` (a club or
   event request picked more than 5 sticker designs at under 50 each and was shown the packs-of-50
   suggestion under the stickers, with an "I understand." box (`field` `sticker_regroup_ok`) that Submit waits for:
-  `designs`, `loose`), `item_hover` (mouse
+  `designs`, `loose`), `verify_email` (a signed-out person pressed Submit on the filled-in form and
+  is off to sign in with Hack Club to verify their email: `items`, `intl`, `purpose`, `has_note`;
+  the form waits in sessionStorage, `$lib/draft`), `verify_email_back` (back signed in with that
+  form: `next` = `submit` (US, sent on its own) or `card` (abroad, the card field waits), `items`),
+  `item_hover` (mouse
   over an item for ≥ 0.5 s), `payment_error` (a card didn't go through: `request_id`, `method` = `card` or `apple_pay`, and Stripe's `type`,
   `code`, `decline_code`; never the message), `api_error`, `js_error`, `pwa_installed`,
   `web_vital` (Core Web Vitals from the `web-vitals` library, once per page load: `metric` =
@@ -521,7 +525,8 @@ blocks landing):
 - `api`: every `/api/*` and `/auth/*` call (except `/api/events`), logged by middleware: `route`
   (the mux pattern), `url` (the path, never the query), `status`, `ms`, and on a 500 the
   `error` that `serverErr` logged. Use it for errors and slow routes.
-- Server events (`s.track` in `internal/httpapi`): `login_start`, `sign_in`, `sign_in_refused`,
+- Server events (`s.track` in `internal/httpapi`): `login_start` (`referrer`; `for` = `request`
+  when it's the request form's verify-email step), `sign_in`, `sign_in_refused`,
   `sign_out`, `payment_started` (the card form is about to charge: `request_id`, `fee_cents`, `country`,
   `retry`), `payment_completed` (Stripe says it's paid in full; the request moved to `pending`; `wallet` = `apple_pay` when paid that way),
   `payment_refunded` (a rejected or cancelled request's card payment went back: `request_id`,

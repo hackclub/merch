@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Address line 1 with suggestions from the server's Google Places proxy.
 	// Picking one fills the rest of the address. Without a Places key on the
-	// server (404) it's a plain input.
+	// server (404), or signed out (401: lookups cost money), it's a plain input.
 	import { api, ApiError } from './api';
 	import { createSearcher, moveHighlight, narrow, newSessionToken, regionOf, type AddressSuggestion } from './addressSearch';
 	import type { Address } from './types';
@@ -29,7 +29,7 @@
 	const search = createSearcher(suggest);
 
 	function unavailable(e: unknown) {
-		if (e instanceof ApiError && e.status === 404) {
+		if (e instanceof ApiError && (e.status === 404 || e.status === 401)) {
 			off = true;
 			onunavailable?.();
 		}

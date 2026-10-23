@@ -287,7 +287,11 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 	b := make([]byte, 24)
 	rand.Read(b)
 	state := base64.RawURLEncoding.EncodeToString(b)
-	s.track(r, nil, "login_start", map[string]any{"referrer": clip(r.Referer(), 300)})
+	props := map[string]any{"referrer": clip(r.Referer(), 300)}
+	if r.URL.Query().Get("for") == "request" { // Submit on the request form: sign-in verifies their email
+		props["for"] = "request"
+	}
+	s.track(r, nil, "login_start", props)
 	http.SetCookie(w, &http.Cookie{
 		Name: stateCookie, Value: state, Path: "/auth", MaxAge: 600,
 		HttpOnly: true, Secure: s.secure(r), SameSite: http.SameSiteLaxMode,

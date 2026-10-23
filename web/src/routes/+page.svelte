@@ -11,6 +11,7 @@
 	import { cartErrors, cartLines, emptyCart, pruneCart, pruneSizes, setQuantity, setSizeQuantity, sizeLabel, sizesSummary, stickerNudge, totalQuantity } from '$lib/cart';
 	import { feeTooltip, galleryRows, roughFee } from '$lib/gallery';
 	import { pickedLines } from '$lib/haul';
+	import { clearDraft, readDraft, resumeAddress, resumeStep, saveDraft, VERIFY_EMAIL_URL, verifyEmailProps } from '$lib/draft';
 	import { cardSides, itemPath, previewCount, showsAmountIn3D, thumbnail, tilePreview } from '$lib/items';
 	import { itemsFor, needsReason, PURPOSES } from '$lib/purpose';
 	import { sectionize, tileFact } from '$lib/sections';
@@ -33,7 +34,8 @@
 	// A complete address folds into a "Ship to" summary. Editing shows the fields until they press "Use this address";
 	// `manual` shows every field instead of just the autocomplete search.
 	let editing = $state(!addressComplete(prefilled));
-	let manual = $state(!!prefilled.line_1.trim());
+	// Signed out, address search isn't offered (lookups cost money), so every field shows.
+	let manual = $state(!!prefilled.line_1.trim() || !session.me?.user);
 	let note = $state('');
 	let understood = $state(false);
 	let customsOK = $state(false); // outside the US: they'll pay their country's customs fees
@@ -42,6 +44,9 @@
 	let submitError = $state('');
 	let submitting = $state(false);
 	let card = $state<CardForm | null>(null);
+	let form = $state<HTMLFormElement | null>(null);
+	// Back from verifying their email abroad: the card is all that's left.
+	let verified = $state(false);
 	// Delivery times from past shipments, and this request's packing and arrival estimate.
 	let summary = $state<ShippingSummary | null>(null);
 	// `costs`: what it costs Hack Club to send, in the US and abroad.
@@ -55,6 +60,7 @@
 			const listed = itemsFor(catalog.items, bag.purpose);
 			setSizes(pruneSizes(bag.sizes, listed));
 			setCart(pruneCart(bag.cart, listed, bag.sizes));
+			if (await resume()) return;
 			// "Review request" links from product pages land here as /#request.
 			if (location.hash === '#request') {
 				await tick();
@@ -72,9 +78,9 @@
 	// Personal requests don't offer club-only items (the full-size magazine, the T-shirt).
 	const shown = $derived(catalog ? itemsFor(catalog.items, purpose) : []);
 	const sections = $derived(sectionize(shown));
-	const asking = $derived(!!session.me?.user && !!catalog?.settings.requests_open);
-	// Anyone can fill the bag; signing in only comes at the end, when they send it.
+	// Anyone can fill in the whole request; signing in only comes at Submit, to verify their email.
 	const open = $derived(!!catalog?.settings.requests_open);
+	const signedIn = $derived(!!session.me?.user);
 	const count = $derived(totalQuantity(cart));
 	const problems = $derived(catalog ? [...cartErrors(cart, catalog.items, sizes), ...stockErrors(cart, catalog.items, sizes, catalog.stock)] : []);
 	const intl = $derived(isInternational(address.country));
@@ -87,8 +93,9 @@
 		if (nudge && !nudged) track('sticker_nudge', { designs: nudge.designs, loose: nudge.loose });
 		nudged = !!nudge;
 	});
-	// International shipping is paid by card right on the form.
+	// International shipping is paid by card right on the form (once they've verified their email).
 	const payByCard = $derived(intl && !!quote?.estimate.fee_cents);
+	const cardNow = $derived(payByCard && signedIn);
 	// Two strips of everything under the intro: photos and products on top, magazine pages and backs below.
 	const rows = $derived(catalog ? galleryRows(catalog.items) : null);
 	// Image boxes in CSS pixels, so thumbnails come at the size they show (see .slide and .thumb below):
@@ -116,7 +123,7 @@
 	// Re-quote shipping as the bag or country changes. The server refuses what won't pack together
 	// (a poster with a stack of postcards) or is over 3 lb abroad, so this also catches those before Submit.
 	$effect(() => {
-		if (!catalog || !asking || count === 0) return;
+		if (!catalog || !open || count === 0) return;
 		const body = { country: address.country.trim().toUpperCase(), lines: cartLines(cart, catalog.items, sizes) };
 		const timer = setTimeout(async () => {
 			try {
@@ -169,9 +176,39 @@
 		if (n === 0) picking[item.id] = false;
 	}
 
+	// The form as they left it to verify their email. Back signed in, US requests send themselves;
+	// abroad the card field waits. Returns whether it picked one up.
+	async function resume(): Promise<boolean> {
+		const d = readDraft(sessionStorage);
+		if (!d) return false;
+		address = resumeAddress(d.address, session.me?.user?.address);
+		note = d.note;
+		understood = d.understood;
+		customsOK = d.customs_ok;
+		regroupOK = d.regroup_ok;
+		editing = !addressComplete(address);
+		manual = true;
+		if (!signedIn) return false; // they backed out of signing in: the form is still filled in
+		clearDraft(sessionStorage);
+		const next = resumeStep(isInternational(address.country));
+		track('verify_email_back', { next, items: count });
+		await tick();
+		form?.scrollIntoView({ behavior: 'smooth' });
+		if (next === 'card') verified = true;
+		else if (count > 0 && !problems.length && !(nudge && !regroupOK)) form?.requestSubmit();
+		return true;
+	}
+
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		if (!catalog) return;
+		if (!signedIn) {
+			const d = { address, note: needsReason(purpose) ? note : '', understood, customs_ok: customsOK, regroup_ok: regroupOK };
+			saveDraft(sessionStorage, d);
+			track('verify_email', verifyEmailProps(d, { items: count, intl, purpose }));
+			location.href = VERIFY_EMAIL_URL;
+			return;
+		}
 		submitError = '';
 		submitting = true;
 		try {
@@ -363,15 +400,10 @@
 			<p class="muted">Nothing listed yet.</p>
 		{/each}
 
-		{#if !session.me?.user}
-			{#if haul.length && !side.current}<div class="send"><Haul3D lines={haul} includes={catalog.includes} table={purpose === 'club' || purpose === 'event'} />
-				<button type="button" class="link" onclick={clearAll}>Clear request</button></div>{/if}
-			<p id="request" class="send"><a class="button" href="/auth/login" data-sveltekit-reload
-				>{count ? `Sign in with Hack Club to send ${count} item${count === 1 ? '' : 's'}` : 'Sign in with Hack Club to request swag'}</a></p>
-		{:else if asking && !purpose}
+		{#if open && !purpose}
 			<p class="muted">Pick what kind of request this is at the top, then we'll ask where to send it.</p>
-		{:else if asking && totalQuantity(cart) > 0}
-			<form id="request" onsubmit={submit} data-track="form">
+		{:else if open && totalQuantity(cart) > 0}
+			<form id="request" bind:this={form} onsubmit={submit} data-track="form">
 				<h2>Shipping info</h2>
 				{#if !editing}
 					<div class="ship-to">
@@ -436,7 +468,8 @@
 				</div>
 				{#if intl}
 					<div class="pay">
-						{#if payByCard && quote}
+						{#if verified}<p><strong>Email verified.</strong> Pay the postage by card to send your request.</p>{/if}
+						{#if cardNow && quote}
 							<CardField bind:this={card} stripeKey={catalog.settings.stripe_key} amountCents={quote.estimate.fee_cents} billing={address} />
 						{/if}
 						<label class="choice" class:on={customsOK}>
@@ -451,8 +484,9 @@
 					{#each problems as p}<p class="error">{p}</p>{/each}
 					{#if quoteError}<p class="error">{quoteError}</p>{/if}
 					{#if submitError}<p class="error" role="alert">{submitError}</p>{/if}
+					{#if !signedIn}<p class="muted">Next, sign in with Hack Club to verify your email{payByCard && quote ? `, then pay the ${usd(quote.estimate.fee_cents)} postage by card` : ''}.</p>{/if}
 					<button disabled={submitting || problems.length > 0 || !!quoteError || !understood || (intl && !customsOK) || (!!nudge && !regroupOK)}>
-						{submitting ? 'Sending…' : payByCard && quote ? `Submit and pay ${usd(quote.estimate.fee_cents)}` : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
+						{!signedIn ? 'Verify email to submit' : submitting ? 'Sending…' : cardNow && quote ? `Submit and pay ${usd(quote.estimate.fee_cents)}` : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
 					</button>
 				</div>
 			</form>
