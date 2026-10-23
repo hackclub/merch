@@ -248,6 +248,13 @@ make import TRACKING=/tmp/zmr-tracking.csv FILES='…'   # writes to $DATABASE_U
 - Imported 2026-09-29 into the dev DB: Mini-Magazine (320), Staff T-Shirt (29), Hackpad Poster
   (66), Sunbeam Poster (34). That's 449 requests (all dispatched, 442 with tracking) across 372
   people.
+- Topped up 2026-10-23 in production and dev with every later submission (Mini-Magazine 35,
+  Hackpad 29, Staff T-Shirt 13; Sunbeam had none). That's 526 requests: 521 dispatched, all with
+  tracking, and 5 cancelled (3 launch-day tests and 2 that Airtable shows canceled).
+  No CSV export is needed: the Hack Club data warehouse mirrors every form (`fillout.submissions`,
+  `response->'questions'` and `'calculations'`), and Airtable `shipment_requests` (same email and
+  `custom_instructions`, within 3 days) gives the `Created records` id, `warehousetracking_number`,
+  `warehouseservice` and `date_mailed`. Turn those into the Fillout CSV and tracking CSV in `/tmp`.
 
 ## Deploying (Orchard)
 
