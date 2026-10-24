@@ -175,6 +175,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/agent/requests/{id}/refresh", s.requireAgent(s.adminRefresh))
 	mux.Handle("GET /api/agent/items", s.requireAgent(s.adminItems))
 	mux.Handle("GET /api/agent/emails", s.requireAgent(s.adminEmails))
+	mux.Handle("GET /api/agent/print-requests", s.requireAgent(s.adminPrintRequests))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeErr(w, http.StatusNotFound, "not found") })
 	mux.HandleFunc("/", s.static)

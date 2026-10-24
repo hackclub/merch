@@ -716,6 +716,8 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
 - `POST …/notes` appends a signed paragraph to `internal_note`; it never replaces it.
   `POST …/dispatch` and `…/reject` are the admin handlers, so they ship real mail and send
   the same emails. Uncertain cases get a `Needs a human:` note and stay `pending`.
+  `GET /api/agent/print-requests` lists staff print requests read-only, so the agent can
+  tell Zach about new ones and remind him when one sits unanswered; only admins act on them.
   `POST …/refresh` pulls tracking from mail.hackclub.com (the admin refresh handler); nothing
   pulls it automatically, so the review agent refreshes what it shipped on later runs.
 - `merch.hackclub.com` has no Orchard login, so the key is the only lock on `/api/agent`. If

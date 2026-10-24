@@ -250,6 +250,17 @@ func TestPrintRequestFlow(t *testing.T) {
 	if code := h.do(admin, "GET", "/api/admin/print-requests", nil, &all); code != 200 || len(all.PrintRequests) != 2 || all.PrintRequests[0].UserEmail != "staff@hackclub.com" {
 		t.Fatalf("admin list = %d %+v", code, all)
 	}
+	// The review agent reads them (to remind admins), but can't change them.
+	agent := h.keyClient(h.mkKey("Review agent").Token)
+	var seen struct {
+		PrintRequests []store.PrintRequest `json:"print_requests"`
+	}
+	if code := h.do(agent, "GET", "/api/agent/print-requests", nil, &seen); code != 200 || len(seen.PrintRequests) != 2 || seen.PrintRequests[0].Status != "submitted" {
+		t.Fatalf("agent list = %d %+v", code, seen)
+	}
+	if code := h.do(agent, "PUT", path, map[string]any{"status": "ordered"}, nil); code != 401 {
+		t.Fatalf("agent update = %d", code)
+	}
 	// Stocked needs the SKU it's under, to list it and send the first shipment.
 	if code := h.do(admin, "PUT", path, map[string]any{"status": "stocked"}, nil); code != 422 {
 		t.Fatalf("stocked without SKU = %d", code)

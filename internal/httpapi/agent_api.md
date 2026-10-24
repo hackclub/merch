@@ -69,6 +69,17 @@ Every item: its limits (`max_per_request`, `max_per_user`, `min_per_request`), w
 for (`club_only`: clubs, events and staff; `staff_only`: staff alone, like the Orpheus
 plushie, so check the requester's `@hackclub.com` email), `visible`, sizes (`variants`) and what it `ships_with`.
 
+### `GET /api/agent/print-requests`
+
+Every staff print request (postcards and posters HQ orders from Vistaprint), newest first,
+read-only: `id`, `user_id`, `user_email`, `user_name`, `product`, `title`, `finish`,
+`program`, `deadline` (in their words), `quantity`, `initial_quantity` and `address` (the
+first shipment), `note` (how they'll use it), `estimate_cents`, `front_url`/`back_url`,
+`status` (`submitted` → `ordered` → `stocked`, or `rejected`), `admin_note` (what an admin
+told them), `sku`, `shipment_request_id` (the swag request made when it's stocked),
+`created_at` and `updated_at`. Only admins act on these, on the Admin page's submissions tab;
+the agent API can't change them. A `submitted` request with no `admin_note` hasn't had a reply.
+
 ### `POST /api/agent/requests/{id}/notes`
 
 `{"note": "…"}` (1 to 4000 characters of Markdown). Adds a paragraph to the request's internal note,
