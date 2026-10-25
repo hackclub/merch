@@ -172,6 +172,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/agent/requests/{id}/notes", s.requireAgent(s.agentNote))
 	mux.Handle("POST /api/agent/requests/{id}/dispatch", s.requireAgent(s.adminDispatch))
 	mux.Handle("POST /api/agent/requests/{id}/reject", s.requireAgent(s.adminReject))
+	mux.Handle("POST /api/agent/requests/refresh", s.requireAgent(s.adminRefreshAll))
 	mux.Handle("POST /api/agent/requests/{id}/refresh", s.requireAgent(s.adminRefresh))
 	mux.Handle("GET /api/agent/items", s.requireAgent(s.adminItems))
 	mux.Handle("GET /api/agent/emails", s.requireAgent(s.adminEmails))

@@ -61,6 +61,7 @@ type fakeWarehouse struct {
 	skuCalls int
 	skuFail  error
 	gets     int
+	getOrder func(string) (*theseus.Order, error)
 	skuWait  chan struct{} // when set, ListSKUs waits for it (a slow warehouse)
 }
 
@@ -115,6 +116,9 @@ func (f *fakeWarehouse) GetOrder(_ context.Context, id string) (*theseus.Order, 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.gets++
+	if f.getOrder != nil {
+		return f.getOrder(id)
+	}
 	mailed := time.Date(2026, 10, 17, 20, 0, 0, 0, time.UTC)
 	return &theseus.Order{ID: id, Status: "mailed", TrackingNumber: "9400", Carrier: "USPS", MailedAt: &mailed,
 		ContentsCost: "0.01", LaborCost: 2.2, PostageCost: "4.71"}, nil

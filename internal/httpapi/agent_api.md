@@ -122,10 +122,36 @@ for a person to approve, the 502 says so: leave a `Needs a human:` note and don'
 `tracking_number` and `carrier` (empty until the warehouse mails it), `mailed_at`, and what the
 warehouse charged (`warehouse_costs`: `labor_cents`, and `postage_cents` once it's mailed;
 `contents_cents` is the warehouse's own stock value, not a charge, and isn't used in `costs`). Returns the request, with `costs` and `costs_actual` updated. A 409
-means it hasn't been dispatched. Nothing pulls tracking on its own, so check what you shipped
-on later runs until it has a tracking number. An empty `tracking_number` right after a refresh
+means it hasn't been dispatched. Nothing pulls tracking on its own; use the bulk refresh
+below on later runs. An empty `tracking_number` right after a refresh
 means mail.hackclub.com has none: the warehouse hasn't mailed it yet (`mailed_at` is null). It
 isn't a sync problem in merch, which saves whatever mail.hackclub.com returns.
+
+### `POST /api/agent/requests/refresh`
+
+Start each scheduled run with `{}`. This pulls tracking and warehouse charges for up to
+60 dispatched requests from the last 90 days that have a warehouse order but no postage yet,
+in ascending request ID order. It returns:
+
+```json
+{"checked":60,"updated":60,"mailed":0,"failed":0,"left":9,"next":123,"tracking_ids":[],"mailed_ids":[]}
+```
+
+- `checked` counts attempted warehouse pulls; `updated` counts successful saves, even if
+  nothing changed; `mailed` counts successful pulls that acquired postage; `failed` counts
+  failed pulls.
+- `left` > 0 means call again with `{"after": <next>}`. `next` is the last ID this call
+  **attempted**, including failures, not the last successful ID. It is null when `left` is 0.
+  Keep passing the returned cursor until `left` is 0, even when requests remain unmailed.
+- `tracking_ids` lists successful pulls that acquired or changed a nonempty tracking number
+  or its carrier; `mailed_ids` lists successful pulls that acquired postage. Both are empty
+  arrays when there are no such changes.
+
+`after` must be a nonnegative integer request ID (invalid values return 400). Requests
+that acquire postage drop out of later calls. Failed pulls are passed over during pagination
+and retried on the next scheduled run, which starts again with `{}` and no cursor.
+This is a live scan: requests that become eligible behind the cursor wait for that next run.
+Use the per-request refresh above for a specific request or one outside the 90-day window.
 
 ## Leaving a request for a human
 

@@ -573,7 +573,7 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   `submission_updated` (`from`, `to`, `kind`, `has_sku`),
   `print_request_updated` (`print_request_id`, `from`, `to`, `product`, `quantity`, `has_note`, `has_sku`,
   `wait_h`, `shipment_request_id` once stocked made their first shipment), `api_key_created` and `api_key_revoked`
-  (`api_key_id`), `requests_refreshed` (the dashboard pulled tracking and charges from
+  (`api_key_id`), `requests_refreshed` (the dashboard or agent pulled tracking and charges from
   mail.hackclub.com: `checked`, `updated`, `mailed`, `failed`, `left`). Notes are never logged, only `has_note`. What an agent does with an API key
   (see "Agent API") logs the same events with `api_key_id` added; its notes are
   `internal_note_updated` with `appended`.
@@ -721,7 +721,13 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   `GET /api/agent/print-requests` lists staff print requests read-only, so the agent can
   tell Zach about new ones and remind him when one sits unanswered; only admins act on them.
   `POST …/refresh` pulls tracking from mail.hackclub.com (the admin refresh handler); nothing
-  pulls it automatically, so the review agent refreshes what it shipped on later runs.
+  pulls it automatically. `POST /api/agent/requests/refresh` pulls up to 60 dispatched requests
+  from the last 90 days with warehouse orders and no postage, ordered by request ID. Start
+  each run with `{}`; while `left` > 0, call again with `{"after": <next>}`. `next` is the last
+  attempted ID (including failures), or null when finished. Failed pulls retry on the next
+  fresh run. `updated` counts successful saves, not changes; `tracking_ids` lists successful
+  pulls that acquired or changed nonempty tracking or its carrier, and `mailed_ids` lists those
+  that acquired postage. The existing counters still work for the admin dashboard.
   No tracking after a refresh means the warehouse hasn't mailed it, not a sync bug: on
   2026-10-25, all 69 untracked requests were open (not shipped) in Zenventory too
   (`agh_fulfillment_zenventory.customer_orders`, `order_number` = `hack.club/<theseus id>`);

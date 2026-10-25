@@ -2,7 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -139,22 +142,41 @@ const refreshLimit = 60
 
 // adminRefreshAll pulls tracking and charges from mail.hackclub.com for
 // shipped requests that don't have their postage yet (nothing pulls them
-// automatically): POST /api/admin/requests/refresh.
+// automatically), through the admin and agent bulk refresh routes.
 func (s *server) adminRefreshAll(w http.ResponseWriter, r *http.Request, v viewer) {
+	var in struct {
+		After int64 `json:"after"`
+	}
+	// Existing callers omit the cursor; also accept an empty JSON body.
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil && err != io.EOF {
+		writeErr(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if in.After < 0 {
+		writeErr(w, http.StatusBadRequest, "after must be a nonnegative request id")
+		return
+	}
 	shipped, err := s.Store.ListDispatchedSince(r.Context(), s.Now().AddDate(0, 0, -90))
 	if err != nil {
 		s.serverErr(w, err)
 		return
 	}
+	// IDs give the cursor a stable order even as postage removes earlier
+	// requests from eligibility, or dispatch order differs from creation order.
+	sort.Slice(shipped, func(i, j int) bool { return shipped[i].ID < shipped[j].ID })
 	out := struct {
-		Checked int `json:"checked"`
-		Updated int `json:"updated"`
-		Mailed  int `json:"mailed"`
-		Failed  int `json:"failed"`
-		Left    int `json:"left"` // still to check, past refreshLimit
-	}{}
+		Next        *int64  `json:"next"`
+		TrackingIDs []int64 `json:"tracking_ids"`
+		MailedIDs   []int64 `json:"mailed_ids"`
+		Checked     int     `json:"checked"`
+		Updated     int     `json:"updated"`
+		Mailed      int     `json:"mailed"`
+		Failed      int     `json:"failed"`
+		Left        int     `json:"left"` // still to check, past refreshLimit
+	}{TrackingIDs: []int64{}, MailedIDs: []int64{}}
+	var lastAttempt int64
 	for _, req := range shipped {
-		if req.TheseusOrderID == "" || req.WarehouseCosts.PostageCents != nil {
+		if req.ID <= in.After || req.TheseusOrderID == "" || req.WarehouseCosts.PostageCents != nil {
 			continue
 		}
 		if out.Checked == refreshLimit {
@@ -162,15 +184,23 @@ func (s *server) adminRefreshAll(w http.ResponseWriter, r *http.Request, v viewe
 			continue
 		}
 		out.Checked++
-		if _, mailed, err := s.pullOrder(r.Context(), req); err != nil {
+		lastAttempt = req.ID
+		if saved, mailed, err := s.pullOrder(r.Context(), req); err != nil {
 			s.Log.Error("warehouse order refresh failed", "request_id", req.ID, "err", err)
 			out.Failed++
 		} else {
 			out.Updated++
+			if saved.TrackingNumber != "" && (saved.TrackingNumber != req.TrackingNumber || saved.Carrier != req.Carrier) {
+				out.TrackingIDs = append(out.TrackingIDs, req.ID)
+			}
 			if mailed {
+				out.MailedIDs = append(out.MailedIDs, req.ID)
 				out.Mailed++
 			}
 		}
+	}
+	if out.Left > 0 {
+		out.Next = &lastAttempt
 	}
 	s.trackAdmin(r, v, "requests_refreshed", map[string]any{"checked": out.Checked, "updated": out.Updated, "mailed": out.Mailed, "failed": out.Failed, "left": out.Left})
 	writeJSON(w, http.StatusOK, out)

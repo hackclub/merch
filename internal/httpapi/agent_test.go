@@ -1,14 +1,20 @@
 package httpapi
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/hackclub/merch/internal/auth"
 	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/swag"
+	"github.com/hackclub/merch/internal/theseus"
 )
 
 // keyClient calls the API with an agent's key, the way a scheduled agent does.
@@ -274,5 +280,157 @@ func TestAgentSeesShippedCosts(t *testing.T) {
 	h.do(h.client(userEmail), "GET", "/api/requests", nil, &mine)
 	if _, ok := mine.Requests[0]["costs"]; ok {
 		t.Fatalf("requester sees costs: %+v", mine.Requests[0])
+	}
+}
+
+type bulkRefreshReply struct {
+	Checked, Updated, Mailed, Failed, Left int
+	Next                                   *int64  `json:"next"`
+	TrackingIDs                            []int64 `json:"tracking_ids"`
+	MailedIDs                              []int64 `json:"mailed_ids"`
+}
+
+func TestAgentBulkRefresh(t *testing.T) {
+	for _, mode := range []string{"unmailed", "mailed", "failed"} {
+		t.Run(mode, func(t *testing.T) {
+			h := newHarness(t)
+			it := h.mkItem("Sti/A", true)
+			u, err := h.store.UpsertUser(t.Context(), auth.Identity{ID: "bulk-user", Email: userEmail})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids := make([]int64, 69)
+			for i := range ids {
+				req, err := h.store.CreateRequest(t.Context(), store.NewRequest{UserID: u.ID, Address: usAddr, Status: swag.StatusPending, Lines: []swag.Line{{ItemID: it.ID, Quantity: 1}}}, func(map[int64]int) error { return nil })
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids[i] = req.ID
+			}
+			// Dispatch in reverse order: pagination must follow IDs, not dispatch time.
+			for i := len(ids) - 1; i >= 0; i-- {
+				if _, err := h.store.MarkDispatched(t.Context(), ids[i], fmt.Sprint(ids[i]), store.ShipChanges{}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "mailed" {
+				// A changed tracking number is reported; an unchanged one isn't.
+				if _, err := h.store.SetTracking(t.Context(), ids[0], "old", "USPS"); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := h.store.SetTracking(t.Context(), ids[1], "9400", "USPS"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var called []string
+			fail := mode == "failed"
+			h.wh.getOrder = func(id string) (*theseus.Order, error) {
+				called = append(called, id)
+				if fail && id == fmt.Sprint(ids[59]) {
+					return nil, errors.New("warehouse unavailable")
+				}
+				o := &theseus.Order{ID: id, LaborCost: 2.2}
+				if mode == "mailed" {
+					now := time.Now()
+					o.TrackingNumber, o.Carrier, o.PostageCost, o.MailedAt = "9400", "USPS", "4.71", &now
+				}
+				return o, nil
+			}
+			k := h.mkKey("Bulk reviewer")
+			agent := h.keyClient(k.Token)
+			path := "/api/agent/requests/refresh"
+			if code := h.do(&http.Client{}, "POST", path, map[string]any{}, nil); code != 401 {
+				t.Fatalf("no key = %d", code)
+			}
+			if code := h.do(agent, "POST", "/api/admin/requests/refresh", map[string]any{}, nil); code != 401 {
+				t.Fatalf("admin route = %d", code)
+			}
+			for _, after := range []any{-1, "bad", 1.5} {
+				if code := h.do(agent, "POST", path, map[string]any{"after": after}, nil); code != 400 {
+					t.Fatalf("after %v = %d", after, code)
+				}
+			}
+			if len(called) != 0 {
+				t.Fatal("unauthorized or invalid call reached warehouse")
+			}
+			var first, second bulkRefreshReply
+			if code := h.do(agent, "POST", path, map[string]any{}, &first); code != 200 {
+				t.Fatalf("bulk = %d", code)
+			}
+			wantFailed, wantMailed := 0, 0
+			if mode == "failed" {
+				wantFailed = 1
+			}
+			if mode == "mailed" {
+				wantMailed = 60
+			}
+			if first.Checked != 60 || first.Updated != 60-wantFailed || first.Mailed != wantMailed || first.Failed != wantFailed || first.Left != 9 || first.Next == nil || *first.Next != ids[59] {
+				t.Fatalf("first = %+v", first)
+			}
+			if first.TrackingIDs == nil || first.MailedIDs == nil {
+				t.Fatal("ID arrays must be arrays, not null")
+			}
+			if mode == "mailed" {
+				wantTracking := append([]int64{ids[0]}, ids[2:60]...)
+				if !slices.Equal(first.TrackingIDs, wantTracking) || !slices.Equal(first.MailedIDs, ids[:60]) {
+					t.Fatalf("changed IDs = %+v", first)
+				}
+				got, err := h.store.GetRequest(t.Context(), ids[0])
+				if err != nil || got.TrackingNumber != "9400" || got.MailedAt == nil || got.WarehouseCosts.PostageCents == nil || *got.WarehouseCosts.PostageCents != 471 {
+					t.Fatalf("saved = %+v, %v", got, err)
+				}
+			} else if len(first.TrackingIDs) != 0 || len(first.MailedIDs) != 0 {
+				t.Fatalf("unmailed IDs = %+v", first)
+			}
+			evs := h.events("requests_refreshed")
+			if len(evs) != 1 {
+				t.Fatalf("events = %+v", evs)
+			}
+			p := props(t, evs[0])
+			if p["api_key_id"] != float64(k.Key.ID) || p["checked"] != float64(60) || p["updated"] != float64(first.Updated) || p["mailed"] != float64(first.Mailed) || p["failed"] != float64(first.Failed) || p["left"] != float64(9) {
+				t.Fatalf("event = %+v", p)
+			}
+			if code := h.do(agent, "POST", path, map[string]any{"after": *first.Next}, &second); code != 200 {
+				t.Fatalf("continuation = %d", code)
+			}
+			if second.Checked != 9 || second.Updated != 9 || second.Left != 0 || second.Next != nil {
+				t.Fatalf("second = %+v", second)
+			}
+			if mode == "mailed" && (!slices.Equal(second.TrackingIDs, ids[60:]) || !slices.Equal(second.MailedIDs, ids[60:])) {
+				t.Fatalf("continuation IDs = %+v", second)
+			}
+			if len(called) != 69 {
+				t.Fatalf("warehouse calls = %d", len(called))
+			}
+			for i, id := range ids {
+				if called[i] != fmt.Sprint(id) {
+					t.Fatalf("call %d = %s, want %d", i, called[i], id)
+				}
+			}
+			if mode == "failed" {
+				fail = false
+				var fresh bulkRefreshReply
+				// Empty bodies remain accepted when sent as JSON, like other API calls.
+				req, err := http.NewRequest("POST", h.srv.URL+path, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				req.Header.Set("Content-Type", "application/json")
+				resp, err := agent.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer resp.Body.Close()
+				if err := json.NewDecoder(resp.Body).Decode(&fresh); err != nil {
+					t.Fatal(err)
+				}
+				if resp.StatusCode != 200 || fresh.Checked != 60 || fresh.Failed != 0 || fresh.Updated != 60 {
+					t.Fatalf("fresh run = %d %+v", resp.StatusCode, fresh)
+				}
+				if called[69+59] != fmt.Sprint(ids[59]) {
+					t.Fatal("fresh run didn't retry failed request")
+				}
+			}
+		})
 	}
 }
