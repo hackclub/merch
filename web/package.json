@@ -32,5 +32,8 @@
 		"marked": "^18.1.1",
 		"three": "^0.186.1",
 		"web-vitals": "^6.2.3"
+	},
+	"overrides": {
+		"cookie": "^0.7.0"
 	}
 }
