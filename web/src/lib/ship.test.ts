@@ -22,7 +22,7 @@ describe('lineText', () => {
 	it('says what shipped and what was asked for', () => {
 		expect(lineText(lines[1])).toBe('1 × Shirt (M)');
 		expect(lineText({ ...lines[0], quantity: 2, requested_quantity: 3 })).toBe('2 × Sticker (you asked for 3)');
-		expect(lineText({ ...lines[0], quantity: 0, requested_quantity: 3 })).toBe('Sticker: not sent (you asked for 3)');
+		expect(lineText({ ...lines[0], quantity: 0, requested_quantity: 3 })).toBe('Sticker: left out of this package (you asked for 3)');
 		expect(lineText({ ...lines[0], quantity: 5, requested_quantity: 0 })).toBe('5 × Sticker (added by Hack Club)');
 	});
 });

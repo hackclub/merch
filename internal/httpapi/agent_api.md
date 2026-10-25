@@ -100,7 +100,11 @@ packages, and you can't undo it.** The requester gets an email that it shipped.
   they asked for, and you can add a visible item without sizes that isn't in the request (its
   item `sku` from `/api/agent/items`, up to its `max_per_request`). You can't change sizes.
   An added line comes back with `requested_quantity` 0, and the shipped email lists it.
-- `note` is optional and goes in the shipped email to the requester. Say why you sent less.
+- `note` is optional and goes in the shipped email to the requester. Say why you sent less
+  or left a line out. The email lists a left-out line as "Poster: you asked for 5, we left it
+  out of this package" and, when there's a note, says "the note below says why". So the note
+  should give the real reason ("so there are enough to go around for everyone"), and never
+  suggest we're out of something we have.
 - If you send less of a request that was paid by card, the postage is quoted again and the difference
   goes back to the card. Check `warning` in the reply: it describes anything that an admin must fix by hand.
 - The warehouse order has an idempotency key, so you can safely retry after a timeout.
@@ -119,7 +123,9 @@ for a person to approve, the 502 says so: leave a `Needs a human:` note and don'
 warehouse charged (`warehouse_costs`: `labor_cents`, and `postage_cents` once it's mailed;
 `contents_cents` is the warehouse's own stock value, not a charge, and isn't used in `costs`). Returns the request, with `costs` and `costs_actual` updated. A 409
 means it hasn't been dispatched. Nothing pulls tracking on its own, so check what you shipped
-on later runs until it has a tracking number.
+on later runs until it has a tracking number. An empty `tracking_number` right after a refresh
+means mail.hackclub.com has none: the warehouse hasn't mailed it yet (`mailed_at` is null). It
+isn't a sync problem in merch, which saves whatever mail.hackclub.com returns.
 
 ## Leaving a request for a human
 

@@ -127,21 +127,26 @@ func shippedEmail(req *store.Request, baseURL string) loops.Email {
 		case *l.RequestedQuantity == 0:
 			changed = append(changed, fmt.Sprintf("- %s: we added %d", lineName(l), l.Quantity))
 		case l.Quantity == 0:
-			changed = append(changed, fmt.Sprintf("- %s: you asked for %d, we couldn't send it", lineName(l), *l.RequestedQuantity))
+			changed = append(changed, fmt.Sprintf("- %s: you asked for %d, we left it out of this package", lineName(l), *l.RequestedQuantity))
 		default:
 			changed = append(changed, fmt.Sprintf("- %s: you asked for %d, we sent %d", lineName(l), *l.RequestedQuantity, l.Quantity))
 		}
 	}
 	fmt.Fprintf(&b, "%s\n\nGood news: we approved request #%d and sent it to our warehouse. It usually leaves within a business day or two.\n\nWhat's in the box:\n\n%s",
 		greeting(req), req.ID, lineList(shipped))
+	note := strings.TrimSpace(req.AdminNote)
 	if len(changed) > 0 {
-		fmt.Fprintf(&b, "\n\nWe changed your request before it shipped:\n\n%s", strings.Join(changed, "\n"))
+		why := ""
+		if note != "" {
+			why = " (the note below says why)"
+		}
+		fmt.Fprintf(&b, "\n\nWe changed your request before it shipped%s:\n\n%s", why, strings.Join(changed, "\n"))
 	}
 	if req.RefundedCents > 0 {
 		fmt.Fprintf(&b, "\n\nSince we sent less, postage costs less: we refunded %s of the %s you paid to your card. It can take 5–10 business days to show up.",
 			dollars(req.RefundedCents), dollars(req.ShippingFeeCents))
 	}
-	if note := strings.TrimSpace(req.AdminNote); note != "" {
+	if note != "" {
 		fmt.Fprintf(&b, "\n\nA note from Hack Club:\n\n%s", note)
 	}
 	fmt.Fprintf(&b, "\n\nIt's going to %s. Once it's mailed, its tracking number shows up at %s/requests.\n\nHack Club", place(req.Address), baseURL)

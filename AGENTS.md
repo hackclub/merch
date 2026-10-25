@@ -722,6 +722,10 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   tell Zach about new ones and remind him when one sits unanswered; only admins act on them.
   `POST …/refresh` pulls tracking from mail.hackclub.com (the admin refresh handler); nothing
   pulls it automatically, so the review agent refreshes what it shipped on later runs.
+  No tracking after a refresh means the warehouse hasn't mailed it, not a sync bug: on
+  2026-10-25, all 69 untracked requests were open (not shipped) in Zenventory too
+  (`agh_fulfillment_zenventory.customer_orders`, `order_number` = `hack.club/<theseus id>`);
+  64 held Haven prints that reached the warehouse Oct 22. Check there before blaming the pull.
 - `merch.hackclub.com` has no Orchard login, so the key is the only lock on `/api/agent`. If
   protection is ever turned back on, add `/api/agent` to the ingress's `bypassPaths`. The
   scheduled agent's key ("Review agent") is `MERCH_AGENT_API_KEY` in the shared

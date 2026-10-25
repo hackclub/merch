@@ -81,6 +81,16 @@ func TestShippedAndRejectedEmailText(t *testing.T) {
 	req.AdminNote = "Out of the red ones, so we sent blue."
 	mustContain(t, "shipped body with note", shippedEmail(req, "https://x").Body, "Out of the red ones")
 
+	asked, none := 5, 0
+	req.AdminNote = ""
+	req.Lines = append(req.Lines, store.RequestLine{Name: "Poster", RequestedQuantity: &asked, Quantity: none})
+	body := shippedEmail(req, "https://x").Body
+	mustContain(t, "shipped body, line left out", body, "We changed your request before it shipped:\n", "Poster: you asked for 5, we left it out of this package")
+	if strings.Contains(body, "note below") {
+		t.Errorf("points to a note that isn't there:\n%s", body)
+	}
+	req.Lines = req.Lines[:1]
+
 	req.AdminNote = ""
 	e = rejectedEmail(req, "https://merch.hackclub.com")
 	mustContain(t, "rejected subject", e.Subject, "can't send")
@@ -219,7 +229,10 @@ func TestShipWithChanges(t *testing.T) {
 		t.Fatalf("contents = %+v", c)
 	}
 	e := m.emails()[1]
-	mustContain(t, "shipped", e.Body, "- 2 × Sti/A", "Sti/A: you asked for 3, we sent 2", "Sti/B: you asked for 1, we couldn't send it", "We're out of B.")
+	mustContain(t, "shipped", e.Body, "- 2 × Sti/A", "Sti/A: you asked for 3, we sent 2", "Sti/B: you asked for 1, we left it out of this package", "We changed your request before it shipped (the note below says why):", "We're out of B.")
+	if strings.Contains(e.Body, "couldn't send") {
+		t.Errorf("left-out line reads like we failed to send it:\n%s", e.Body)
+	}
 	if strings.Contains(e.Body, "× Sti/B") {
 		t.Errorf("removed line listed as shipped:\n%s", e.Body)
 	}
