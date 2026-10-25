@@ -106,9 +106,9 @@ Where tests go:
 make db        # shared dev Postgres via docker compose (127.0.0.1:54329)
 make test      # go test ./... + vitest   (make test-go / make test-web)
 make check     # gofmt, go vet, svelte-check
-make dev       # Go server :8080 + Vite :5173 (proxies /api, /auth) — http://localhost:5173,
-               # or http://porygon:5173 from other tailnet machines (Zach browses from crobat)
-               # Only from the main worktree. See "Sharing porygon with other agents".
+make dev       # Go server :8080 + Vite :5173 (proxies /api, /auth) — http://localhost:5173;
+               # from another machine, `ssh -L 5173:localhost:5173 mew-dev` first
+               # Only from the main worktree. See "Sharing mew-dev with other agents".
 make server    # Go server only; serves web/build if built (make web)
 make docker    # production image
 scripts/prod-psql             # production SQL (read-only); see "Usage analytics"
@@ -116,15 +116,16 @@ scripts/prod-psql             # production SQL (read-only); see "Usage analytics
 
 One Postgres container serves every worktree. Each test gets its own database, so parallel
 worktrees don't collide in `make test`. The dev database (`mailroom`) is shared, though. See
-below. If Docker is down on porygon, OrbStack is the runtime (`orb start`). Its data dir must be
-on the internal disk. See "Gotchas".
+below.
 
 ## Config: 12-factor, one shared `.env`
 
 - The app reads **only env vars** (`internal/config`). It never reads files. `.env.example`
   lists every variable.
 - In dev, `make` sources the **`.env` in the main worktree root**. Right now that's
-  `~/dev/hackclub/merch/.env`. `scripts/env-file` finds it through
+  `~/dev/hackclub/merch/.env` on mew-dev (a Linux VM; it moved there from porygon on
+  2026-10-25). Its canonical copy is the Vaultwarden secure note `merch (.env)`; update both
+  when a key changes. `scripts/env-file` finds it through
   `git rev-parse --git-common-dir`, so every worktree (`~/.paseo/worktrees/...`) shares it.
   Never copy `.env` into a worktree. `ENV_FILE=...` overrides the path.
 - In production (Orchard), set the same variables on the deployment. There is no `.env` file.
@@ -185,14 +186,15 @@ git -C "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")" p
 - After you land, check that `git log origin/main` contains your commit, and give its hash in
   your final reply.
 
-## Sharing porygon with other agents
+## Sharing mew-dev with other agents
 
-Every agent runs on the same machine, Postgres container, and ports.
+Every agent runs on the same machine (mew-dev), Postgres container, and ports.
 
-- **Ports:** `:8080` (Go) and `:5173` (Vite) are the shared dev server that Zach opens at
-  http://porygon:5173. Run it only from the main worktree (`~/dev/hackclub/merch`) on
-  up-to-date `main`. After you land, restart it there so Zach sees your work. If it's
-  already running, check its cwd first (`lsof -a -p <pid> -d cwd`).
+- **Ports:** `:8080` (Go) and `:5173` (Vite) are the shared dev server. mew-dev's firewall
+  only lets SSH in, so Zach opens it through a tunnel: `ssh -L 5173:localhost:5173 mew-dev`,
+  then http://localhost:5173 (a registered sign-in origin). Run it only from the main worktree
+  (`~/dev/hackclub/merch`) on up-to-date `main`. After you land, restart it there so Zach sees
+  your work. If it's already running, check its cwd first (`lsof -a -p <pid> -d cwd`).
 - **To try your branch before landing**, use your own ports. Pick a free one (`lsof -i :8081`)
   and run:
   `bash -c 'set -a; . "$(scripts/env-file)"; set +a; PORT=8081 go run ./cmd/server'`, then
@@ -700,7 +702,7 @@ and where, so they see it in person once it arrives.
 
 A scheduled agent (about every 3 hours) reviews pending requests through `/api/agent/*`
 (`internal/httpapi/agent.go`). Its runbook, run notes and state live in the private repo
-`zachlatta/merch-ops` (`~/dev/hackclub/merch-ops` on porygon). Its docs are `internal/httpapi/agent_api.md`, served at
+`zachlatta/merch-ops` (`~/dev/hackclub/merch-ops` on mew-dev). Its docs are `internal/httpapi/agent_api.md`, served at
 `GET /api/agent`; keep them in step with the code, because they're all the agent reads.
 - Admins make and revoke keys on the Admin page's API keys tab (`/api/admin/api-keys`). The
   token (`merch_…`) is shown once; only its SHA-256 is stored (`api_keys`).
@@ -870,10 +872,6 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
 
 ## Gotchas
 
-- porygon's OrbStack was once configured with `data_dir` on `/Volumes/PorygonWork`. When that
-  drive was unmounted, Docker hung at "waiting for external data drive". On 2026-09-29 it was
-  reset to the internal disk (`~/.orbstack/vmconfig.json`); the old config is saved as
-  `vmconfig.json.bak-porygonwork-2026-09-29`.
 - CSRF: mutating `/api/*` calls must be `Content-Type: application/json` (or `image/png` /
   `image/jpeg` on `/api/print/files` alone, which also need a CORS preflight), and their `Origin`
   (if present) must be `BASE_URL` or one of `EXTRA_BASE_URLS`. In dev those are the Vite
