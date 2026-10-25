@@ -728,8 +728,8 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   64 held Haven prints that reached the warehouse Oct 22. Check there before blaming the pull.
 - `merch.hackclub.com` has no Orchard login, so the key is the only lock on `/api/agent`. If
   protection is ever turned back on, add `/api/agent` to the ingress's `bypassPaths`. The
-  scheduled agent's key ("Review agent") is `MERCH_AGENT_API_KEY` in the shared
-  `.env`.
+  scheduled agent's key ("Review agent") is the Vaultwarden item
+  `merch-ops (MERCH_AGENT_API_KEY)`, which merch-ops loads; it is not in the dev `.env`.
 
 ## External systems
 
