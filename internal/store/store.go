@@ -26,6 +26,7 @@ var (
 	ErrNotFound      = errors.New("not found")
 	ErrConflict      = errors.New("already exists")
 	ErrBadTransition = errors.New("request is not in a state that allows this")
+	ErrAlreadyMailed = errors.New("the warehouse already mailed this request")
 )
 
 type Store struct{ pool *pgxpool.Pool }
@@ -359,13 +360,17 @@ type NewRequest struct {
 // rejected/cancelled requests) and may veto.
 type UsageCheck func(prior map[int64]int) error
 
-// HeldQuantities is how many of each SKU open requests (awaiting payment or
-// pending) will take from the warehouse once they ship.
+// HeldQuantities is how many of each SKU will still leave the warehouse: open
+// requests (awaiting payment or pending) once they ship, and requests sent to
+// the warehouse that it hasn't mailed yet (no mailed_at or tracking), whose
+// units are still counted in its stock.
 func (s *Store) HeldQuantities(ctx context.Context) (map[string]int, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT ri.sku, sum(ri.quantity)::int FROM swag_request_items ri
 		JOIN swag_requests r ON r.id = ri.request_id
 		WHERE r.status IN ('awaiting_payment', 'pending')
+		   OR (r.status = 'dispatched' AND r.source = 'app' AND r.theseus_order_id IS NOT NULL
+		       AND r.mailed_at IS NULL AND r.tracking_number = '')
 		GROUP BY ri.sku`)
 	if err != nil {
 		return nil, err
@@ -612,6 +617,49 @@ func (s *Store) MarkDispatched(ctx context.Context, id int64, theseusOrderID str
 		}
 		return nil
 	}, `dispatched_at = now(), theseus_order_id = $3, admin_note = CASE WHEN $4 = '' THEN admin_note ELSE $4 END`, theseusOrderID, strings.TrimSpace(ch.Note))
+}
+
+// ReduceDispatchedLines lowers what a dispatched request the warehouse hasn't
+// mailed yet ships (quantities by SKU; the warehouse order is changed by hand),
+// keeping what was asked for in requested_quantity, and adds note to the
+// requester's note as a new paragraph.
+func (s *Store) ReduceDispatchedLines(ctx context.Context, id int64, quantities map[string]int, note string) (*Request, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	var status swag.Status
+	var mailed bool
+	err = tx.QueryRow(ctx, `SELECT status, mailed_at IS NOT NULL OR tracking_number <> '' FROM swag_requests WHERE id = $1 FOR UPDATE`, id).Scan(&status, &mailed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	if status != swag.StatusDispatched {
+		return nil, fmt.Errorf("%w (%s)", ErrBadTransition, status)
+	}
+	if mailed {
+		return nil, ErrAlreadyMailed
+	}
+	for sku, q := range quantities {
+		if _, err := tx.Exec(ctx, `
+			UPDATE swag_request_items SET requested_quantity = coalesce(requested_quantity, quantity), quantity = $3
+			WHERE request_id = $1 AND sku = $2 AND quantity > $3`, id, sku, q); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE swag_requests SET updated_at = now(),
+			admin_note = CASE WHEN $2 = '' THEN admin_note WHEN admin_note = '' THEN $2 ELSE admin_note || E'\n\n' || $2 END
+		WHERE id = $1`, id, strings.TrimSpace(note)); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return s.GetRequest(ctx, id)
 }
 
 // transition's set clause gets args as $3, $4…

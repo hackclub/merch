@@ -58,7 +58,7 @@ One request, with the same fields, plus:
 ### `GET /api/agent/emails`
 
 Every email the site sent, word for word, newest first (100 by default): `id`, `at`, `kind`
-(`received`, `dispatched` or `rejected`), `request_id`, `to`, `subject`, `preview`, `body`
+(`received`, `dispatched`, `rejected` or `changed`), `request_id`, `to`, `subject`, `preview`, `body`
 (plain text), `status` (`sent`, `failed`, or `unsent` when no mailer is set up) and `error`.
 Filter with `?request_id=`, `?kind=`, `?status=`; page with `?before=<id>` and `?limit=` (up
 to 500). Use it to audit what people are told: wording that's confusing, wrong, or reads oddly.
@@ -108,6 +108,25 @@ packages, and you can't undo it.** The requester gets an email that it shipped.
 - If you send less of a request that was paid by card, the postage is quoted again and the difference
   goes back to the card. Check `warning` in the reply: it describes anything that an admin must fix by hand.
 - The warehouse order has an idempotency key, so you can safely retry after a timeout.
+
+### `POST /api/agent/requests/{id}/lines`
+
+Records that a `dispatched` request the warehouse hasn't mailed yet (no `mailed_at`, no
+tracking) ships less than it did, for when the warehouse runs out of something already sent to
+it. **It doesn't change the warehouse order:** mail.hackclub.com has no API for that, so a
+person edits the order in its back office first (ships-with SKUs too). Only do this when an
+admin has made that edit, or told you to.
+
+```json
+{"lines": [{"sku": "Swa/HC/Pin/1st", "quantity": 1}], "note": "Our enamel pins ran out. More are due around Nov 11."}
+```
+
+- Quantities only go down (0 = none). `requested_quantity` keeps what they asked for.
+- `note` is added to the requester's note as a new paragraph and goes in the email.
+- The requester gets a `changed` email listing each cut line ("you asked for 5, we're sending
+  1", or "we're not sending any this time") and what's in the box now. It's sent once per request.
+- 409 if the request isn't dispatched, was already mailed, or was paid by card (cutting it
+  would owe a refund this doesn't make). 422 if nothing would change or nothing would be left.
 
 ### `POST /api/agent/requests/{id}/reject`
 

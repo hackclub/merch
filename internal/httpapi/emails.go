@@ -18,7 +18,7 @@ type Mailer interface {
 }
 
 // emailRequest tells a requester what happened to their request: kind is
-// received, dispatched or rejected. Each kind goes out once per request (the
+// received, dispatched, rejected or changed. Each kind goes out once per request (the
 // idempotency key), and a failure is logged without undoing the action. Every
 // email is saved word for word in sent_emails (logEmail), even with no mailer
 // configured, so audits can read what people were told. waiting names the
@@ -35,6 +35,8 @@ func (s *server) emailRequest(r *http.Request, req *store.Request, kind string, 
 		e = shippedEmail(req, s.Config.BaseURL, s.Config.TheseusBaseURL, waiting)
 	case "rejected":
 		e = rejectedEmail(req, s.Config.BaseURL)
+	case "changed":
+		e = changedEmail(req, s.Config.BaseURL, s.Config.TheseusBaseURL)
 	}
 	e.IdempotencyKey = s.Config.TheseusOrderTag + "-request-" + strconv.FormatInt(req.ID, 10) + "-" + kind
 	if s.Mailer == nil {
@@ -171,6 +173,43 @@ func shippedEmail(req *store.Request, baseURL, mailURL string, waiting []string)
 		To:      req.UserEmail,
 		Subject: "Your Hack Club swag is on its way",
 		Preview: fmt.Sprintf("We approved request #%d and sent it to our warehouse.", req.ID),
+		Body:    b.String(),
+	}
+}
+
+// changedEmail tells a requester we cut what their dispatched request ships
+// before the warehouse mailed it (adminReduceLines): each line that ships less
+// than they asked for, the note saying why, and what's in the box now.
+func changedEmail(req *store.Request, baseURL, mailURL string) loops.Email {
+	var b strings.Builder
+	var shipped []store.RequestLine
+	var changed []string
+	for _, l := range req.Lines {
+		if l.Quantity > 0 {
+			shipped = append(shipped, l)
+		}
+		switch {
+		case l.RequestedQuantity == nil || *l.RequestedQuantity <= l.Quantity:
+		case l.Quantity == 0:
+			changed = append(changed, fmt.Sprintf("- %s: you asked for %d, we're not sending any this time", lineName(l), *l.RequestedQuantity))
+		default:
+			changed = append(changed, fmt.Sprintf("- %s: you asked for %d, we're sending %d", lineName(l), *l.RequestedQuantity, l.Quantity))
+		}
+	}
+	fmt.Fprintf(&b, "%s\n\nWe had to change request #%d before our warehouse mailed it:\n\n%s", greeting(req), req.ID, strings.Join(changed, "\n"))
+	if note := strings.TrimSpace(req.AdminNote); note != "" {
+		fmt.Fprintf(&b, "\n\nA note from Hack Club:\n\n%s", note)
+	}
+	fmt.Fprintf(&b, "\n\nThe rest of your request hasn't changed. What's in the box now:\n\n%s\n\nIt's going to %s.", lineList(shipped), place(req.Address))
+	b.WriteString("\n\nTracking: when it's mailed, you'll get an email from mail.hackclub.com with the tracking number.")
+	if req.TheseusOrderID != "" {
+		fmt.Fprintf(&b, " Until then, you can follow it at %s/packages/%s.", mailURL, req.TheseusOrderID)
+	}
+	fmt.Fprintf(&b, " See all your requests at %s/requests.\n\nHack Club", baseURL)
+	return loops.Email{
+		To:      req.UserEmail,
+		Subject: fmt.Sprintf("We changed your Hack Club swag request #%d", req.ID),
+		Preview: fmt.Sprintf("We had to change request #%d before it was mailed.", req.ID),
 		Body:    b.String(),
 	}
 }

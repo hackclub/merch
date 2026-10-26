@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -554,11 +555,93 @@ func TestHeldQuantities(t *testing.T) {
 	if _, err := s.CloseRequest(ctx, closed.ID, swag.StatusRejected, "", false); err != nil {
 		t.Fatal(err)
 	}
+	// Dispatched but not yet mailed: the warehouse still has it on its shelf.
+	ship := func(lines ...swag.Line) *Request {
+		r := mk(swag.StatusPending, lines...)
+		r, err := s.MarkDispatched(ctx, r.ID, "ord_"+strconv.FormatInt(r.ID, 10), ShipChanges{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	ship(swag.Line{ItemID: pin.ID, Quantity: 4})
+	tracked := ship(swag.Line{ItemID: pin.ID, Quantity: 100})
+	if _, err := s.SetTracking(ctx, tracked.ID, "9400", "usps"); err != nil {
+		t.Fatal(err)
+	}
+	mailed := ship(swag.Line{ItemID: pin.ID, Quantity: 200})
+	now := time.Now()
+	if _, err := s.SetWarehouseCosts(ctx, mailed.ID, theseus.Costs{}, &now); err != nil {
+		t.Fatal(err)
+	}
+	imported := ship(swag.Line{ItemID: pin.ID, Quantity: 400})
+	if _, err := s.pool.Exec(ctx, `UPDATE swag_requests SET source = 'fillout' WHERE id = $1`, imported.ID); err != nil {
+		t.Fatal(err)
+	}
 	held, err := s.HeldQuantities(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(held) != 2 || held["Swa/Pin"] != 5 || held["Swa/Shirt/HC/M"] != 1 {
+	if len(held) != 2 || held["Swa/Pin"] != 9 || held["Swa/Shirt/HC/M"] != 1 {
 		t.Fatalf("held = %v", held)
+	}
+}
+
+// Lowering what a dispatched, unmailed request ships keeps what was asked for
+// and adds the note to the requester's note.
+func TestReduceDispatchedLines(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "ident!1", "a@x.com")
+	pin := mkItem(t, s, "Swa/Pin", true)
+	card := mkItem(t, s, "Pri/Card", true)
+	r, err := s.CreateRequest(ctx, NewRequest{UserID: u.ID, Address: addr, Status: swag.StatusPending,
+		Lines: []swag.Line{{ItemID: pin.ID, Quantity: 5}, {ItemID: card.ID, Quantity: 10}}}, noCheck)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReduceDispatchedLines(ctx, r.ID, map[string]int{"Swa/Pin": 1}, "x"); !errors.Is(err, ErrBadTransition) {
+		t.Fatalf("pending request changed: %v", err)
+	}
+	if _, err := s.MarkDispatched(ctx, r.ID, "ord_1", ShipChanges{Note: "Thanks!"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ReduceDispatchedLines(ctx, r.ID, map[string]int{"Swa/Pin": 1}, "Pins ran out.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.AdminNote != "Thanks!\n\nPins ran out." {
+		t.Fatalf("note = %q", got.AdminNote)
+	}
+	for _, l := range got.Lines {
+		switch l.SKU {
+		case "Swa/Pin":
+			if l.Quantity != 1 || l.RequestedQuantity == nil || *l.RequestedQuantity != 5 {
+				t.Fatalf("pin line = %+v", l)
+			}
+		case "Pri/Card":
+			if l.Quantity != 10 || l.RequestedQuantity != nil {
+				t.Fatalf("card line = %+v", l)
+			}
+		}
+	}
+	// A second cut keeps the original ask.
+	got, err = s.ReduceDispatchedLines(ctx, r.ID, map[string]int{"Swa/Pin": 0}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range got.Lines {
+		if l.SKU == "Swa/Pin" && (l.Quantity != 0 || *l.RequestedQuantity != 5) {
+			t.Fatalf("after second cut: %+v", l)
+		}
+	}
+	if got.AdminNote != "Thanks!\n\nPins ran out." {
+		t.Fatalf("empty note changed the note: %q", got.AdminNote)
+	}
+	now := time.Now()
+	if _, err := s.SetWarehouseCosts(ctx, r.ID, theseus.Costs{}, &now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReduceDispatchedLines(ctx, r.ID, map[string]int{"Pri/Card": 1}, ""); !errors.Is(err, ErrAlreadyMailed) {
+		t.Fatalf("mailed request changed: %v", err)
 	}
 }
