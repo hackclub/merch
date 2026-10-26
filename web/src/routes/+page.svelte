@@ -26,6 +26,7 @@
 	import Tile3D from '$lib/Tile3D.svelte';
 	import { thumb } from '$lib/thumb';
 	import { track } from '$lib/track';
+	import { heavyNote, tooHeavy, weightCrossing, weightLimitProps, weightMeter, type TooHeavy } from '$lib/weight';
 	import type { Address, Catalog, Item, Purpose, SwagRequest } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
@@ -53,6 +54,8 @@
 	// `costs`: what it costs Hack Club to send, in the US and abroad.
 	let quote = $state<{ estimate: ShippingEstimate; packing: Packing; costs?: CostSides } | null>(null);
 	let quoteError = $state('');
+	// The server's 3 lb refusal, with its weights, for the meter over the list.
+	let heavy = $state<TooHeavy | null>(null);
 
 	onMount(async () => {
 		api.get<ShippingSummary>('/api/shipping').then((s) => (summary = s), () => {});
@@ -96,6 +99,14 @@
 		if (nudge && !nudged) track('sticker_nudge', { designs: nudge.designs, loose: nudge.loose });
 		nudged = !!nudge;
 	});
+	// Abroad, the packed weight against the 3 lb limit, while they pick (the server weighs it).
+	const meter = $derived(intl && count > 0 ? weightMeter(quote?.packing, heavy) : null);
+	let wasOver = false;
+	$effect(() => {
+		const c = weightCrossing(wasOver, meter);
+		if (c.fire && meter) track('weight_limit', weightLimitProps(meter, address.country));
+		wasOver = c.over;
+	});
 	// International shipping is paid by card right on the form (once they've verified their email).
 	const payByCard = $derived(intl && !!quote?.estimate.fee_cents);
 	const cardNow = $derived(payByCard && signedIn);
@@ -132,9 +143,11 @@
 			try {
 				quote = await api.post('/api/shipping/estimate', body);
 				quoteError = '';
+				heavy = null;
 			} catch (e) {
 				quote = null;
 				quoteError = e instanceof ApiError && e.status === 422 ? e.message : '';
+				heavy = e instanceof ApiError && e.status === 422 ? tooHeavy(e.data) : null;
 			}
 		}, 300);
 		return () => clearTimeout(timer);
@@ -351,6 +364,13 @@
 			<PrintRequest />
 		{:else}
 		<h2>What would you like us to send you?</h2>
+		{#if open && meter}
+			<div class="weight" class:over={meter.over} data-track="weight_meter" role="status">
+				<div class="bar"><span style="width: {meter.pct}%"></span></div>
+				<p>{meter.text}</p>
+				{#if meter.heaviestText}<p>{meter.heaviestText}</p>{/if}
+			</div>
+		{/if}
 		{#each sections as { section, rows, grid }, n (section.key)}
 			<!-- What we most want people to hand out comes first; everything else is an extra. -->
 			{#if section.extra && !sections[n - 1]?.section.extra}
@@ -377,6 +397,7 @@
 							<span class="muted">{tileFact(item)}{#if sizesSummary(item, sizes)}{tileFact(item) ? ' · ' : ''}<strong class="in">{sizesSummary(item, sizes)}</strong>{/if}</span>
 							{#if backorderNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="backorder">{backorderNote(item, catalog.stock, cart, sizes)}</span>{/if}
 							{#if shortNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="out_of_stock">{shortNote(item, catalog.stock, cart, sizes)}</span>{/if}
+							{#if heavyNote(meter, item.id)}<span class="backorder" data-track="weight_heavy">{heavyNote(meter, item.id)}</span>{/if}
 						</div>
 						{#if open}{@render add(item)}{/if}
 						{#if open && expanded(item) && showsAmountIn3D(item)}
@@ -396,6 +417,7 @@
 								<a href={itemPath(item)} class="name">{item.name}</a>
 								{#if backorderNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="backorder">{backorderNote(item, catalog.stock, cart, sizes)}</span>{/if}
 							{#if shortNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="out_of_stock">{shortNote(item, catalog.stock, cart, sizes)}</span>{/if}
+								{#if heavyNote(meter, item.id)}<span class="backorder" data-track="weight_heavy">{heavyNote(meter, item.id)}</span>{/if}
 								{#if open}{@render add(item)}{/if}
 								{#if peek === item.id}{@render peekPanel(item)}{/if}
 							</div>
@@ -594,6 +616,13 @@
 	.add > button { height: 2.6rem; padding: 0 1.2rem; font-size: 1rem; }
 	.what .in { color: var(--dark); }
 	.backorder { font-size: 0.9rem; color: var(--red); }
+	/* Abroad: the packed weight against the 3 lb limit. */
+	.weight { margin: 0 0 1rem; font-size: 0.95rem; }
+	.weight p { margin: 0.25rem 0 0; }
+	.weight .bar { height: 6px; background: var(--tile); }
+	.weight .bar span { display: block; height: 100%; background: currentColor; opacity: 0.5; }
+	.weight.over { color: var(--red); }
+	.weight.over .bar span { opacity: 1; }
 	/* Sizes get their own line under the name. */
 	.line.sized { flex-wrap: wrap; }
 	.line.sized .add { flex-basis: 100%; justify-content: flex-start; padding-left: 4.65rem; }

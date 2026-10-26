@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 )
 
 // Shipping classes: how the warehouse sends a package, which decides its
@@ -106,7 +107,38 @@ type Packing struct {
 	// UnknownWeight is set when some item has no weight and no paper size to
 	// work one out from, so WeightOz is too low.
 	UnknownWeight bool `json:"unknown_weight"`
+	// LimitOz is the most it may weigh packed: MaxInternationalOz abroad, 0
+	// (no limit) in the US.
+	LimitOz float64 `json:"limit_oz,omitempty"`
 }
+
+// TooHeavyError is ErrTooHeavy with its numbers, so the shop can show how far
+// over a request is and what weighs the most without packing it again. Its
+// message is ErrTooHeavy's with the packed weight.
+type TooHeavyError struct {
+	WeightOz   float64      `json:"weight_oz"` // packed, in the lightest package it fits
+	LimitOz    float64      `json:"limit_oz"`
+	TareOz     float64      `json:"tare_oz"`
+	ContentsOz float64      `json:"contents_oz"`
+	Package    string       `json:"package"`
+	Lines      []LineWeight `json:"lines"` // heaviest first
+}
+
+// LineWeight is what one request line weighs, what it ships with included.
+type LineWeight struct {
+	ItemID   int64   `json:"item_id"`
+	SKU      string  `json:"sku,omitempty"`
+	Name     string  `json:"name"`
+	Quantity int     `json:"quantity"`
+	Oz       float64 `json:"oz"`
+}
+
+func (e *TooHeavyError) Error() string {
+	return fmt.Sprintf("%v; this is about %.1f lb packed (%.1f lb of swag in a %g oz %s)",
+		ErrTooHeavy, e.WeightOz/16, e.ContentsOz/16, e.TareOz, e.Package)
+}
+
+func (e *TooHeavyError) Unwrap() error { return ErrTooHeavy }
 
 // shape is one request line as a stack of identical things.
 type shape struct {
@@ -210,10 +242,12 @@ func Pack(lines []Line, catalog map[int64]Item, international bool) (Packing, er
 	var shapes []shape
 	var contentOz float64
 	known := true
+	weights := make([]LineWeight, 0, len(lines))
 	add := func(it Item, qty int) {
 		s := shapeOf(it, qty)
 		shapes = append(shapes, s)
 		contentOz += s.oz * float64(s.qty)
+		weights[len(weights)-1].Oz += s.oz * float64(s.qty)
 		known = known && s.known
 	}
 	for _, l := range lines {
@@ -221,6 +255,7 @@ func Pack(lines []Line, catalog map[int64]Item, international bool) (Packing, er
 		if v, ok := it.Variant(l.SKU); ok && v.WeightOz != nil {
 			it.WeightOz = v.WeightOz
 		}
+		weights = append(weights, LineWeight{ItemID: l.ItemID, SKU: l.SKU, Name: it.Name, Quantity: l.Quantity})
 		add(it, l.Quantity)
 		for _, sku := range it.ShipsWith {
 			extra, ok := bySKU[sku]
@@ -246,11 +281,16 @@ func Pack(lines []Line, catalog map[int64]Item, international bool) (Packing, er
 			}
 			continue
 		}
-		return Packing{Package: p, WeightOz: oz, ContentsOz: contentOz, UnknownWeight: !known}, nil
+		packed := Packing{Package: p, WeightOz: oz, ContentsOz: contentOz, UnknownWeight: !known}
+		if international {
+			packed.LimitOz = MaxInternationalOz
+		}
+		return packed, nil
 	}
 	if tooHeavy != nil {
-		return Packing{}, fmt.Errorf("%w; this is about %.1f lb packed (%.1f lb of swag in a %g oz %s)",
-			ErrTooHeavy, (contentOz+tooHeavy.TareOz)/16, contentOz/16, tooHeavy.TareOz, tooHeavy.Name)
+		sort.SliceStable(weights, func(i, j int) bool { return weights[i].Oz > weights[j].Oz })
+		return Packing{}, &TooHeavyError{WeightOz: contentOz + tooHeavy.TareOz, LimitOz: MaxInternationalOz,
+			TareOz: tooHeavy.TareOz, ContentsOz: contentOz, Package: tooHeavy.Name, Lines: weights}
 	}
 	// Name the big print the rest won't go in with, if there is one.
 	for _, s := range shapes {

@@ -25,8 +25,14 @@ export type ShippingEstimate = {
 
 export type ShippingSummary = { us: ShippingEstimate; international: ShippingEstimate };
 
-// weight_oz includes the packaging; contents_oz doesn't.
-export type Packing = { package: { name: string; class: string }; weight_oz: number; contents_oz: number; unknown_weight: boolean };
+// weight_oz includes the packaging; contents_oz doesn't. limit_oz is the most it may weigh packed (abroad only).
+export type Packing = {
+	package: { name: string; class: string };
+	weight_oz: number;
+	contents_oz: number;
+	unknown_weight: boolean;
+	limit_oz?: number;
+};
 
 const day = (iso: string) => new Date(`${iso}T12:00:00`);
 const md = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });

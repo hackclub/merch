@@ -40,7 +40,14 @@ describe('api', () => {
 
 	it('throws ApiError carrying the server message', async () => {
 		stubFetch(422, { error: 'you requested swag recently' });
-		await expect(api.get('/api/requests')).rejects.toEqual(new ApiError(422, 'you requested swag recently'));
+		await expect(api.get('/api/requests')).rejects.toEqual(new ApiError(422, 'you requested swag recently', { error: 'you requested swag recently' }));
+	});
+
+	it('keeps the error body, for 422s that carry more than a message', async () => {
+		stubFetch(422, { error: 'too heavy', weight_oz: 60, limit_oz: 48 });
+		const err = (await api.post('/api/shipping/estimate', {}).catch((e) => e)) as ApiError;
+		expect(err).toBeInstanceOf(ApiError);
+		expect(err.data).toEqual({ error: 'too heavy', weight_oz: 60, limit_oz: 48 });
 	});
 
 	it('takes over the catalog fetch app.html started, once', async () => {

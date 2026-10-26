@@ -332,7 +332,11 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   (`width_in`, `height_in`, `thickness_in`; stickers and postcards have defaults; anything else
   counts as a bulky 10x8x1) and `items.weight_oz`. With no weight set, it works one out from
   the paper size (0.625 oz/in³). `Validate` refuses requests that don't fit in one package and
-  international requests over 3 lb packed.
+  international requests over 3 lb packed. Over 3 lb, `Pack` returns a `TooHeavyError`
+  (`errors.Is` `ErrTooHeavy`), and the estimate's 422 carries its `weight_oz`, `limit_oz`,
+  `tare_oz`, `contents_oz`, `package` and `lines` (each line's weight with what it ships with,
+  heaviest first); international quotes give `packing.limit_oz`. The shop's weight meter over the
+  item list (`$lib/weight`) shows only these numbers, and never packs anything itself.
 - **Warehouse weights include the packaging.** AGH logs each package at its packaging plus a
   fixed weight per SKU (a fit over 767 orders since 2025-06 leaves a median 0.04 oz unexplained),
   and buys labels at that weight. One poster logs 7.2 oz (1.2 oz of paper in a 6 oz StayFlat),
@@ -515,7 +519,9 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   is off to sign in with Hack Club to verify their email: `items`, `intl`, `purpose`, `has_note`;
   the form waits in sessionStorage, `$lib/draft`), `verify_email_back` (back signed in with that
   form: `next` = `submit` (US, sent on its own) or `card` (abroad, the card field waits), `items`),
-  `item_hover` (mouse
+  `weight_limit` (abroad, the request went over the 3 lb limit while they picked; once each
+  time it crosses: `over_oz`, `weight_oz`, `lines`, `country`; the meter is `data-track`
+  `weight_meter` and the heaviest lines' notes `weight_heavy`), `item_hover` (mouse
   over an item for ≥ 0.5 s), `payment_error` (a card didn't go through: `request_id`, `method` = `card` or `apple_pay`, and Stripe's `type`,
   `code`, `decline_code`; never the message), `api_error`, `js_error`, `pwa_installed`,
   `web_vital` (Core Web Vitals from the `web-vitals` library, once per page load: `metric` =
@@ -549,7 +555,7 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   `fee_cents`, `refund_cents`, `country`, `by` = `admin` or `requester`, `partial` when shipping
   less made postage cheaper, `existing` when the refund was already on Stripe, e.g. one held for approval), `email_sent` and `email_failed` (a request email: `kind` = `received`, `dispatched` or `rejected`,
   `request_id`, `email_id` (its `sent_emails` row, with the full text), and Loops' `error`), `shipping_estimate` (country, lines, package, weights, service, arrival window, fee,
-  postage, `postage_basis` (the country's rate card, or `international` without one), sample counts, `restock` when a line is backordered, or `error` when it won't pack), `request_created`, `request_refused` (the
+  postage, `postage_basis` (the country's rate card, or `international` without one), sample counts, `restock` when a line is backordered, or `error` when it won't pack; over 3 lb abroad also `weight_oz`, `over_oz` and `package`), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `customs_invoice` (someone downloaded a request's customs
   invoice PDF: `request_id`, `country`, `status`, `lines`, `value_cents`, `admin` when an admin got
   someone else's), `submission_created`,

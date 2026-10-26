@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -181,6 +182,18 @@ func TestShippingEstimateIsLogged(t *testing.T) {
 	}
 	if p := props(t, bad); p["error"] == nil || p["country"] != "US" {
 		t.Errorf("won't-pack props = %v", p)
+	}
+	// Over 3 lb abroad, it says by how much.
+	body = map[string]any{"country": "DE", "lines": []swag.Line{{ItemID: magazine.ID, Quantity: 5}}}
+	if code := h.do(c, "POST", "/api/shipping/estimate", body, nil); code != 422 {
+		t.Fatalf("too heavy = %d", code)
+	}
+	evs = h.events("shipping_estimate")
+	p = props(t, evs[len(evs)-1])
+	w, _ := p["weight_oz"].(float64)
+	over, _ := p["over_oz"].(float64)
+	if w <= 48 || math.Abs(over-(w-48)) > 1e-9 || p["error"] == nil {
+		t.Errorf("too-heavy props = %v", p)
 	}
 }
 

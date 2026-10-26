@@ -82,7 +82,8 @@ func (s *server) isAdmin(r *http.Request) bool {
 }
 
 // shippingEstimate packs a would-be request and estimates its delivery, for the
-// request form. 422 means it can't ship as one package (or is over 3 lb abroad).
+// request form. 422 means it can't ship as one package, or is over 3 lb abroad
+// (then with the packed weight, the limit and each line's weight).
 func (s *server) shippingEstimate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Country string      `json:"country"`
@@ -127,7 +128,15 @@ func (s *server) shippingEstimate(w http.ResponseWriter, r *http.Request) {
 		e = e.AfterRestock()
 	}
 	u := s.currentUser(r)
-	if errors.Is(err, swag.ErrWontPack) || errors.Is(err, swag.ErrTooHeavy) {
+	var heavy *swag.TooHeavyError
+	if errors.As(err, &heavy) {
+		// The numbers too, so the shop can show how far over it is and what weighs the most.
+		s.track(r, u, "shipping_estimate", map[string]any{"country": country, "lines": lines, "items": itemCount(lines), "error": err.Error(),
+			"package": heavy.Package, "weight_oz": heavy.WeightOz, "over_oz": heavy.WeightOz - heavy.LimitOz})
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error(), "weight_oz": heavy.WeightOz, "limit_oz": heavy.LimitOz,
+			"tare_oz": heavy.TareOz, "contents_oz": heavy.ContentsOz, "package": heavy.Package, "lines": heavy.Lines})
+		return
+	} else if errors.Is(err, swag.ErrWontPack) {
 		s.track(r, u, "shipping_estimate", map[string]any{"country": country, "lines": lines, "items": itemCount(lines), "error": err.Error()})
 		writeErr(w, http.StatusUnprocessableEntity, err.Error())
 		return

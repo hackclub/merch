@@ -3,7 +3,9 @@ import { track, visitId } from './track';
 export class ApiError extends Error {
 	constructor(
 		public status: number,
-		message: string
+		message: string,
+		// The whole error body, for errors that carry more than a message (the 3 lb refusal's weights).
+		public data?: unknown
 	) {
 		super(message);
 	}
@@ -42,7 +44,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 	if (!res.ok) {
 		// The path without its query (address searches carry what people typed).
 		track('api_error', { method, api: path.split('?')[0], status: res.status, error: String(data?.error ?? res.statusText).slice(0, 200) });
-		throw new ApiError(res.status, data?.error ?? res.statusText);
+		throw new ApiError(res.status, data?.error ?? res.statusText, data);
 	}
 	return data as T;
 }

@@ -60,6 +60,9 @@ func TestShippingEstimate(t *testing.T) {
 	if e.Service != "Asendia" || e.TransitBasis != "DE" || e.ArriveBy == "" || out.Packing.Package.Name != "Bubble mailer" {
 		t.Fatalf("got %+v / %+v", e, out.Packing)
 	}
+	if out.Packing.LimitOz != 48 || out.Packing.WeightOz <= 0 {
+		t.Errorf("abroad, the quote gives the 3 lb limit: %+v", out.Packing)
+	}
 	if e.PostageCents != [2]int{} || e.PostageTypicalCents != 0 {
 		t.Fatalf("postage is for admins only, got %v", e.PostageCents)
 	}
@@ -81,10 +84,45 @@ func TestShippingEstimateRefusesWhatWontShip(t *testing.T) {
 	if code != 422 || !strings.Contains(errBody["error"], "StayFlat") {
 		t.Fatalf("poster + 150 magazines = %d %v", code, errBody)
 	}
+	var heavy struct{ Error string }
 	code = h.do(h.client(userEmail), "POST", "/api/shipping/estimate", map[string]any{"country": "DE",
-		"lines": []swag.Line{{ItemID: magazine.ID, Quantity: 5}}}, &errBody)
-	if code != 422 || !strings.Contains(errBody["error"], "3 lb") {
-		t.Fatalf("5 magazines abroad = %d %v", code, errBody)
+		"lines": []swag.Line{{ItemID: magazine.ID, Quantity: 5}}}, &heavy)
+	if code != 422 || !strings.Contains(heavy.Error, "3 lb") {
+		t.Fatalf("5 magazines abroad = %d %v", code, heavy)
+	}
+}
+
+// Over 3 lb abroad, the 422 gives the numbers, so the shop shows how far over
+// it is and what weighs the most without packing it again.
+func TestShippingEstimateSaysHowHeavy(t *testing.T) {
+	h := newHarness(t)
+	poster, _, magazine := shippingFixture(t, h)
+	var heavy struct {
+		Error    string
+		WeightOz float64 `json:"weight_oz"`
+		LimitOz  float64 `json:"limit_oz"`
+		TareOz   float64 `json:"tare_oz"`
+		Package  string
+		Lines    []swag.LineWeight
+	}
+	code := h.do(h.client(userEmail), "POST", "/api/shipping/estimate", map[string]any{"country": "DE",
+		"lines": []swag.Line{{ItemID: poster.ID, Quantity: 1}, {ItemID: magazine.ID, Quantity: 5}}}, &heavy)
+	if code != 422 || !strings.HasPrefix(heavy.Error, swag.ErrTooHeavy.Error()) {
+		t.Fatalf("too heavy = %d %+v", code, heavy)
+	}
+	if heavy.LimitOz != 48 || heavy.WeightOz <= 48 || heavy.TareOz <= 0 || heavy.Package == "" {
+		t.Errorf("weights = %+v", heavy)
+	}
+	if len(heavy.Lines) != 2 || heavy.Lines[0].ItemID != magazine.ID || heavy.Lines[0].Name != "Magazine" ||
+		heavy.Lines[0].Quantity != 5 || heavy.Lines[0].Oz != 54 || heavy.Lines[1].ItemID != poster.ID {
+		t.Errorf("lines = %+v", heavy.Lines)
+	}
+	// In the US there's no limit to show.
+	var out struct{ Packing map[string]any }
+	h.do(h.client(userEmail), "POST", "/api/shipping/estimate", map[string]any{"country": "US",
+		"lines": []swag.Line{{ItemID: magazine.ID, Quantity: 1}}}, &out)
+	if _, ok := out.Packing["limit_oz"]; ok {
+		t.Errorf("US packing = %v", out.Packing)
 	}
 }
 

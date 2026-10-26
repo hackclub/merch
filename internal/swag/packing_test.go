@@ -178,3 +178,48 @@ func TestTooHeavySaysThePackedWeight(t *testing.T) {
 		t.Fatalf("err = %q, want it to say %q", err, want)
 	}
 }
+
+// The refusal carries its numbers, so the shop can show how far over a request
+// is and what weighs the most without packing it again.
+func TestTooHeavyGivesItsWeights(t *testing.T) {
+	lines := []Line{{ItemID: 1, Quantity: 1}, {ItemID: 4, Quantity: 3}, {ItemID: 2, Quantity: 10}}
+	_, err := Pack(lines, shopCatalog(), true)
+	var th *TooHeavyError
+	if !errors.As(err, &th) {
+		t.Fatalf("err = %v, want a TooHeavyError", err)
+	}
+	if th.LimitOz != MaxInternationalOz || th.Package != "18x12x6 box" || th.TareOz != 14.8 {
+		t.Errorf("limit %v, package %q, tare %v", th.LimitOz, th.Package, th.TareOz)
+	}
+	if math.Abs(th.WeightOz-(th.ContentsOz+th.TareOz)) > 1e-9 || th.WeightOz <= MaxInternationalOz {
+		t.Errorf("weight %v, contents %v", th.WeightOz, th.ContentsOz)
+	}
+	// Heaviest first; a magazine's intro card counts toward the magazine.
+	if len(th.Lines) != 3 {
+		t.Fatalf("lines = %+v", th.Lines)
+	}
+	mag := th.Lines[0]
+	if mag.ItemID != 4 || mag.Name != "Magazine 2025" || mag.Quantity != 3 || math.Abs(mag.Oz-3*(10.3+6*4*0.014*PaperOzPerCubicInch)) > 0.001 {
+		t.Errorf("heaviest = %+v", mag)
+	}
+	if th.Lines[1].ItemID != 2 || th.Lines[2].ItemID != 1 || math.Abs(th.Lines[2].Oz-1.2) > 1e-9 {
+		t.Errorf("rest = %+v", th.Lines[1:])
+	}
+	var sum float64
+	for _, l := range th.Lines {
+		sum += l.Oz
+	}
+	if math.Abs(sum-th.ContentsOz) > 1e-9 {
+		t.Errorf("lines add to %v, contents %v", sum, th.ContentsOz)
+	}
+}
+
+func TestPackGivesTheLimitAbroad(t *testing.T) {
+	p, err := Pack([]Line{{ItemID: 4, Quantity: 1}}, shopCatalog(), true)
+	if err != nil || p.LimitOz != MaxInternationalOz {
+		t.Errorf("abroad: limit %v, %v", p.LimitOz, err)
+	}
+	if p, _ := Pack([]Line{{ItemID: 4, Quantity: 1}}, shopCatalog(), false); p.LimitOz != 0 {
+		t.Errorf("US limit = %v, want none", p.LimitOz)
+	}
+}
