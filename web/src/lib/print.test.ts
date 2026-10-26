@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkArt, finishOptions, printStatusLabel, placeholderArt, placeholderSheet, firstShipmentOptions, guides, printArtProps, estimateLine, arrivalLine, timelineRows, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
+import { checkArt, finishOptions, printBlockerMessage, printStatusLabel, printSubmitBlockers, placeholderArt, placeholderSheet, firstShipmentOptions, guides, printArtProps, estimateLine, arrivalLine, timelineRows, sheetFor, templateSVG, trimCrop, type PrintEstimate, type PrintProduct } from './print';
 
 const postcard: PrintProduct = {
 	key: 'postcard_4x6', name: '4x6 postcard', paper: 'Premium linen card stock', width_in: 4, height_in: 6,
@@ -153,5 +153,24 @@ describe('placeholder art for the 3D preview before any upload', () => {
 		const poster = placeholderArt({ ...postcard, name: '11x17 poster', postcard: false, width_in: 11, height_in: 17 });
 		expect(Math.max(poster.width, poster.height)).toBeLessThanOrEqual(2048);
 		expect(poster.width / poster.height).toBeCloseTo(11 / 17, 2);
+	});
+});
+
+describe('printSubmitBlockers', () => {
+	it('is empty when the art is ready and there is an estimate', () => {
+		expect(printSubmitBlockers({ hasFront: true, problems: 0, hasEstimate: true })).toEqual([]);
+	});
+
+	it('names what keeps a print request from sending, art first', () => {
+		expect(printSubmitBlockers({ hasFront: false, problems: 0, hasEstimate: true })).toEqual(['art_missing']);
+		expect(printSubmitBlockers({ hasFront: true, problems: 1, hasEstimate: true })).toEqual(['art_problem']);
+		expect(printSubmitBlockers({ hasFront: true, problems: 0, hasEstimate: false })).toEqual(['no_estimate']);
+		expect(printSubmitBlockers({ hasFront: false, problems: 2, hasEstimate: false })).toEqual(['art_missing', 'art_problem', 'no_estimate']);
+	});
+
+	it('has a plain message per blocker', () => {
+		expect(printBlockerMessage('art_missing')).toMatch(/front/i);
+		expect(printBlockerMessage('art_problem')).toMatch(/fix/i);
+		expect(printBlockerMessage('no_estimate')).toMatch(/estimate/i);
 	});
 });

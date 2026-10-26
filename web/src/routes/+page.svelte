@@ -24,6 +24,7 @@
 	import Haul3D from '$lib/Haul3D.svelte';
 	import QuantityPicker from '$lib/QuantityPicker.svelte';
 	import Tile3D from '$lib/Tile3D.svelte';
+	import { blockerMessage, problemItemId, submitBlockedProps, submitBlockers, type SubmitBlocker } from '$lib/submit';
 	import { thumb } from '$lib/thumb';
 	import { track } from '$lib/track';
 	import { heavyNote, tooHeavy, weightCrossing, weightLimitProps, weightMeter, type TooHeavy } from '$lib/weight';
@@ -47,6 +48,12 @@
 	let submitting = $state(false);
 	let card = $state<CardForm | null>(null);
 	let form = $state<HTMLFormElement | null>(null);
+	// Where a blocked Submit points: the boxes it can name, and the error lines by the button.
+	let understoodBox = $state<HTMLInputElement | null>(null);
+	let customsBox = $state<HTMLInputElement | null>(null);
+	let submitNote = $state<HTMLDivElement | null>(null);
+	// The first reason the last Submit tap didn't go through, while it still applies.
+	let blockedReason = $state<SubmitBlocker | null>(null);
 	// Back from verifying their email abroad: the card is all that's left.
 	let verified = $state(false);
 	// Delivery times from past shipments, and this request's packing and arrival estimate.
@@ -95,6 +102,14 @@
 	let nudged = false;
 	// They've read the note: we may send more of fewer designs. Submit waits for it while the note shows.
 	let regroupOK = $state(false);
+	// Why Submit can't go yet. The button stays enabled so tapping it can say so (and log submit_blocked).
+	const blockers = $derived(submitBlockers({ understood, customsOK, intl, nudge: !!nudge, regroupOK, problems, quoteError }));
+	// Only the two boxes have no error line of their own by the button; the rest are already spelled out there.
+	const blockedText = $derived(
+		blockedReason && blockers.includes(blockedReason) && (blockedReason === 'understood' || blockedReason === 'customs')
+			? blockerMessage(blockedReason, problems, quoteError)
+			: ''
+	);
 	$effect(() => {
 		if (nudge && !nudged) track('sticker_nudge', { designs: nudge.designs, loose: nudge.loose });
 		nudged = !!nudge;
@@ -211,13 +226,38 @@
 		await tick();
 		form?.scrollIntoView({ behavior: 'smooth' });
 		if (next === 'card') verified = true;
-		else if (count > 0 && !problems.length && !(nudge && !regroupOK)) form?.requestSubmit();
+		else if (count > 0 && !blockers.length) form?.requestSubmit();
 		return true;
+	}
+
+	// Point at the first thing keeping Submit from going: its box, the sticker note, the cart line that's
+	// wrong, or the error lines by the button. (Empty address/note fields never get here: the browser
+	// blocks those itself and logs field_invalid, so nothing is reported twice.)
+	async function focusBlocker(b: SubmitBlocker) {
+		await tick();
+		let el: HTMLElement | null = null;
+		if (b === 'understood') el = understoodBox;
+		else if (b === 'customs') el = customsBox;
+		else if (b === 'sticker_regroup') el = document.querySelector('#sticker-note input[type="checkbox"]');
+		else if (b === 'cart_problem') {
+			const id = catalog ? problemItemId(problems, catalog.items) : null;
+			const row = id ? document.querySelector(`[data-item="${id}"]`) : null;
+			el = row?.querySelector<HTMLElement>('input, select, button') ?? (row instanceof HTMLElement ? row : submitNote);
+		} else el = submitNote;
+		el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		el?.focus?.({ preventScroll: true });
 	}
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		if (!catalog) return;
+		if (blockers.length) {
+			blockedReason = blockers[0];
+			track('submit_blocked', submitBlockedProps('request', blockers, { intl, items: count, signedIn }));
+			void focusBlocker(blockers[0]);
+			return;
+		}
+		blockedReason = null;
 		if (!signedIn) {
 			const d = { address, note: needsReason(purpose) ? note : '', understood, customs_ok: customsOK, regroup_ok: regroupOK };
 			saveDraft(sessionStorage, d);
@@ -500,8 +540,9 @@
 						</table>
 						<p><strong>Cost to you: {costToYou(intl, quote.estimate.fee_cents)}</strong></p>
 					{/if}
+					<!-- Not `required`: submit() catches this box itself (submit_blocked), so the browser's field_invalid would double-report it. -->
 					<label class="choice" class:on={understood}>
-						<input type="checkbox" required bind:checked={understood} />
+						<input type="checkbox" bind:this={understoodBox} bind:checked={understood} />
 						<span>I understand, and I'll only request what I'll use.</span>
 					</label>
 				</div>
@@ -512,19 +553,20 @@
 							<CardField bind:this={card} stripeKey={catalog.settings.stripe_key} amountCents={quote.estimate.fee_cents} billing={address} />
 						{/if}
 						<label class="choice" class:on={customsOK}>
-							<input type="checkbox" name="customs_ok" required bind:checked={customsOK} />
+							<input type="checkbox" name="customs_ok" bind:this={customsBox} bind:checked={customsOK} />
 							<span>I understand I'm responsible for any customs fees or import taxes my country charges to receive a package from the USA.</span>
 						</label>
 					</div>
 				{/if}
-				<div class="submit">
+				<div class="submit" tabindex="-1" bind:this={submitNote}>
 					{#if quote && arrivalText(quote.estimate)}<p>{arrivalText(quote.estimate)}, by {quote.estimate.service}.</p>{/if}
 					{#if nudge && !regroupOK}<p class="error"><a href="#sticker-note">Check “I understand.” under Stickers</a> to send this request.</p>{/if}
 					{#each problems as p}<p class="error">{p}</p>{/each}
 					{#if quoteError}<p class="error">{quoteError}</p>{/if}
+					{#if blockedText}<p class="error" role="alert">{blockedText}</p>{/if}
 					{#if submitError}<p class="error" role="alert">{submitError}</p>{/if}
 					{#if !signedIn}<p class="muted">Next, sign in with Hack Club to verify your email{payByCard && quote ? `, then pay the ${usd(quote.estimate.fee_cents)} postage by card` : ''}.</p>{/if}
-					<button disabled={submitting || problems.length > 0 || !!quoteError || !understood || (intl && !customsOK) || (!!nudge && !regroupOK)}>
+					<button disabled={submitting}>
 						{!signedIn ? 'Verify email to submit' : submitting ? 'Sending…' : cardNow && quote ? `Submit and pay ${usd(quote.estimate.fee_cents)}` : `Submit request (${totalQuantity(cart)} item${totalQuantity(cart) === 1 ? '' : 's'})`}
 					</button>
 				</div>

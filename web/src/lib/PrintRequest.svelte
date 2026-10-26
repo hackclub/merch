@@ -2,7 +2,7 @@
 	// Staff getting postcards or posters made: pick the product, design to its specs (bleed template),
 	// pick the art (checked and shown in 3D right away), see the cost and timeline, then send it.
 	// Files upload untouched on Submit (POST /api/print/files), then the request (POST /api/print-requests).
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api, ApiError, isInternational } from './api';
 	import { blankAddress, prefillAddress } from './address';
@@ -14,9 +14,10 @@
 	import Product3D from './Product3D.svelte';
 	import type { Preview3D } from './items';
 	import {
-		arrivalLine, checkArt, estimateLine, finishOptions, firstShipmentOptions, guides, placeholderArt, placeholderSheet, printArtProps, quantityPresets, sheetFor, templateSVG, timelineRows, trimCrop,
-		type ArtCheck, type PrintEstimate, type PrintProduct, type PrintRequest
+		arrivalLine, checkArt, estimateLine, finishOptions, firstShipmentOptions, guides, placeholderArt, placeholderSheet, printArtProps, printBlockerMessage, printSubmitBlockers, quantityPresets, sheetFor, templateSVG, timelineRows, trimCrop,
+		type ArtCheck, type PrintBlocker, type PrintEstimate, type PrintProduct, type PrintRequest
 	} from './print';
+	import { submitBlockedProps } from './submit';
 
 	type Side = 'front' | 'back';
 	// A picked file: its size, how it fits, the whole art for the flat view, and the trimmed art for 3D
@@ -45,6 +46,9 @@
 	let estimateError = $state('');
 	let submitting = $state('');
 	let error = $state('');
+	let formEl = $state<HTMLFormElement | null>(null);
+	// The first reason the last Send tap didn't go through, while it still applies.
+	let blockedReason = $state<PrintBlocker | null>(null);
 	const signedIn = $derived(!!session.me?.user);
 
 	onMount(async () => {
@@ -191,6 +195,9 @@
 		if (!options.includes(initial)) initial = options.filter((n) => n <= initial).at(-1) ?? options[0];
 	});
 	const problems = $derived((['front', 'back'] as const).filter((s) => art[s]?.check.problem || reading[s]));
+	// Why Send can't go yet. The button stays enabled so tapping it can say so (and log submit_blocked).
+	const blockers = $derived(printSubmitBlockers({ hasFront: !!front, problems: problems.length, hasEstimate: !!estimate }));
+	const blockedText = $derived(blockedReason && blockers.includes(blockedReason) ? printBlockerMessage(blockedReason) : '');
 
 	async function upload(side: Side, a: Art): Promise<{ url: string; preview_url: string }> {
 		submitting = `Uploading the ${side}…`;
@@ -201,9 +208,32 @@
 		return { url: f.url, preview_url: p?.url ?? '' };
 	}
 
+	// Point at the first thing keeping Send from going: the side's file picker, or the estimate.
+	// (Empty address/program fields never get here: the browser blocks those itself, as field_invalid.)
+	async function focusBlocker(b: PrintBlocker) {
+		await tick();
+		const side = b === 'art_problem' ? (problems[0] ?? 'front') : 'front';
+		const el =
+			b === 'no_estimate'
+				? formEl?.querySelector<HTMLElement>('.estimate')
+				: formEl?.querySelector<HTMLElement>(`input[name="print_${side}"]`);
+		el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		el?.focus?.({ preventScroll: true });
+	}
+
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
-		if (!front || problems.length) return;
+		if (blockers.length) {
+			blockedReason = blockers[0];
+			track('submit_blocked', {
+				...submitBlockedProps('print', blockers, { intl: isInternational(address.country), items: quantity, signedIn }),
+				product: key
+			});
+			void focusBlocker(blockers[0]);
+			return;
+		}
+		blockedReason = null;
+		if (!front) return;
 		error = '';
 		try {
 			const f = await upload('front', front);
@@ -264,7 +294,7 @@
 			<span class="muted">(SVG, opens in Figma, Illustrator and Canva)</span>
 		</p>
 
-		<form onsubmit={submit}>
+		<form bind:this={formEl} onsubmit={submit}>
 			<h3>Your art</h3>
 			<fieldset class="inline-choices">
 				<legend>Back</legend>
@@ -276,7 +306,8 @@
 					{@const a = art[side]}
 					<div class="side">
 						<label>{side === 'back' ? 'Back' : backMode === 'same' ? 'Front and back' : 'Front'}
-							<input type="file" accept="image/png" required name="print_{side}" onchange={(e) => pickFile(side, e)} />
+							<!-- Not `required`: submit() catches missing art itself (submit_blocked), so field_invalid would double-report it. -->
+							<input type="file" accept="image/png" name="print_{side}" onchange={(e) => pickFile(side, e)} />
 						</label>
 						{#if a}
 							{@const g = guides(product, a.width, a.height)}
@@ -335,7 +366,7 @@
 			<label>Quantity <input type="number" min={product.min_quantity} max={product.max_quantity} step={product.step} required bind:value={quantity} /></label>
 			<p class="muted">{product.postcard ? 'Postcards come banded in 50s' : 'Posters come in 25s'}, {product.min_quantity.toLocaleString('en-US')} to {product.max_quantity.toLocaleString('en-US')}.</p>
 
-			<div class="estimate" data-track="print_estimate">
+			<div class="estimate" tabindex="-1" data-track="print_estimate">
 				{#if estimate}
 					<p><strong>{estimateLine(estimate)}</strong></p>
 					<table class="specs">
@@ -391,12 +422,13 @@
 				<textarea required rows="2" maxlength="2000" bind:value={deadline}></textarea></label>
 
 			<div class="submit">
+				{#if blockedText}<p class="error" role="alert">{blockedText}</p>{/if}
 				{#if error}<p class="error" role="alert">{error}</p>{/if}
 				{#if !signedIn}
 					<p class="muted">Sign in with Hack Club to send it. Your art uploads when you send, so sign in first, then pick your files.</p>
 					<a class="button" href="/auth/login?for=print">Sign in with Hack Club</a>
 				{:else}
-					<button disabled={!!submitting || !front || problems.length > 0 || !estimate}>
+					<button disabled={!!submitting}>
 						{submitting || `Send for printing${estimate ? ` (${quantity.toLocaleString('en-US')})` : ''}`}
 					</button>
 				{/if}

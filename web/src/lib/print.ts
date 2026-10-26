@@ -228,3 +228,25 @@ export function firstShipmentOptions(p: PrintProduct, run: number): number[] {
 	const all = p.postcard ? [5, 10, 15, 20, 25, 50, 100, 150, 200, 250] : [1, 2, 3, 5, 10, 15, 20, 25];
 	return all.filter((n) => n <= run);
 }
+
+/** Why a print request can't be sent yet, art first — the print form's half of `submit_blocked` (see submit.ts). */
+export type PrintBlocker = 'art_missing' | 'art_problem' | 'no_estimate';
+
+export function printSubmitBlockers(s: { hasFront: boolean; problems: number; hasEstimate: boolean }): PrintBlocker[] {
+	const out: PrintBlocker[] = [];
+	if (!s.hasFront) out.push('art_missing');
+	if (s.problems > 0) out.push('art_problem');
+	if (!s.hasEstimate) out.push('no_estimate');
+	return out;
+}
+
+export function printBlockerMessage(b: PrintBlocker): string {
+	switch (b) {
+		case 'art_missing':
+			return 'Pick the front art to send this for printing.';
+		case 'art_problem':
+			return 'Fix the art problem marked above to send this for printing.';
+		case 'no_estimate':
+			return 'We don’t have a print estimate for this yet — give it a moment, then send it.';
+	}
+}
