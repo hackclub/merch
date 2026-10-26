@@ -112,8 +112,9 @@ packages, and you can't undo it.** The requester gets an email that it shipped.
 ### `POST /api/agent/requests/{id}/lines`
 
 Records that a `dispatched` request the warehouse hasn't mailed yet (no `mailed_at`, no
-tracking) ships less than it did, for when the warehouse runs out of something already sent to
-it. **It doesn't change the warehouse order:** mail.hackclub.com has no API for that, so a
+tracking) ships a different quantity of some lines: less, or back up to what was asked for to
+undo an earlier cut. An order waiting at the warehouse isn't proof it's short of anything:
+`in_stock` already leaves out what open orders have set aside. **It doesn't change the warehouse order:** mail.hackclub.com has no API for that, so a
 person edits the order in its back office first (ships-with SKUs too). Only do this when an
 admin has made that edit, or told you to.
 
@@ -121,12 +122,14 @@ admin has made that edit, or told you to.
 {"lines": [{"sku": "Swa/HC/Pin/1st", "quantity": 1}], "note": "Our enamel pins ran out. More are due around Nov 11."}
 ```
 
-- Quantities only go down (0 = none). `requested_quantity` keeps what they asked for.
+- Each line goes from 0 up to what was asked for. `requested_quantity` keeps what they asked for.
 - `note` is added to the requester's note as a new paragraph and goes in the email.
-- The requester gets a `changed` email listing each cut line ("you asked for 5, we're sending
-  1", or "we're not sending any this time") and what's in the box now. It's sent once per request.
+- The requester gets a `changed` email listing only the lines this call changed ("you asked for
+  5, we're sending 1", "we're not sending any this time", or "we're sending 5 after all, not 1")
+  and what's in the box now. Each call sends one.
 - 409 if the request isn't dispatched, was already mailed, or was paid by card (cutting it
-  would owe a refund this doesn't make). 422 if nothing would change or nothing would be left.
+  would owe a refund or charge this doesn't make). 422 if nothing would change, a line would go
+past what was asked for, or nothing would be left.
 
 ### `POST /api/agent/requests/{id}/reject`
 

@@ -1482,12 +1482,10 @@ func TestOutOfStockUnlessBackordered(t *testing.T) {
 		t.Fatal(err)
 	}
 	haven := h.mkItem("Pri/Hav/4x6/1st", true) // backordered by 503
-	var lastID float64
 	ask := func(email string, it swag.Item, n int) (int, string) {
 		var out map[string]any
 		code := h.do(h.client(email), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: n}}}, &out)
 		msg, _ := out["error"].(string)
-		lastID, _ = out["id"].(float64)
 		return code, msg
 	}
 	if code, msg := ask(userEmail, pin, 9); code != 422 || msg != "out of stock: only 8 Swa/HC/Pin/1st left" {
@@ -1495,10 +1493,6 @@ func TestOutOfStockUnlessBackordered(t *testing.T) {
 	}
 	if code, _ := ask(userEmail, pin, 6); code != 201 {
 		t.Fatalf("6 pins = %d", code)
-	}
-	// Sent to the warehouse but not mailed yet, they're still on its shelf.
-	if code := h.do(admin, "POST", fmt.Sprintf("/api/admin/requests/%d/dispatch", int64(lastID)), map[string]any{}, nil); code != 200 {
-		t.Fatalf("dispatch 6 pins = %d", code)
 	}
 	// The 6 waiting to ship are spoken for.
 	if code, msg := ask("other@x.com", pin, 3); code != 422 || msg != "out of stock: only 2 Swa/HC/Pin/1st left" {

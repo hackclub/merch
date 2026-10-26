@@ -378,21 +378,22 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   orders (`required_by_date`), which Theseus fetches but doesn't return yet.
   Only items with **"Can be backordered"** (`items.allow_backorder`, a checkbox on the admin Items
   tab) take requests past stock. For every other item, a new request can take only what's left:
-  the warehouse's `in_stock` less what open (`awaiting_payment`, `pending`) requests hold and
-  what dispatched requests the warehouse hasn't mailed yet (no `mailed_at`, no tracking) still
-  take (`Store.HeldQuantities`). The warehouse's `in_stock` only drops when a package leaves, so
-  until 2026-10-26 the shop kept taking pins while 190 sat in unmailed orders against 63 on the
-  shelf. For a few hours after a package leaves (until a refresh sets `mailed_at`) it's counted
-  twice, so the shop shows a little less than there is, never more. `swag.Validate` refuses the rest ("out of stock: only 2 Hack Club
+  the warehouse's `in_stock` less what open (`awaiting_payment`, `pending`) requests hold
+  (`Store.HeldQuantities`). Don't subtract dispatched requests too: `in_stock` is Zenventory's
+  free stock, which already leaves out what its open orders have set aside. On 2026-10-26 it
+  read 63 pins with 190 more set aside for unmailed orders; counting those again showed pins
+  out of stock and got 21 orders cut by mistake (free stock went 58 → 125 as the cuts released
+  them). An order waiting at the warehouse isn't proof it's short of anything. `swag.Validate` refuses the rest ("out of stock: only 2 Hack Club
   enamel pin left", logged as `request_refused`), and the shop says "Out of stock." / "Only 2
   left." and hides Add. A SKU the warehouse doesn't list counts as out of stock; if the warehouse
   can't be reached, stock isn't checked. Since 2026-10-20 only the Haven postcard and the
   Haven poster can be backordered (Zach: not the pins). Admin shipping doesn't check stock.
-  When the warehouse runs short of what dispatched requests hold, edit each warehouse order in
+  To change what a dispatched, unmailed request ships, edit its warehouse order in
   mail.hackclub.com's back office (`/back_office/warehouse/orders/<id>/edit`; its API can't), then
-  record the cut on the request: `POST /api/admin/requests/{id}/lines` (or `/api/agent/…`),
-  quantities only down, `requested_quantity` kept, the note added to `admin_note`, and a `changed`
-  email to the requester. Card-paid requests are refused (they'd be owed a refund).
+  record it on the request: `POST /api/admin/requests/{id}/lines` (or `/api/agent/…`), each line
+  between 0 and what was asked for, `requested_quantity` kept, the note added to `admin_note`, and a
+  `changed` email listing only what that call changed. Card-paid requests are refused (they'd be
+  owed a refund or a charge).
 - **International fee:** an international request pays its typical postage off the rate card,
   to the cent, the same
   number as the cost table's postage (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback
@@ -580,7 +581,7 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   `user_id`, with `admin_id` for who acted, and carry `request_id`, `country`, `purpose`, `source`,
   `lines`, `items_requested`, `items_shipped`, `fee_cents`, `wait_h` (hours since the request was
   made), `since_paid_h` and `refunded_cents`: `request_dispatched` (`changed` when quantities changed, `has_note`, `warning`),
-  `request_changed` (an admin cut what a dispatched, unmailed request ships: `lowered` lines, `has_note`),
+  `request_changed` (an admin changed what a dispatched, unmailed request ships: `lowered` and `raised` lines, `has_note`),
   `request_rejected` (`from`, `has_note`, `refunded`), `tracking_updated` (`carrier`,
   `has_tracking`, `has_postage` once the warehouse has priced the label), `internal_note_updated` (admins' Markdown note on a request: `has_note`, `chars`,
   `from_chars`; never the text). Catalog and limits, with the admin's `user_id`: `item_created` (`item_id`,
@@ -734,7 +735,7 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
 - `POST …/notes` appends a signed paragraph to `internal_note`; it never replaces it.
   `POST …/dispatch` and `…/reject` are the admin handlers, so they ship real mail and send
   the same emails. Uncertain cases get a `Needs a human:` note and stay `pending`.
-  `POST …/lines` is the admin cut of a dispatched, unmailed request (see "Backorders"); it
+  `POST …/lines` is the admin change to a dispatched, unmailed request (see "Backorders"); it
   doesn't touch the warehouse order.
   `GET /api/agent/print-requests` lists staff print requests read-only, so the agent can
   tell Zach about new ones and remind him when one sits unanswered; only admins act on them.
@@ -818,7 +819,7 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   `preview_text` and `body_text` (plain text; the wording is in `emails.go`). Four emails:
   `received` when the request reaches `pending` (on submit in the US; abroad, once the postage is
   paid), `dispatched` when an admin ships it, `rejected` with the admin's reason, and `changed`
-  when an admin cuts what a dispatched, unmailed request ships (once per request).
+  when an admin changes what a dispatched, unmailed request ships (one per change).
   merch sends no email when the package is mailed: mail.hackclub.com (Theseus) does ("Tracking info
   now available", with the tracking number) to the order's `recipient_email`, the requester. So
   `dispatched` says that email is coming, links the public package page

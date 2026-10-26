@@ -555,7 +555,7 @@ func TestHeldQuantities(t *testing.T) {
 	if _, err := s.CloseRequest(ctx, closed.ID, swag.StatusRejected, "", false); err != nil {
 		t.Fatal(err)
 	}
-	// Dispatched but not yet mailed: the warehouse still has it on its shelf.
+	// Sent to the warehouse: its own stock already leaves these out.
 	ship := func(lines ...swag.Line) *Request {
 		r := mk(swag.StatusPending, lines...)
 		r, err := s.MarkDispatched(ctx, r.ID, "ord_"+strconv.FormatInt(r.ID, 10), ShipChanges{})
@@ -582,14 +582,14 @@ func TestHeldQuantities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(held) != 2 || held["Swa/Pin"] != 9 || held["Swa/Shirt/HC/M"] != 1 {
+	if len(held) != 2 || held["Swa/Pin"] != 5 || held["Swa/Shirt/HC/M"] != 1 {
 		t.Fatalf("held = %v", held)
 	}
 }
 
 // Lowering what a dispatched, unmailed request ships keeps what was asked for
 // and adds the note to the requester's note.
-func TestReduceDispatchedLines(t *testing.T) {
+func TestChangeDispatchedLines(t *testing.T) {
 	s := newStore(t)
 	u := mkUser(t, s, "ident!1", "a@x.com")
 	pin := mkItem(t, s, "Swa/Pin", true)
@@ -599,13 +599,13 @@ func TestReduceDispatchedLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ReduceDispatchedLines(ctx, r.ID, map[string]int{"Swa/Pin": 1}, "x"); !errors.Is(err, ErrBadTransition) {
+	if _, err := s.ChangeDispatchedLines(ctx, r.ID, map[string]int{"Swa/Pin": 1}, "x"); !errors.Is(err, ErrBadTransition) {
 		t.Fatalf("pending request changed: %v", err)
 	}
 	if _, err := s.MarkDispatched(ctx, r.ID, "ord_1", ShipChanges{Note: "Thanks!"}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.ReduceDispatchedLines(ctx, r.ID, map[string]int{"Swa/Pin": 1}, "Pins ran out.")
+	got, err := s.ChangeDispatchedLines(ctx, r.ID, map[string]int{"Swa/Pin": 1}, "Pins ran out.")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -624,8 +624,11 @@ func TestReduceDispatchedLines(t *testing.T) {
 			}
 		}
 	}
-	// A second cut keeps the original ask.
-	got, err = s.ReduceDispatchedLines(ctx, r.ID, map[string]int{"Swa/Pin": 0}, "")
+	// A second change keeps the original ask, back up as well as down.
+	if got, err = s.ChangeDispatchedLines(ctx, r.ID, map[string]int{"Swa/Pin": 4}, ""); err != nil || got.Lines[0].SKU == "Swa/Pin" && got.Lines[0].Quantity != 4 {
+		t.Fatalf("raise: %v %+v", err, got)
+	}
+	got, err = s.ChangeDispatchedLines(ctx, r.ID, map[string]int{"Swa/Pin": 0}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -641,7 +644,7 @@ func TestReduceDispatchedLines(t *testing.T) {
 	if _, err := s.SetWarehouseCosts(ctx, r.ID, theseus.Costs{}, &now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.ReduceDispatchedLines(ctx, r.ID, map[string]int{"Pri/Card": 1}, ""); !errors.Is(err, ErrAlreadyMailed) {
+	if _, err := s.ChangeDispatchedLines(ctx, r.ID, map[string]int{"Pri/Card": 1}, ""); !errors.Is(err, ErrAlreadyMailed) {
 		t.Fatalf("mailed request changed: %v", err)
 	}
 }

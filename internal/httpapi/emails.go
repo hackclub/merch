@@ -18,7 +18,7 @@ type Mailer interface {
 }
 
 // emailRequest tells a requester what happened to their request: kind is
-// received, dispatched, rejected or changed. Each kind goes out once per request (the
+// received, dispatched or rejected (changed goes through sendRequestEmail). Each kind goes out once per request (the
 // idempotency key), and a failure is logged without undoing the action. Every
 // email is saved word for word in sent_emails (logEmail), even with no mailer
 // configured, so audits can read what people were told. waiting names the
@@ -35,10 +35,17 @@ func (s *server) emailRequest(r *http.Request, req *store.Request, kind string, 
 		e = shippedEmail(req, s.Config.BaseURL, s.Config.TheseusBaseURL, waiting)
 	case "rejected":
 		e = rejectedEmail(req, s.Config.BaseURL)
-	case "changed":
-		e = changedEmail(req, s.Config.BaseURL, s.Config.TheseusBaseURL)
 	}
-	e.IdempotencyKey = s.Config.TheseusOrderTag + "-request-" + strconv.FormatInt(req.ID, 10) + "-" + kind
+	s.sendRequestEmail(r, req, kind, kind, e)
+}
+
+// sendRequestEmail sends and logs one request email; key makes its idempotency
+// key unique (the kind, for emails that go out once per request).
+func (s *server) sendRequestEmail(r *http.Request, req *store.Request, kind, key string, e loops.Email) {
+	if req.UserEmail == "" {
+		return
+	}
+	e.IdempotencyKey = s.Config.TheseusOrderTag + "-request-" + strconv.FormatInt(req.ID, 10) + "-" + key
 	if s.Mailer == nil {
 		s.logEmail(r, req, kind, e, "unsent", "")
 		return
@@ -177,27 +184,37 @@ func shippedEmail(req *store.Request, baseURL, mailURL string, waiting []string)
 	}
 }
 
-// changedEmail tells a requester we cut what their dispatched request ships
-// before the warehouse mailed it (adminReduceLines): each line that ships less
-// than they asked for, the note saying why, and what's in the box now.
-func changedEmail(req *store.Request, baseURL, mailURL string) loops.Email {
+// lineChange is one line adminChangeLines changed: what was asked for, and
+// what it shipped before and after.
+type lineChange struct {
+	Name            string
+	Asked, From, To int
+}
+
+// changedEmail tells a requester what one change to their dispatched request
+// did before the warehouse mailed it (adminChangeLines): only the lines it
+// changed, the note saying why, and what's in the box now.
+func changedEmail(req *store.Request, changes []lineChange, note, baseURL, mailURL string) loops.Email {
 	var b strings.Builder
 	var shipped []store.RequestLine
-	var changed []string
 	for _, l := range req.Lines {
 		if l.Quantity > 0 {
 			shipped = append(shipped, l)
 		}
+	}
+	lines := make([]string, len(changes))
+	for i, c := range changes {
 		switch {
-		case l.RequestedQuantity == nil || *l.RequestedQuantity <= l.Quantity:
-		case l.Quantity == 0:
-			changed = append(changed, fmt.Sprintf("- %s: you asked for %d, we're not sending any this time", lineName(l), *l.RequestedQuantity))
+		case c.To > c.From:
+			lines[i] = fmt.Sprintf("- %s: we're sending %d after all, not %d", c.Name, c.To, c.From)
+		case c.To == 0:
+			lines[i] = fmt.Sprintf("- %s: you asked for %d, we're not sending any this time", c.Name, c.Asked)
 		default:
-			changed = append(changed, fmt.Sprintf("- %s: you asked for %d, we're sending %d", lineName(l), *l.RequestedQuantity, l.Quantity))
+			lines[i] = fmt.Sprintf("- %s: you asked for %d, we're sending %d", c.Name, c.Asked, c.To)
 		}
 	}
-	fmt.Fprintf(&b, "%s\n\nWe had to change request #%d before our warehouse mailed it:\n\n%s", greeting(req), req.ID, strings.Join(changed, "\n"))
-	if note := strings.TrimSpace(req.AdminNote); note != "" {
+	fmt.Fprintf(&b, "%s\n\nWe changed request #%d before our warehouse mailed it:\n\n%s", greeting(req), req.ID, strings.Join(lines, "\n"))
+	if note = strings.TrimSpace(note); note != "" {
 		fmt.Fprintf(&b, "\n\nA note from Hack Club:\n\n%s", note)
 	}
 	fmt.Fprintf(&b, "\n\nThe rest of your request hasn't changed. What's in the box now:\n\n%s\n\nIt's going to %s.", lineList(shipped), place(req.Address))
@@ -209,7 +226,7 @@ func changedEmail(req *store.Request, baseURL, mailURL string) loops.Email {
 	return loops.Email{
 		To:      req.UserEmail,
 		Subject: fmt.Sprintf("We changed your Hack Club swag request #%d", req.ID),
-		Preview: fmt.Sprintf("We had to change request #%d before it was mailed.", req.ID),
+		Preview: fmt.Sprintf("We changed request #%d before it was mailed.", req.ID),
 		Body:    b.String(),
 	}
 }
