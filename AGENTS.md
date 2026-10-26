@@ -380,10 +380,15 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   tab) take requests past stock. For every other item, a new request can take only what's left:
   the warehouse's `in_stock` less what open (`awaiting_payment`, `pending`) requests hold
   (`Store.HeldQuantities`). Don't subtract dispatched requests too: `in_stock` is Zenventory's
-  free stock, which already leaves out what its open orders have set aside. On 2026-10-26 it
-  read 63 pins with 190 more set aside for unmailed orders; counting those again showed pins
-  out of stock and got 21 orders cut by mistake (free stock went 58 → 125 as the cuts released
-  them). An order waiting at the warehouse isn't proof it's short of anything. `swag.Validate` refuses the rest ("out of stock: only 2 Hack Club
+  `sellable` stock (matching `agh_fulfillment_zenventory.inventory.in_stock`), which Zenventory
+  deducts as soon as an order is placed (`order_placed = true` sets `allocatedQuantity =
+  pickedQuantity = orderQuantity`; all 68 open placed orders in `customer_orders`, 15,194 of
+  15,194 units, are already deducted, and only unplaced drafts have `allocatedQuantity = 0`). On
+  2026-10-26 it read 63 pins after already deducting 130 on 28 open orders (plus 60 on 16 orders
+  mailed that day before `refresh` set `mailed_at`, 190 in `merch`); counting unmailed requests
+  again showed pins out of stock and got 21 orders cut by mistake (free stock went 58 → 125 as
+  the cuts released 67 pins, then 78 when 47 were restored). An order waiting at the warehouse
+  isn't proof it's short of anything. `swag.Validate` refuses the rest ("out of stock: only 2 Hack Club
   enamel pin left", logged as `request_refused`), and the shop says "Out of stock." / "Only 2
   left." and hides Add. A SKU the warehouse doesn't list counts as out of stock; if the warehouse
   can't be reached, stock isn't checked. Since 2026-10-20 only the Haven postcard and the

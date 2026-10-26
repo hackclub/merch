@@ -362,8 +362,8 @@ type UsageCheck func(prior map[int64]int) error
 
 // HeldQuantities is how many of each SKU open requests (awaiting payment or
 // pending) will take from the warehouse once they ship. Dispatched requests
-// aren't counted: the warehouse's in_stock (Zenventory's) already leaves out
-// what its open orders have set aside.
+// aren't counted: the warehouse's in_stock (Zenventory's sellable) already
+// deducts placed orders on creation, not when they're mailed.
 func (s *Store) HeldQuantities(ctx context.Context) (map[string]int, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT ri.sku, sum(ri.quantity)::int FROM swag_request_items ri
