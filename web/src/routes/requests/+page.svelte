@@ -3,7 +3,7 @@
 	import { api, ApiError, formatCents, statusLabel } from '$lib/api';
 	import { purposeLabel } from '$lib/purpose';
 	import { arrivalText } from '$lib/shipping';
-	import { customsInvoiceURL, lineText } from '$lib/ship';
+	import { customsInvoiceURL, lineText, packageURL } from '$lib/ship';
 	import { paidNotice, payShipping, type CardForm } from '$lib/payment';
 	import CardField from '$lib/CardField.svelte';
 	import Haul3D from '$lib/Haul3D.svelte';
@@ -99,6 +99,9 @@
 				{#if arrivalText(r.estimate)}<p>{arrivalText(r.estimate)}, by {r.estimate?.service}.</p>{/if}
 				{#if r.mailed_at}<p>Mailed {new Date(r.mailed_at).toLocaleDateString()}</p>{/if}
 				{#if r.tracking_number}<p>Tracking: {r.carrier} {r.tracking_number}</p>{/if}
+				{#if packageURL(r)}
+					<p><a href={packageURL(r)} target="_blank" rel="external noopener" data-track="package_link">Follow it on mail.hackclub.com</a> <span class="muted">· tracking shows up there once it's mailed</span></p>
+				{/if}
 				{#if customsInvoiceURL(r)}
 					<p><a href={customsInvoiceURL(r)} target="_blank" rel="external noopener" data-track="customs-invoice">Customs invoice (PDF)</a> <span class="muted">· shows customs this is a gift, at what it cost Hack Club</span></p>
 				{/if}

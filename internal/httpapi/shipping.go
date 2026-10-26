@@ -217,6 +217,24 @@ func (s *server) waitsForRestock(ctx context.Context, lines []swag.Line, cat map
 	return false
 }
 
+// backorderedSKUs lists the shipped SKUs the warehouse is short of but has
+// more on order for (swag.Backordered), checked before the order is placed so
+// it doesn't count against itself. Without the warehouse, none are.
+func (s *server) backorderedSKUs(ctx context.Context, lines []swag.Shipped) map[string]bool {
+	skus, err := s.cachedSKUs(ctx)
+	if err != nil {
+		s.Log.Error("warehouse sku lookup failed", "err", err)
+		return nil
+	}
+	out := map[string]bool{}
+	for _, l := range lines {
+		if st := theseus.StockFor(skus, l.SKU); l.Quantity > 0 && swag.Backordered(l.Quantity, st.InStock, st.Inbound) {
+			out[l.SKU] = true
+		}
+	}
+	return out
+}
+
 // skuStock is one SKU's warehouse stock, for the shop's item list. InStock is
 // what's left once open requests ship.
 type skuStock struct {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { customsInvoiceURL, lineText, shipBody } from './ship';
+import { customsInvoiceURL, lineText, packageURL, shipBody } from './ship';
 
 const lines = [
 	{ item_id: 1, sku: 'Sti/A', name: 'Sticker', quantity: 3 },
@@ -36,5 +36,15 @@ describe('customsInvoiceURL', () => {
 	it('has none in the US, before paying, or once closed', () => {
 		expect(customsInvoiceURL({ ...r, address: { country: 'US' } })).toBeNull();
 		for (const status of ['awaiting_payment', 'rejected', 'cancelled'] as const) expect(customsInvoiceURL({ ...r, status })).toBeNull();
+	});
+});
+
+describe('packageURL', () => {
+	it("links a shipped request's public page on mail.hackclub.com", () => {
+		expect(packageURL({ status: 'dispatched', theseus_order_id: 'pkg!abc123' })).toBe('https://mail.hackclub.com/packages/pkg!abc123');
+	});
+	it('has no link before it ships or without a warehouse order', () => {
+		expect(packageURL({ status: 'pending', theseus_order_id: '' })).toBeNull();
+		expect(packageURL({ status: 'dispatched', theseus_order_id: '' })).toBeNull();
 	});
 });

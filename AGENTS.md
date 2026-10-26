@@ -805,7 +805,13 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   transactional template (`LOOPS_TRANSACTIONAL_ID`) whose variables are `subject_line`,
   `preview_text` and `body_text` (plain text; the wording is in `emails.go`). Three emails:
   `received` when the request reaches `pending` (on submit in the US; abroad, once the postage is
-  paid), `dispatched` when an admin ships it, and `rejected` with the admin's reason. The
+  paid), `dispatched` when an admin ships it, and `rejected` with the admin's reason.
+  merch sends no email when the package is mailed: mail.hackclub.com (Theseus) does ("Tracking info
+  now available", with the tracking number) to the order's `recipient_email`, the requester. So
+  `dispatched` says that email is coming, links the public package page
+  (`mail.hackclub.com/packages/<theseus id>`, also on My requests), and, when a line is backordered
+  at dispatch (`swag.Backordered` on the cached SKUs), says it ships once that item arrives
+  instead of "a business day or two". The
   idempotency key `<THESEUS_ORDER_TAG>-request-<id>-<kind>` sends each one once. A failed send is
   logged (`email_failed`) and never blocks the action. Without `LOOPS_API_KEY`, no emails. The
   key lives only in the shared `.env` and Orchard.

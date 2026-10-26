@@ -18,6 +18,13 @@ export function shipBody(lines: RequestLine[], edits: Record<string, number>, no
 }
 
 /** The customs invoice PDF of a paid request going abroad (the gift's contents and values), or null. */
+// packageURL is a shipped request's public page on mail.hackclub.com: its
+// status, then the tracking number once the warehouse mails it.
+export function packageURL(r: Pick<SwagRequest, 'status' | 'theseus_order_id'>): string | null {
+	if (r.status !== 'dispatched' || !r.theseus_order_id) return null;
+	return `https://mail.hackclub.com/packages/${r.theseus_order_id}`;
+}
+
 export function customsInvoiceURL(r: Pick<SwagRequest, 'id' | 'status'> & { address: Pick<SwagRequest['address'], 'country'> }): string | null {
 	if (r.address.country === 'US' || (r.status !== 'pending' && r.status !== 'dispatched')) return null;
 	return `/api/requests/${r.id}/customs-invoice`;

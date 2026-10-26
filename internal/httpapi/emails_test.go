@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -74,17 +75,17 @@ func TestReceivedEmailText(t *testing.T) {
 
 func TestShippedAndRejectedEmailText(t *testing.T) {
 	req := &store.Request{ID: 12, UserEmail: "orpheus@hackclub.com", Address: usAddr, Lines: []store.RequestLine{{Name: "Sticker", Quantity: 10}}}
-	e := shippedEmail(req, "https://merch.hackclub.com")
+	e := shippedEmail(req, "https://merch.hackclub.com", "https://mail.hackclub.com", nil)
 	mustContain(t, "shipped subject", e.Subject, "on its way")
 	mustContain(t, "shipped body", e.Body, "10 × Sticker", "tracking")
 
 	req.AdminNote = "Out of the red ones, so we sent blue."
-	mustContain(t, "shipped body with note", shippedEmail(req, "https://x").Body, "Out of the red ones")
+	mustContain(t, "shipped body with note", shippedEmail(req, "https://x", "https://m", nil).Body, "Out of the red ones")
 
 	asked, none := 5, 0
 	req.AdminNote = ""
 	req.Lines = append(req.Lines, store.RequestLine{Name: "Poster", RequestedQuantity: &asked, Quantity: none})
-	body := shippedEmail(req, "https://x").Body
+	body := shippedEmail(req, "https://x", "https://m", nil).Body
 	mustContain(t, "shipped body, line left out", body, "We changed your request before it shipped:\n", "Poster: you asked for 5, we left it out of this package")
 	if strings.Contains(body, "note below") {
 		t.Errorf("points to a note that isn't there:\n%s", body)
@@ -99,6 +100,70 @@ func TestShippedAndRejectedEmailText(t *testing.T) {
 	}
 	req.AdminNote = "We're out of stickers."
 	mustContain(t, "rejected body", rejectedEmail(req, "https://x").Body, "We're out of stickers.")
+}
+
+// The approval email says a tracking email comes from mail.hackclub.com once
+// it's mailed, links the package's public page there, and says when it will
+// leave: soon, or once a backordered item reaches the warehouse.
+func TestShippedEmailTracking(t *testing.T) {
+	req := &store.Request{ID: 502, UserEmail: "orpheus@hackclub.com", TheseusOrderID: "pkg!abc123", Address: usAddr,
+		Lines: []store.RequestLine{{Name: "Haven poster", Quantity: 2}, {Name: "Haven postcard", Quantity: 10}, {Name: "Sticker", Quantity: 5}}}
+
+	body := shippedEmail(req, "https://merch.hackclub.com", "https://mail.hackclub.com", nil).Body
+	mustContain(t, "in stock", body,
+		"It usually leaves within a business day or two.",
+		"Tracking: when it's mailed, you'll get an email from mail.hackclub.com with the tracking number. Until then, you can follow it at https://mail.hackclub.com/packages/pkg!abc123",
+		"https://merch.hackclub.com/requests")
+	if strings.Contains(body, "Once it's mailed, its tracking number shows up") {
+		t.Errorf("still has the old tracking sentence:\n%s", body)
+	}
+
+	body = shippedEmail(req, "https://x", "https://m", []string{"Haven poster"}).Body
+	mustContain(t, "one backordered", body, "The Haven poster in it is still on its way to the warehouse, so your package ships as soon as it arrives.")
+	if strings.Contains(body, "business day or two") {
+		t.Errorf("backordered email promises a business day or two:\n%s", body)
+	}
+	body = shippedEmail(req, "https://x", "https://m", []string{"Haven poster", "Haven postcard"}).Body
+	mustContain(t, "two backordered", body, "The Haven poster and Haven postcard in it are still on their way to the warehouse, so your package ships as soon as they arrive.")
+
+	req.TheseusOrderID = ""
+	body = shippedEmail(req, "https://x", "https://m", nil).Body
+	mustContain(t, "no warehouse id", body, "Tracking: when it's mailed, you'll get an email from mail.hackclub.com with the tracking number. See all your requests at https://x/requests.")
+	if strings.Contains(body, "/packages/") {
+		t.Errorf("links a package page with no id:\n%s", body)
+	}
+}
+
+// Shipping a request that waits on a restock says so in the approval email.
+func TestShippedEmailSaysBackordered(t *testing.T) {
+	h, m := newMailHarness(t)
+	it, err := h.store.CreateItem(context.Background(), swag.Item{SKU: "Pri/Hav/4x6/1st", Name: "Haven Postcard", Visible: true, MaxPerRequest: 3, AllowBackorder: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r store.Request
+	if code := h.do(h.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it.ID, Quantity: 2}}}, &r); code != 201 {
+		t.Fatalf("create = %d", code)
+	}
+	if code := h.do(h.client(adminEmail), "POST", fmt.Sprintf("/api/admin/requests/%d/dispatch", r.ID), map[string]any{}, nil); code != 200 {
+		t.Fatalf("dispatch = %d", code)
+	}
+	got := m.emails()
+	mustContain(t, "dispatched", got[len(got)-1].Body, "still on its way to the warehouse", "mail.hackclub.com/packages/")
+
+	// Without the warehouse's stock, it says what usually happens.
+	h2, m2 := newMailHarness(t)
+	h2.wh.skuFail = errors.New("warehouse down")
+	it2 := h2.mkItem("Pri/Hav/4x6/1st", true)
+	var r2 store.Request
+	if code := h2.do(h2.client(userEmail), "POST", "/api/requests", map[string]any{"purpose": "personal", "address": usAddr, "lines": []swag.Line{{ItemID: it2.ID, Quantity: 2}}}, &r2); code != 201 {
+		t.Fatalf("create without warehouse = %d", code)
+	}
+	if code := h2.do(h2.client(adminEmail), "POST", fmt.Sprintf("/api/admin/requests/%d/dispatch", r2.ID), map[string]any{}, nil); code != 200 {
+		t.Fatalf("dispatch without warehouse stock = %d", code)
+	}
+	got = m2.emails()
+	mustContain(t, "dispatched without stock", got[len(got)-1].Body, "It usually leaves within a business day or two.")
 }
 
 func TestRequestEmails(t *testing.T) {

@@ -21,8 +21,9 @@ type Mailer interface {
 // received, dispatched or rejected. Each kind goes out once per request (the
 // idempotency key), and a failure is logged without undoing the action. Every
 // email is saved word for word in sent_emails (logEmail), even with no mailer
-// configured, so audits can read what people were told.
-func (s *server) emailRequest(r *http.Request, req *store.Request, kind string) {
+// configured, so audits can read what people were told. waiting names the
+// dispatched lines still on their way to the warehouse (backordered).
+func (s *server) emailRequest(r *http.Request, req *store.Request, kind string, waiting ...string) {
 	if req.UserEmail == "" {
 		return
 	}
@@ -31,7 +32,7 @@ func (s *server) emailRequest(r *http.Request, req *store.Request, kind string) 
 	case "received":
 		e = receivedEmail(req, s.Config.BaseURL)
 	case "dispatched":
-		e = shippedEmail(req, s.Config.BaseURL)
+		e = shippedEmail(req, s.Config.BaseURL, s.Config.TheseusBaseURL, waiting)
 	case "rejected":
 		e = rejectedEmail(req, s.Config.BaseURL)
 	}
@@ -114,7 +115,11 @@ func receivedEmail(req *store.Request, baseURL string) loops.Email {
 	}
 }
 
-func shippedEmail(req *store.Request, baseURL string) loops.Email {
+// shippedEmail is the approval email. mail.hackclub.com (Theseus) sends its own
+// email with the tracking number once the warehouse mails the package, so this
+// one says that's coming and links the package's public page there. waiting
+// names the lines still on their way to the warehouse, which hold the package.
+func shippedEmail(req *store.Request, baseURL, mailURL string, waiting []string) loops.Email {
 	var b strings.Builder
 	var shipped []store.RequestLine
 	var changed []string
@@ -132,8 +137,16 @@ func shippedEmail(req *store.Request, baseURL string) loops.Email {
 			changed = append(changed, fmt.Sprintf("- %s: you asked for %d, we sent %d", lineName(l), *l.RequestedQuantity, l.Quantity))
 		}
 	}
-	fmt.Fprintf(&b, "%s\n\nGood news: we approved request #%d and sent it to our warehouse. It usually leaves within a business day or two.\n\nWhat's in the box:\n\n%s",
-		greeting(req), req.ID, lineList(shipped))
+	leaves := "It usually leaves within a business day or two."
+	switch len(waiting) {
+	case 0:
+	case 1:
+		leaves = fmt.Sprintf("The %s in it is still on its way to the warehouse, so your package ships as soon as it arrives.", waiting[0])
+	default:
+		leaves = fmt.Sprintf("The %s in it are still on their way to the warehouse, so your package ships as soon as they arrive.", andList(waiting))
+	}
+	fmt.Fprintf(&b, "%s\n\nGood news: we approved request #%d and sent it to our warehouse. %s\n\nWhat's in the box:\n\n%s",
+		greeting(req), req.ID, leaves, lineList(shipped))
 	note := strings.TrimSpace(req.AdminNote)
 	if len(changed) > 0 {
 		why := ""
@@ -149,7 +162,11 @@ func shippedEmail(req *store.Request, baseURL string) loops.Email {
 	if note != "" {
 		fmt.Fprintf(&b, "\n\nA note from Hack Club:\n\n%s", note)
 	}
-	fmt.Fprintf(&b, "\n\nIt's going to %s. Once it's mailed, its tracking number shows up at %s/requests.\n\nHack Club", place(req.Address), baseURL)
+	fmt.Fprintf(&b, "\n\nIt's going to %s.\n\nTracking: when it's mailed, you'll get an email from mail.hackclub.com with the tracking number.", place(req.Address))
+	if req.TheseusOrderID != "" {
+		fmt.Fprintf(&b, " Until then, you can follow it at %s/packages/%s.", mailURL, req.TheseusOrderID)
+	}
+	fmt.Fprintf(&b, " See all your requests at %s/requests.\n\nHack Club", baseURL)
 	return loops.Email{
 		To:      req.UserEmail,
 		Subject: "Your Hack Club swag is on its way",
@@ -175,6 +192,14 @@ func rejectedEmail(req *store.Request, baseURL string) loops.Email {
 		Preview: fmt.Sprintf("Request #%d won't ship.", req.ID),
 		Body:    b.String(),
 	}
+}
+
+// andList joins names as "a", "a and b", "a, b and c".
+func andList(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
 
 func greeting(req *store.Request) string {

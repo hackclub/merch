@@ -187,6 +187,7 @@ func newHarness(t *testing.T, opts ...func(*Deps)) *harness {
 		ExtraBaseURLs:        []string{"http://porygon:5173"},
 		AdminEmails:          []string{adminEmail},
 		TheseusOrderTag:      "merch",
+		TheseusBaseURL:       "https://mail.hackclub.com",
 		StripePublishableKey: "pk_test_x",
 	}
 	fs := &fakeStripe{}

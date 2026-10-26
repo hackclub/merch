@@ -939,6 +939,7 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 	for _, c := range swag.Shipment(lines, shipsWith) {
 		contents = append(contents, theseus.Content{SKU: c.SKU, Quantity: c.Quantity})
 	}
+	backordered := s.backorderedSKUs(r.Context(), lines)
 	a := req.Address
 	order, err := s.Warehouse.CreateOrder(r.Context(), theseus.OrderInput{
 		RecipientEmail: req.UserEmail,
@@ -973,7 +974,13 @@ func (s *server) adminDispatch(w http.ResponseWriter, r *http.Request, v viewer)
 	}
 	changed := slices.ContainsFunc(req.Lines, func(l store.RequestLine) bool { return l.RequestedQuantity != nil })
 	s.trackRequest(r, v, "request_dispatched", req, map[string]any{"changed": changed, "has_note": body.Note != "", "warning": warning != ""})
-	s.emailRequest(r, req, "dispatched")
+	var waiting []string
+	for _, l := range req.Lines {
+		if l.Quantity > 0 && backordered[l.SKU] {
+			waiting = append(waiting, lineName(l))
+		}
+	}
+	s.emailRequest(r, req, "dispatched", waiting...)
 	out := []requestView{s.view(req)}
 	if err := s.withEstimates(r.Context(), out, true); err != nil {
 		s.Log.Error("pricing shipped request failed", "request_id", id, "err", err)
