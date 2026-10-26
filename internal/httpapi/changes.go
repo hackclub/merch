@@ -5,17 +5,21 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/hackclub/merch/internal/store"
 )
 
 // adminChangeLines records that a dispatched request the warehouse hasn't
 // mailed yet ships a different quantity of some lines: down to 0, or back up to
-// what was asked for (undoing an earlier cut). mail.hackclub.com has no API to
-// change an order, so the admin edits the warehouse order in its back office
-// first (ships-with SKUs included); this keeps the request in step and emails
-// the requester what this change did. Card-paid requests are refused: their
-// postage was priced on what they ship, and this makes no refund or charge.
+// what was asked for (undoing an earlier cut). It never touches the warehouse
+// order, and nobody here edits that order either (mail.hackclub.com's back
+// office, Zenventory): AGH may already have picked it, and on 2026-10-26 such
+// edits shipped 10 orders with the old contents and put 5 on hold. AGH changes
+// it when HQ asks, and only once AGH confirms is it recorded here, naming who
+// confirmed (warehouse_confirmed_by, kept in the internal note). This keeps the
+// request in step and emails the requester what this change did. Card-paid requests are refused: their postage was priced on
+// what they ship, and this makes no refund or charge.
 func (s *server) adminChangeLines(w http.ResponseWriter, r *http.Request, v viewer) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -26,11 +30,13 @@ func (s *server) adminChangeLines(w http.ResponseWriter, r *http.Request, v view
 			SKU      string `json:"sku"`
 			Quantity int    `json:"quantity"`
 		} `json:"lines"`
-		Note string `json:"note"`
+		Note        string `json:"note"`
+		ConfirmedBy string `json:"warehouse_confirmed_by"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
+	confirmedBy := strings.TrimSpace(body.ConfirmedBy)
 	if len(body.Note) > 1000 {
 		writeErr(w, http.StatusUnprocessableEntity, "note is too long")
 		return
@@ -52,6 +58,10 @@ func (s *server) adminChangeLines(w http.ResponseWriter, r *http.Request, v view
 		return
 	case req.PaidAt != nil:
 		writeErr(w, http.StatusConflict, "this request's postage was paid by card; cutting it would owe a refund, which this doesn't make")
+		return
+	}
+	if confirmedBy == "" || len(confirmedBy) > 200 {
+		writeErr(w, http.StatusUnprocessableEntity, "warehouse_confirmed_by is required (up to 200 characters): who confirmed AGH already changed this order. Never edit an order the warehouse has yourself; send the change to Zach, and Rebeka asks AGH to hold and change it")
 		return
 	}
 	quantities := map[string]int{}
@@ -109,6 +119,13 @@ func (s *server) adminChangeLines(w http.ResponseWriter, r *http.Request, v view
 	} else if err != nil {
 		s.respondRequest(w, nil, err)
 		return
+	}
+	by := v.user.Email
+	if v.key != nil {
+		by = v.key.Name
+	}
+	if noted, err := s.Store.AppendInternalNote(r.Context(), id, fmt.Sprintf("Warehouse change confirmed by %s (recorded by %s, %s UTC).", confirmedBy, by, s.Now().UTC().Format("2006-01-02 15:04"))); err == nil {
+		req = noted
 	}
 	s.trackRequest(r, v, "request_changed", req, map[string]any{"lowered": lowered, "raised": raised, "has_note": body.Note != ""})
 	// Each change gets its own email: the first keeps the plain "-changed" key.

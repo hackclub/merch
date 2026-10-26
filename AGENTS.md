@@ -393,12 +393,17 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   left." and hides Add. A SKU the warehouse doesn't list counts as out of stock; if the warehouse
   can't be reached, stock isn't checked. Since 2026-10-20 only the Haven postcard and the
   Haven poster can be backordered (Zach: not the pins). Admin shipping doesn't check stock.
-  To change what a dispatched, unmailed request ships, edit its warehouse order in
-  mail.hackclub.com's back office (`/back_office/warehouse/orders/<id>/edit`; its API can't), then
-  record it on the request: `POST /api/admin/requests/{id}/lines` (or `/api/agent/…`), each line
-  between 0 and what was asked for, `requested_quantity` kept, the note added to `admin_note`, and a
-  `changed` email listing only what that call changed. Card-paid requests are refused (they'd be
-  owed a refund or a charge).
+  **Never edit or combine an order the warehouse has** (mail.hackclub.com's back office,
+  Zenventory's web or API): AGH places, allocates and picks it in Zenventory, which never sees
+  the edit. On 2026-10-26 those back-office cuts shipped 10 orders with the old contents and put 5
+  on hold, AGH's inventory went off, and AGH asked us never to edit an order in progress again
+  (desk `work/2026-10-26-edited-orders-cause`, `work/2026-10-26-agh-edited-orders-changes`).
+  To change what a dispatched, unmailed request ships, ask Zach; Rebeka asks AGH to hold and
+  change it. Only once AGH confirms, record it on the request: `POST /api/admin/requests/{id}/lines`
+  (or `/api/agent/…`) with `warehouse_confirmed_by` (who confirmed; required, kept in
+  `internal_note`), each line between 0 and what was asked for, `requested_quantity` kept, the note
+  added to `admin_note`, and a `changed` email listing only what that call changed. Card-paid
+  requests are refused (they'd be owed a refund or a charge).
 - **International fee:** an international request pays its typical postage off the rate card,
   to the cent, the same
   number as the cost table's postage (`swag.InitialStatus`). The admin setting `international_shipping_fee_cents` is only the fallback
@@ -740,8 +745,9 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
 - `POST …/notes` appends a signed paragraph to `internal_note`; it never replaces it.
   `POST …/dispatch` and `…/reject` are the admin handlers, so they ship real mail and send
   the same emails. Uncertain cases get a `Needs a human:` note and stay `pending`.
-  `POST …/lines` is the admin change to a dispatched, unmailed request (see "Backorders"); it
-  doesn't touch the warehouse order.
+  `POST …/lines` records a change AGH has already made and confirmed to a dispatched, unmailed
+  request (see "Backorders"); it requires `warehouse_confirmed_by` and never touches the
+  warehouse order. Agents never edit warehouse orders themselves.
   `GET /api/agent/print-requests` lists staff print requests read-only, so the agent can
   tell Zach about new ones and remind him when one sits unanswered; only admins act on them.
   `POST …/refresh` pulls tracking from mail.hackclub.com (the admin refresh handler); nothing

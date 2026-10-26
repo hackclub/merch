@@ -113,22 +113,35 @@ packages, and you can't undo it.** The requester gets an email that it shipped.
 
 Records that a `dispatched` request the warehouse hasn't mailed yet (no `mailed_at`, no
 tracking) ships a different quantity of some lines: less, or back up to what was asked for to
-undo an earlier cut. An order waiting at the warehouse isn't proof it's short of anything:
-`in_stock` already leaves out what open orders have set aside. **It doesn't change the warehouse order:** mail.hackclub.com has no API for that, so a
-person edits the order in its back office first (ships-with SKUs too). Only do this when an
-admin has made that edit, or told you to.
+undo an earlier cut. **It doesn't change the warehouse order, and neither may you.** Never edit
+or combine an order the warehouse has, through mail.hackclub.com's back office, Zenventory or any
+other door: the warehouse (AGH) may already have picked and packed it, and an edit it doesn't
+know about ships the wrong box. On 2026-10-26 an agent cut pins on 21 such orders; 10 shipped
+with the old contents, 5 were put on hold and AGH's inventory was thrown off. AGH asked us never
+to do it again.
+
+To change a dispatched order, write a `Needs a human:` note (`POST …/notes`) saying what should
+change and why, and tell Zach. HQ asks AGH to hold and change the order. Call this only after
+AGH has confirmed the change, with `warehouse_confirmed_by` naming who confirmed it.
+
+Running low isn't a reason to cut: `in_stock` from the warehouse already leaves out what open
+orders have set aside, so a pile of dispatched orders waiting at the warehouse is not a
+shortage.
 
 ```json
-{"lines": [{"sku": "Swa/HC/Pin/1st", "quantity": 1}], "note": "Our enamel pins ran out. More are due around Nov 11."}
+{"lines": [{"sku": "Swa/HC/Pin/1st", "quantity": 1}], "note": "Our enamel pins ran out. More are due around Nov 11.", "warehouse_confirmed_by": "AGH, by email to HQ on Nov 3"}
 ```
 
+- `warehouse_confirmed_by` is required (up to 200 characters): who confirmed AGH made the
+  change, and how. It's added to the request's `internal_note`. Without it you get a 422 and
+  nothing changes.
 - Each line goes from 0 up to what was asked for. `requested_quantity` keeps what they asked for.
 - `note` is added to the requester's note as a new paragraph and goes in the email.
 - The requester gets a `changed` email listing only the lines this call changed ("you asked for
   5, we're sending 1", "we're not sending any this time", or "we're sending 5 after all, not 1")
   and what's in the box now. Each call sends one.
 - 409 if the request isn't dispatched, was already mailed, or was paid by card (cutting it
-  would owe a refund or charge this doesn't make). 422 if nothing would change, a line would go
+  would owe a refund or charge this doesn't make). 422 if `warehouse_confirmed_by` is missing, nothing would change, a line would go
 past what was asked for, or nothing would be left.
 
 ### `POST /api/agent/requests/{id}/reject`
