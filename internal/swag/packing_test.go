@@ -49,8 +49,8 @@ func TestPack(t *testing.T) {
 		{"stickers ride along with a poster", []Line{{ItemID: 1, Quantity: 2}, {ItemID: 3, Quantity: 10}}, true, "13x18 StayFlat", nil},
 		{"25 stickers go as a letter", []Line{{ItemID: 3, Quantity: 25}}, false, "Envelope", nil},
 		{"35 stickers go as a parcel, like AGH sends them", []Line{{ItemID: 3, Quantity: 35}}, false, "Bubble mailer", nil},
-		{"a poster and a stack of postcards share a box", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 2, Quantity: 50}}, false, "18x12x6 box", nil},
-		{"a poster lies flat under a magazine in a box", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 4, Quantity: 1}}, false, "18x12x6 box", nil},
+		{"a poster and postcards share a print mailer", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 2, Quantity: 50}}, false, "13x18 print mailer", nil},
+		{"a poster and magazine share a print mailer", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 4, Quantity: 1}}, false, "13x18 print mailer", nil},
 		{"50 posters go in a box", []Line{{ItemID: 1, Quantity: 50}}, false, "18x12x6 box", nil},
 		{"a club's magazines go in a box", []Line{{ItemID: 4, Quantity: 25}}, false, "13x10x4 box", nil},
 		{"100 magazines fill the biggest box, under 70 lb", []Line{{ItemID: 4, Quantity: 100}}, false, "18x14x10 box", nil},
@@ -59,10 +59,10 @@ func TestPack(t *testing.T) {
 		{"five magazines are over 3 lb abroad", []Line{{ItemID: 4, Quantity: 5}}, true, "", ErrTooHeavy},
 		{"five magazines are fine in the US", []Line{{ItemID: 4, Quantity: 5}}, false, "Bubble mailer", nil},
 		{"45 mini-magazines make 3 lb", []Line{{ItemID: 5, Quantity: 45}}, true, "Bubble mailer", nil},
-		{"a few prints go in a StayFlat", []Line{{ItemID: 2, Quantity: 10}, {ItemID: 3, Quantity: 3}, {ItemID: 5, Quantity: 1}}, false, "9x12 StayFlat", nil},
+		{"small prints need no rigid mailer", []Line{{ItemID: 2, Quantity: 10}, {ItemID: 3, Quantity: 3}, {ItemID: 5, Quantity: 1}}, false, "Bubble mailer", nil},
 		{"three shirts share a mailer, like AGH sends them", []Line{{ItemID: 6, Quantity: 3, SKU: "Swa/Shirt/HC/M"}, {ItemID: 3, Quantity: 50}}, true, "Bubble mailer", nil},
-		{"a poster and a shirt share a box", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 6, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}, false, "18x12x6 box", nil},
-		{"a club kit with posters ships abroad in a box", []Line{{ItemID: 1, Quantity: 2}, {ItemID: 5, Quantity: 25}, {ItemID: 3, Quantity: 50}}, true, "18x12x6 box", nil},
+		{"a poster and a shirt share a print mailer", []Line{{ItemID: 1, Quantity: 1}, {ItemID: 6, Quantity: 1, SKU: "Swa/Shirt/HC/M"}}, false, "13x18 print mailer", nil},
+		{"a club kit with posters ships abroad in a print mailer", []Line{{ItemID: 1, Quantity: 2}, {ItemID: 5, Quantity: 25}, {ItemID: 3, Quantity: 50}}, true, "13x18 print mailer", nil},
 		{"50 mini-magazines don't", []Line{{ItemID: 5, Quantity: 50}}, true, "", ErrTooHeavy},
 		{"a trifold brochure ships folded, so it fits an envelope", []Line{{ItemID: 7, Quantity: 1}}, false, "Envelope", nil},
 	}
@@ -144,6 +144,33 @@ func TestPackUsesASizesWeight(t *testing.T) {
 	}
 }
 
+func TestPackPrintBundlesAndCompressedStickers(t *testing.T) {
+	cat := shopCatalog()
+	cat[9] = Item{ID: 9, SKU: "Pri/Fly/Test", Name: "Flyer", WidthIn: f(8.5), HeightIn: f(11), ThicknessIn: f(.004), WeightOz: f(.59)}
+	for _, tc := range []struct {
+		name    string
+		lines   []Line
+		want    string
+		maxTare float64
+	}{
+		{"poster with fifty stickers", []Line{{ItemID: 1, Quantity: 2}, {ItemID: 3, Quantity: 50}}, "13x18 StayFlat", 6},
+		{"prints with clothing", []Line{{ItemID: 1, Quantity: 6}, {ItemID: 6, SKU: "Swa/Shirt/HC/M", Quantity: 1}}, "13x18 print mailer", 1},
+		{"prints with books", []Line{{ItemID: 1, Quantity: 5}, {ItemID: 4, Quantity: 1}, {ItemID: 5, Quantity: 5}}, "13x18 print mailer", 1},
+		{"four shirts", []Line{{ItemID: 6, SKU: "Swa/Shirt/HC/M", Quantity: 4}}, "Bubble mailer", 1},
+		{"flat sheets and small stacks", []Line{{ItemID: 9, Quantity: 2}, {ItemID: 2, Quantity: 5}, {ItemID: 3, Quantity: 50}}, "9x12 StayFlat", 3.5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := Pack(tc.lines, cat, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Package.Name != tc.want || p.Package.TareOz > tc.maxTare {
+				t.Fatalf("got %+v, want %s with tare <= %g", p, tc.want, tc.maxTare)
+			}
+		})
+	}
+}
+
 func TestValidateRefusesWhatWontPack(t *testing.T) {
 	st := settings()
 	cat := shopCatalog()
@@ -169,12 +196,12 @@ func TestValidateRefusesWhatWontPack(t *testing.T) {
 // From 2026-10-17 it gave the contents alone: 26 people abroad were told "at
 // most 3 lb; this is about 2.2 lb" for swag in a 14.8 oz carton.
 func TestTooHeavySaysThePackedWeight(t *testing.T) {
-	lines := []Line{{ItemID: 1, Quantity: 1}, {ItemID: 4, Quantity: 3}, {ItemID: 2, Quantity: 10}}
+	lines := []Line{{ItemID: 1, Quantity: 1}, {ItemID: 4, Quantity: 5}, {ItemID: 2, Quantity: 10}}
 	_, err := Pack(lines, shopCatalog(), true)
 	if !errors.Is(err, ErrTooHeavy) {
 		t.Fatalf("err = %v, want ErrTooHeavy", err)
 	}
-	if want := "this is about 3.1 lb packed (2.2 lb of swag in a 14.8 oz 18x12x6 box)"; !strings.Contains(err.Error(), want) {
+	if want := "this is about 4.4 lb packed (3.5 lb of swag in a 14.8 oz 18x12x6 box)"; !strings.Contains(err.Error(), want) {
 		t.Fatalf("err = %q, want it to say %q", err, want)
 	}
 }
@@ -182,7 +209,7 @@ func TestTooHeavySaysThePackedWeight(t *testing.T) {
 // The refusal carries its numbers, so the shop can show how far over a request
 // is and what weighs the most without packing it again.
 func TestTooHeavyGivesItsWeights(t *testing.T) {
-	lines := []Line{{ItemID: 1, Quantity: 1}, {ItemID: 4, Quantity: 3}, {ItemID: 2, Quantity: 10}}
+	lines := []Line{{ItemID: 1, Quantity: 1}, {ItemID: 4, Quantity: 5}, {ItemID: 2, Quantity: 10}}
 	_, err := Pack(lines, shopCatalog(), true)
 	var th *TooHeavyError
 	if !errors.As(err, &th) {
@@ -199,7 +226,7 @@ func TestTooHeavyGivesItsWeights(t *testing.T) {
 		t.Fatalf("lines = %+v", th.Lines)
 	}
 	mag := th.Lines[0]
-	if mag.ItemID != 4 || mag.Name != "Magazine 2025" || mag.Quantity != 3 || math.Abs(mag.Oz-3*(10.3+6*4*0.014*PaperOzPerCubicInch)) > 0.001 {
+	if mag.ItemID != 4 || mag.Name != "Magazine 2025" || mag.Quantity != 5 || math.Abs(mag.Oz-5*(10.3+6*4*0.014*PaperOzPerCubicInch)) > 0.001 {
 		t.Errorf("heaviest = %+v", mag)
 	}
 	if th.Lines[1].ItemID != 2 || th.Lines[2].ItemID != 1 || math.Abs(th.Lines[2].Oz-1.2) > 1e-9 {

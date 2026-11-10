@@ -40,13 +40,12 @@ type Package struct {
 	// Piles reports whether contents can sit side by side. A StayFlat is one
 	// stack, poster on the bottom.
 	Piles bool `json:"-"`
-	// KeepsFlat marks rigid flat mailers (StayFlats), where big prints like
-	// posters ship on their own or with a few small things.
+	// KeepsFlat marks mailers that accept large prints without folding.
 	KeepsFlat bool `json:"-"`
 	// Boxed marks cartons: a big print lies flat on the bottom of one whose
-	// floor it fits, under everything else (AGH ships 50 posters, or posters
-	// with shirts and magazines, this way).
-	Boxed bool `json:"-"`
+	// floor it fits, under everything else (bulk prints and bulky mixed kits).
+	Boxed       bool `json:"-"`
+	PrintBundle bool `json:"-"` // expandable, single-stack mixed-print mailer
 }
 
 // cartonOz is a corrugated box's weight: Uline's 10x8x6 (S-4103) weighs
@@ -79,9 +78,14 @@ var Packages = []Package{
 	// S-11839 (#6, 13 x 18): rigid, for contents up to 1/4" thick.
 	{Name: "9x12 StayFlat", Class: ClassParcel, WidthIn: 9.25, HeightIn: 12, DepthIn: 0.25, MaxOz: 48, TareOz: 3.5, CostCents: 95, KeepsFlat: true},
 	{Name: "11x13 StayFlat", Class: ClassParcel, WidthIn: 10.5, HeightIn: 13.25, DepthIn: 0.25, MaxOz: 48, TareOz: 4.3, CostCents: 106, KeepsFlat: true},
-	{Name: "13x18 StayFlat", Class: ClassParcel, WidthIn: 12.5, HeightIn: 17.75, DepthIn: 0.25, MaxOz: 64, TareOz: 6.7, CostCents: 148, KeepsFlat: true},
+	{Name: "13x18 StayFlat", Class: ClassParcel, WidthIn: 12.5, HeightIn: 17.75, DepthIn: 0.25, MaxOz: 64, TareOz: 6, CostCents: 148, KeepsFlat: true},
 	// AGH's invoices don't give the bubble mailers' size; this is a standard #4.
-	{Name: "Bubble mailer", Class: ClassParcel, WidthIn: 9, HeightIn: 13.5, DepthIn: 1.5, MaxOz: 64, TareOz: 1, CostCents: 50, Piles: true},
+	{Name: "Bubble mailer", Class: ClassParcel, WidthIn: 9, HeightIn: 13.5, DepthIn: 2, MaxOz: 64, TareOz: 1, CostCents: 50, Piles: true},
+	// Mixed prints and clothing/books ship much lighter than an 18-inch
+	// carton. Model a single stack so bulk postcards, pins and plushies
+	// still use cartons. The one-ounce tare follows recorded mixed bundles;
+	// the warehouse does not report an exact mailer SKU for them.
+	{Name: "13x18 print mailer", Class: ClassParcel, WidthIn: 12.5, HeightIn: 17.75, DepthIn: 1.5, MaxOz: 64, TareOz: 1, CostCents: 148, KeepsFlat: true, PrintBundle: true},
 	{Name: "6x4x2 box mailer", Class: ClassParcel, WidthIn: 6, HeightIn: 4, DepthIn: 2, MaxOz: 160, TareOz: 2, CostCents: 71, Piles: true},
 	carton(8, 6, 6, 60),
 	carton(10, 8, 6, 70),
@@ -99,9 +103,8 @@ var (
 // Packing is how a request goes out: its package and weight.
 type Packing struct {
 	Package Package `json:"package"`
-	// WeightOz is what it really weighs, packaging included (for the 3 lb
-	// limit). ContentsOz leaves the packaging out, like the warehouse's own
-	// logged weights, which come from per-SKU weights (see EstimateShipping).
+	// WeightOz includes packaging (for the 3 lb limit and postage).
+	// ContentsOz leaves it out; warehouse label weights include packaging.
 	WeightOz   float64 `json:"weight_oz"`
 	ContentsOz float64 `json:"contents_oz"`
 	// UnknownWeight is set when some item has no weight and no paper size to
@@ -142,23 +145,25 @@ func (e *TooHeavyError) Unwrap() error { return ErrTooHeavy }
 
 // shape is one request line as a stack of identical things.
 type shape struct {
-	name    string
-	w, h, t float64 // inches; t is one unit's thickness
-	qty     int
-	oz      float64 // one unit
-	known   bool
+	name       string
+	w, h, t    float64 // inches; t is one unit's thickness
+	qty        int
+	oz         float64 // one unit
+	known      bool
+	sticker    bool
+	mailerSafe bool
 }
 
 // Sizes for things the catalog doesn't give a size: stickers, postcards, and
 // anything else (a folded T-shirt, a gadget), which is treated as bulky.
 var (
-	stickerSize  = [3]float64{3, 3, 0.01}
+	stickerSize  = [3]float64{3, 3, 0.004}
 	postcardSize = [3]float64{4, 6, 0.016}
 	bulkySize    = [3]float64{10, 8, 1}
 )
 
 func shapeOf(it Item, qty int) shape {
-	s := shape{name: it.Name, qty: qty}
+	s := shape{name: it.Name, qty: qty, sticker: it.Packs == "sticker", mailerSafe: it.ThicknessIn != nil || len(it.Variants) > 0 || it.Packs == "sticker" || it.Packs == "postcard"}
 	switch {
 	case it.WidthIn != nil && it.HeightIn != nil && it.ThicknessIn != nil:
 		s.w, s.h, s.t = *it.WidthIn, *it.HeightIn, *it.ThicknessIn
@@ -201,7 +206,9 @@ func (p Package) piles(s shape) int {
 			n = max(n, int(p.WidthIn/o[0])*int(p.HeightIn/o[1]))
 		}
 	}
-	if n > 0 && !p.Piles {
+	// Small stickers can lie side by side above the printed sheets even
+	// when the sheets themselves must stay in a single stack.
+	if n > 0 && !p.Piles && !(p.KeepsFlat && !p.PrintBundle && s.sticker) {
 		return 1
 	}
 	return n
@@ -209,6 +216,18 @@ func (p Package) piles(s shape) int {
 
 // fits reports whether every shape goes in p together, ignoring weight.
 func (p Package) fits(shapes []shape) bool {
+	var print, other, needsFlat = false, false, false
+	for _, s := range shapes {
+		print = print || s.bigSheet()
+		other = other || (!s.bigSheet() && !s.sticker)
+		needsFlat = needsFlat || (s.t <= 0.02 && max(s.w, s.h) > 8.75)
+		if p.PrintBundle && !s.mailerSafe {
+			return false
+		}
+	}
+	if p.KeepsFlat && !needsFlat || p.PrintBundle && (!print || !other) {
+		return false
+	}
 	var stack, volume float64
 	for _, s := range shapes {
 		n := p.piles(s)

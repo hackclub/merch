@@ -327,9 +327,14 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   (8x6x6, 10x8x6, 13x10x4, 14x10x6, 18x12x6, 18x14x10). StayFlat sizes and weights come from
   Uline's specs (case weight / 100). Carton weights scale Uline's 10x8x6 (0.44 lb) by board
   area, and each holds up to 70 lb (the USPS Ground Advantage and UPS limit). The bubble mailer's size isn't on the invoices; it's modeled as a #4 (9x13½, 1 oz).
-  Posters (thin, longer than 13½") ship in the 13x18 StayFlat, or flat on the bottom of an
-  18-inch carton with whatever else is in the request (as AGH ships 50 posters, or posters with
-  shirts). The envelope stops at 1.8 oz packed (30 stickers): AGH mails bigger sticker orders as
+  Posters (thin, longer than 13½") ship in the 13x18 StayFlat (6 oz recorded tare), or in an
+  expandable print mailer with clothing/books (one stack up to 1½", modeled 1 oz tare).
+  This mixed mailer is inferred from shipped weights, not a confirmed warehouse package SKU;
+  bulk stacks and unknown bulky items still use cartons. The bubble mailer holds four folded
+  shirts (2" modeled depth). Stickers compress to 0.004" each and can lie side by side above
+  sheets in a rigid mailer. Small postcards and stickers alone do not need a rigid mailer.
+  Carton tare still scales Uline board area; it is not used for these smaller mixed bundles.
+  The envelope stops at 1.8 oz packed (30 stickers): AGH mails bigger sticker orders as
   parcels. What an item `ships_with` is packed too (one per unit). `Pack` uses item sizes
   (`width_in`, `height_in`, `thickness_in`; stickers and postcards have defaults; anything else
   counts as a bulky 10x8x1) and `items.weight_oz`. With no weight set, it works one out from
@@ -484,14 +489,53 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   The audit prepared a history refresh (not loaded during the audit): 48,064 rows through
   2026-11-10, including 256 valid international parcels since October 21, preserving all
   10,198 existing delivery dates. On November's held-out international parcels (132), the
-  refreshed history improves within-25-cent accuracy from 93.2% to 94.7%, mean absolute
-  error 17.3 to 13.9 cents. India (29), Canada (10), Britain (11), and Australia (7) remain
-  within a cent on average; sparse-country fallback remains uncertain (China's two parcels
-  were underquoted by $5.06 on average at their recorded weights). US November parcels
+  refreshed history improves within-25-cent rate-card accuracy from 93.2% to 94.7%, mean
+  absolute error 17.3 to 13.9 cents, **at the label's recorded weight only**. This is not
+  what requesters pay: errors in packing and a different warehouse carrier also matter.
+  US November parcels
   (192) improve mean absolute error $2.08 to $2.02, with mean underestimation $1.29 after
   refresh; ZIP zones and service choice are still unmodeled. Five international letters
   match exactly; nine US letters average 12 cents low. The backtest now includes the newest
   month in its input, reports countries and months, and checks letters as well as parcels.
+  The second audit measures actual charges: 50 mailed international requests since October
+  21 had only 15 fees within 25 cents of warehouse postage, mean absolute error $2.10.
+  Exact quote joins (country + full original lines including SKUs + visitor/user + time)
+  give packed-weight mean absolute error 2.38 oz, bias +1.40 oz; joining by user/time alone
+  misattributes quotes when someone places multiple requests. The new packing replay,
+  with proposed Campfire size weights and Sprig flyer weight, refuses one overweight request.
+  On the comparable 49, fee mean absolute error falls $1.90 to $1.10, within-25-cent fees
+  rise 15 to 20, and packed-weight error falls 2.43 to 0.82 oz. These are retrospective
+  counterfactuals, not measured post-deploy savings. Run `MERCH_PACKING_BACKTEST_JSON=…
+  MERCH_BACKTEST_CSV=… go test ./internal/swag -run BacktestPacked -v`; the JSON schema and
+  exact-join requirements are in `packing_backtest_test.go`. Raw exports never go in git.
+  Proposed catalog corrections (not written by the audit): Campfire T-Shirt (id 962),
+  size weights S 8.1, M 8.6, L 9.7 oz, with XL left unchanged until measured; 8.5x11 Sprig
+  Flyer (id 963), 0.59 oz rather than its paper-volume fallback. Single-shirt and paired
+  shipments agree on the Campfire values after a 1 oz mailer; repeated three-flyer plus
+  two-poster shipments support the flyer value. Match both id and name when applying.
+  Country cards now discard prior-year prices when at least three newer weights spanning
+  three ounces imply a destination-specific change of at least 25% and $1.50. This catches
+  changes in both base and slope that a shared multiplier misses. China's 19 monthly
+  holdouts improve from 42% to 68% within 25 cents, mean error -$3.03 to -$0.99; the earliest
+  labels after a change still lack enough evidence. Sparse-country fallback remains weak
+  (AZ, DZ, KH, QA); do not interpret global card accuracy as accuracy for every country.
+  Three near-3-lb shipments used FedEx/GlobalPost Plus instead of the quoted Asendia and
+  cost about $11.84 extra each. Each has one label and unchanged dispatched contents.
+  The warehouse's reason for changing services is unconfirmed; do not invent a general
+  surcharge from these three labels. International requesters still pay their own postage.
+
+  **Updating 2027 rates:** there is no rate-year constant to bump. Export new labels after
+  the carrier's actual effective date, verify their weight/country prices against saved
+  warehouse charges, and keep reporting defects excluded. Preserve existing delivery dates
+  and handling rows, replay the old and new histories by month, country, class and weight,
+  then replay complete packed quotes. The shared monthly index learns normal increases
+  when at least three country/weight pairs overlap; exceptional annual country changes
+  need the evidence above. Before enough new labels exist, do not pretend the old history
+  includes the new rates or apply a guessed universal increase. If an official new card
+  requires an early override, add its effective date and synthetic boundary tests first.
+  Do not assume a January USPS FCMI increase from Asendia's January changes: check each
+  carrier's announcement separately. After an approved history reload, restart the server
+  to rebuild its cached cards and verify real fees against labels again.
   Loaded 2026-10-15 into dev and production: 47,167 shipments since 2025-01. That's 499 Asendia
   deliveries since 2026-04-20, 5,027 US letter scans and 1,833 mail.hackclub.com orders. The
   warehouse's `theseus.*` tables are a snapshot from before 2026-09-14.
