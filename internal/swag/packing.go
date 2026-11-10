@@ -64,7 +64,8 @@ func carton(l, w, h float64, cents int) Package {
 // request tries them; it ships in the first one everything fits in. They come
 // from AGH's invoices (bubble mailers, the 6x4x2 box mailers and the cartons
 // they bill) and the Uline Black Self-Seal Stayflats we stock there (sizes are
-// Uline's usable sizes; weights are a case's weight over 100). Costs are AGH's
+// Uline's usable sizes; weights are a case's weight over 100, except the
+// 13x18's recorded six-ounce tare). Costs are AGH's
 // invoice rates (2024-2026), what we paid for the 6x4x2 box mailers (1,000 for
 // $708.76 in 2025), and Uline's carton price over 100 for the StayFlats
 // (2026-10-15). AGH doesn't bill for envelopes.
@@ -79,7 +80,8 @@ var Packages = []Package{
 	{Name: "9x12 StayFlat", Class: ClassParcel, WidthIn: 9.25, HeightIn: 12, DepthIn: 0.25, MaxOz: 48, TareOz: 3.5, CostCents: 95, KeepsFlat: true},
 	{Name: "11x13 StayFlat", Class: ClassParcel, WidthIn: 10.5, HeightIn: 13.25, DepthIn: 0.25, MaxOz: 48, TareOz: 4.3, CostCents: 106, KeepsFlat: true},
 	{Name: "13x18 StayFlat", Class: ClassParcel, WidthIn: 12.5, HeightIn: 17.75, DepthIn: 0.25, MaxOz: 64, TareOz: 6, CostCents: 148, KeepsFlat: true},
-	// AGH's invoices don't give the bubble mailers' size; this is a standard #4.
+	// AGH's invoices don't give the bubble mailers' size; this is a standard #4,
+	// with two inches of modeled depth for recorded four-shirt shipments.
 	{Name: "Bubble mailer", Class: ClassParcel, WidthIn: 9, HeightIn: 13.5, DepthIn: 2, MaxOz: 64, TareOz: 1, CostCents: 50, Piles: true},
 	// Mixed prints and clothing/books ship much lighter than an 18-inch
 	// carton. Model a single stack so bulk postcards, pins and plushies
@@ -173,7 +175,7 @@ func shapeOf(it Item, qty int) shape {
 		s.w, s.h, s.t = postcardSize[0], postcardSize[1], postcardSize[2]
 	case len(it.Variants) > 0:
 		// Clothing comes in sizes, and folded in its bag a shirt is about
-		// half an inch thick: AGH mails up to three in one mailer.
+		// half an inch thick: AGH mails up to four in one mailer.
 		s.w, s.h, s.t = bulkySize[0], bulkySize[1], 0.5
 	default:
 		s.w, s.h, s.t = bulkySize[0], bulkySize[1], bulkySize[2]
@@ -192,7 +194,7 @@ func shapeOf(it Item, qty int) shape {
 }
 
 // bigSheet reports whether s is a big print (a poster), which ships only in a
-// StayFlat or flat in a box, so it doesn't bend.
+// flat mailer or flat in a box, so it doesn't bend.
 func (s shape) bigSheet() bool { return s.t <= 0.02 && max(s.w, s.h) > 13.5 }
 
 // piles is how many stacks of s fit side by side in p (0 if s doesn't fit).
