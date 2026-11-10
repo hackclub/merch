@@ -72,6 +72,40 @@ describe('sectionize', () => {
 	});
 });
 
+describe('section titles', () => {
+	const title = (items: Item[], key: string) => sectionize(items).find((s) => s.section.key === key)?.title;
+	const pin = { ...item(20, 'Swa/HC/Pin/1st'), finish: 'enamel' };
+	const plushie = { ...item(21, 'Swa/HC/Plu/Orp'), name: 'Orpheus Plushie', model: 'orpheus.glb', staff_only: true };
+
+	it('name only the kinds of things listed, so a club never reads "plushies" without one', () => {
+		// Staff are offered the plushie; clubs and events aren't.
+		expect(title([shirt, pin, plushie], 'wear')).toBe('Shirts, pins and plushies');
+		expect(title([shirt, pin], 'wear')).toBe('Shirts and pins');
+		expect(title([pin], 'wear')).toBe('Pins');
+		expect(title([plushie], 'wear')).toBe('Plushies');
+	});
+
+	it('say "more" for anything that isn\'t one of the named kinds', () => {
+		const hat = item(22, 'Swa/HC/Hat/1st');
+		expect(title([shirt, hat], 'wear')).toBe('Shirts and more');
+	});
+
+	it('fit the other shelves too', () => {
+		// Personal requests don't get the full-size magazine, only the brochure.
+		expect(title([mag, brochure], 'booklets')).toBe('Magazine and brochure');
+		expect(title([brochure], 'booklets')).toBe('Brochure');
+		expect(title([card, flyer], 'cards')).toBe('More cards and flyers');
+		expect(title([card], 'cards')).toBe('More cards');
+		expect(title([flyer], 'cards')).toBe('More flyers');
+	});
+
+	it('keep fixed titles where the section has no kinds', () => {
+		expect(title([mini], 'start')).toBe('Start here');
+		expect(title([poster], 'posters')).toBe('Posters');
+		expect(title([mystery], 'more')).toBe('More');
+	});
+});
+
 describe('tileFact', () => {
 	it('says FREE and the one fact that matters for choosing', () => {
 		expect(tileFact({ ...shirt, variants: [{ label: 'S', sku: 'a' }, { label: 'M', sku: 'b' }], max_per_user: 1 })).toBe('S M · limit 1');

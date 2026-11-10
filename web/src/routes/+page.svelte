@@ -411,7 +411,7 @@
 				{#if meter.heaviestText}<p>{meter.heaviestText}</p>{/if}
 			</div>
 		{/if}
-		{#each sections as { section, rows, grid }, n (section.key)}
+		{#each sections as { section, title, rows, grid }, n (section.key)}
 			<!-- What we most want people to hand out comes first; everything else is an extra. -->
 			{#if section.extra && !sections[n - 1]?.section.extra}
 				<div class="extras">
@@ -420,7 +420,7 @@
 				</div>
 			{/if}
 			<section class="group" aria-labelledby="group-{section.key}">
-				<h3 id="group-{section.key}">{section.title}</h3>
+				<h3 id="group-{section.key}">{title}</h3>
 				{#if section.blurb}<p class="blurb">{section.blurb}</p>{/if}
 				{#if section.key === 'stickers' && forGroups(purpose) && !nudge}
 					<p class="blurb">For clubs and events: pick a few favorite designs in packs of 50. They're much easier for our team to ship than a few each of many designs.</p>

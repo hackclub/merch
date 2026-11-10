@@ -79,7 +79,9 @@ in one font and size: plain intro text, one photo, then the questions, a compact
 info and Submit. Keep it that simple; product pages carry the 3D views and the detail.
 The item list opens with "Start here": the Mini-Magazine, the Welcome to Hack Club postcard,
 the Haven postcard and the 11x17 Haven poster, which are what Zach most wants people to hand out. Everything else is listed
-under "Extras", grouped by kind (`SECTIONS` in `web/src/lib/sections.ts`).
+under "Extras", grouped by kind (`SECTIONS` in `web/src/lib/sections.ts`). A section's title names
+only the kinds it lists for the chosen purpose (`kinds`, `sectionTitle`): clubs see "Shirts and pins",
+since the plushie is staff-only.
 
 ## TDD workflow (required)
 

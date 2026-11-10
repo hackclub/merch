@@ -20,6 +20,11 @@ export type Section = {
 	featured?: string;
 	/** Everything but the featured item is shown as a grid under it. */
 	grid?: boolean;
+	/** What the section can hold, in title order. The title names only the kinds listed,
+	 * after `lead` ("More cards"), so it never promises a plushie that this purpose doesn't offer.
+	 * Without kinds the title is fixed. */
+	kinds?: { name: string; match: (i: Item) => boolean }[];
+	lead?: string;
 };
 
 // A single printed sheet (not a card, booklet or brochure), and whether it's bigger than letter size.
@@ -34,10 +39,44 @@ export const SECTIONS: Section[] = [
 		skus: ['Pri/Bok/Mini25/', 'Pri/Wel/4x6/', 'Pri/Hav/4x6/', 'Pri/Hav/11x/']
 	},
 	// Cards hand out better than posters, so they come first. Flyers (letter size and smaller) follow the cards.
-	{ key: 'cards', title: 'More cards and flyers', blurb: '', extra: true, match: (i) => i.packs === 'postcard' || (flat(i) && !poster(i)), rank: (i) => Number(i.packs !== 'postcard') },
+	{
+		key: 'cards',
+		title: 'More cards and flyers',
+		blurb: '',
+		extra: true,
+		match: (i) => i.packs === 'postcard' || (flat(i) && !poster(i)),
+		rank: (i) => Number(i.packs !== 'postcard'),
+		lead: 'More',
+		kinds: [
+			{ name: 'cards', match: (i) => i.packs === 'postcard' },
+			{ name: 'flyers', match: (i) => flat(i) && !poster(i) }
+		]
+	},
 	{ key: 'posters', title: 'Posters', blurb: '', extra: true, match: flat },
-	{ key: 'booklets', title: 'Magazine and brochure', blurb: '', extra: true, match: (i) => !!i.binding },
-	{ key: 'wear', title: 'Shirts, pins and plushies', blurb: '', extra: true, skus: ['Swa/'] },
+	{
+		key: 'booklets',
+		title: 'Magazine and brochure',
+		blurb: '',
+		extra: true,
+		match: (i) => !!i.binding,
+		kinds: [
+			{ name: 'magazine', match: (i) => i.binding === 'staple' || i.binding === 'perfect' },
+			{ name: 'brochure', match: (i) => i.binding === 'trifold' }
+		]
+	},
+	// Staff alone are offered the plushie (staff_only), so clubs and events see "Shirts and pins".
+	{
+		key: 'wear',
+		title: 'Shirts, pins and plushies',
+		blurb: '',
+		extra: true,
+		skus: ['Swa/'],
+		kinds: [
+			{ name: 'shirts', match: (i) => i.sku.startsWith('Swa/Shirt/') },
+			{ name: 'pins', match: (i) => i.finish === 'enamel' || i.sku.includes('/Pin/') },
+			{ name: 'plushies', match: (i) => i.sku.includes('/Plu/') || /plush/i.test(i.name) }
+		]
+	},
 	{ key: 'more', title: 'More', blurb: '', extra: true },
 	{
 		key: 'stickers',
@@ -55,9 +94,21 @@ export type Tile = { item: Item; big: boolean };
 // Where an item's SKU falls in its section's `skus`, or -1.
 const skuIndex = (s: Section, i: Item) => s.skus?.findIndex((p) => i.sku.startsWith(p)) ?? -1;
 
-/** The shop's sections in order, each with its tiles; empty sections are left out.
+// "a", "a and b", "a, b and c".
+const list = (words: string[]) => (words.length < 3 ? words.join(' and ') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
+
+/** The section's title for the items it lists: only the kinds there are, then "more" for anything else. */
+export function sectionTitle(section: Section, items: Item[]): string {
+	if (!section.kinds) return section.title;
+	const names = section.kinds.filter((k) => items.some(k.match)).map((k) => k.name);
+	if (items.some((i) => !section.kinds!.some((k) => k.match(i)))) names.push('more');
+	const title = [section.lead, list(names)].filter(Boolean).join(' ');
+	return title.charAt(0).toUpperCase() + title.slice(1);
+}
+
+/** The shop's sections in order, each with its tiles and a title for them; empty sections are left out.
  * `rows` and `grid` split the tiles for the request form: grid sections list only the featured item as a row. */
-export function sectionize(items: Item[]): { section: Section; tiles: Tile[]; rows: Tile[]; grid: Tile[] }[] {
+export function sectionize(items: Item[]): { section: Section; title: string; tiles: Tile[]; rows: Tile[]; grid: Tile[] }[] {
 	const home = (i: Item) =>
 		SECTIONS.find((s) => skuIndex(s, i) >= 0 || !!s.match?.(i)) ?? SECTIONS.find((s) => s.key === 'more')!;
 	return SECTIONS.map((section) => {
@@ -72,7 +123,7 @@ export function sectionize(items: Item[]): { section: Section; tiles: Tile[]; ro
 			);
 		const tiles = mine.map((item) => ({ item, big: mine.length > 1 && item.sku === section.featured }));
 		const inGrid = (t: Tile) => !!section.grid && t.item.sku !== section.featured;
-		return { section, tiles, rows: tiles.filter((t) => !inGrid(t)), grid: tiles.filter(inGrid) };
+		return { section, title: sectionTitle(section, mine), tiles, rows: tiles.filter((t) => !inGrid(t)), grid: tiles.filter(inGrid) };
 	}).filter((s) => s.tiles.length > 0);
 }
 
