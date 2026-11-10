@@ -15,5 +15,5 @@ web/.vite/
 
 .DS_Store
 
-# Local shipping audit exports (never publish warehouse data).
-/work/2026-11-10-shipping-pass/
+# Local research and exports (never publish warehouse data).
+/work/

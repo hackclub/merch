@@ -503,26 +503,41 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   give packed-weight mean absolute error 2.38 oz, bias +1.40 oz; joining by user/time alone
   misattributes quotes when someone places multiple requests. The new packing replay,
   with proposed Campfire size weights and Sprig flyer weight, refuses one overweight request.
-  On the comparable 49, fee mean absolute error falls $1.90 to $1.10, within-25-cent fees
-  rise 15 to 20, and packed-weight error falls 2.43 to 0.82 oz. These are retrospective
-  counterfactuals, not measured post-deploy savings. Run `MERCH_PACKING_BACKTEST_JSON=…
+  On the comparable 49, fee mean absolute error falls $1.90 to $1.12, within-25-cent fees
+  rise 15 to 17, and packed-weight error falls 2.43 to 0.85 oz. This replay is in-sample:
+  mailer tare and packing were tuned on the same 50 requests. It is a retrospective
+  counterfactual, not measured post-deploy savings or an independent validation. Repeat
+  the exact quote-to-label comparison on requests created after landing, without retuning
+  on that cohort. Run `MERCH_PACKING_BACKTEST_JSON=…
   MERCH_BACKTEST_CSV=… go test ./internal/swag -run BacktestPacked -v`; the JSON schema and
   exact-join requirements are in `packing_backtest_test.go`. Raw exports never go in git.
   Proposed catalog corrections (not written by the audit): Campfire T-Shirt (id 962),
-  size weights S 8.1, M 8.6, L 9.7 oz, with XL left unchanged until measured; 8.5x11 Sprig
-  Flyer (id 963), 0.59 oz rather than its paper-volume fallback. Single-shirt and paired
-  shipments agree on the Campfire values after a 1 oz mailer; repeated three-flyer plus
-  two-poster shipments support the flyer value. Match both id and name when applying.
+  size weights S 7.8, M 9.6, L 9.9, XL 9.9 oz; 8.5x11 Sprig Flyer (id 963), 0.59 oz
+  rather than its paper-volume fallback. A robust least-squares refit of 592 eligible
+  shipments (36 Campfire multi-item orders, 42 size-line observations; Campfire single-shirt
+  labels held out) gives S 7.83, M 9.63, L 9.94 oz and 0.94 oz mailer tare. Including
+  the single-shirt labels gives M 9.37 oz, so that size remains uncertain by a few tenths.
+  XL is poorly identified in the mixed-order fit; its held-out 10.8 oz single-shirt label
+  minus the fitted tare supports 9.9 oz, rather than retaining the item's 6.5 oz fallback.
+  Recheck all sizes on future shipments. Repeated three-flyer plus two-poster shipments
+  support the flyer value. Match both id and name when applying.
   Country cards now discard prior-year prices when at least three newer weights spanning
   three ounces imply a destination-specific change of at least 25% and $1.50. This catches
   changes in both base and slope that a shared multiplier misses. China's 19 monthly
   holdouts improve from 42% to 68% within 25 cents, mean error -$3.03 to -$0.99; the earliest
   labels after a change still lack enough evidence. Sparse-country fallback remains weak
   (AZ, DZ, KH, QA); do not interpret global card accuracy as accuracy for every country.
-  Three near-3-lb shipments used FedEx/GlobalPost Plus instead of the quoted Asendia and
-  cost about $11.84 extra each. Each has one label and unchanged dispatched contents.
+  Four shipments used FedEx/GlobalPost Plus instead of the quoted Asendia, all with labels
+  logged at exactly 48.00 oz. Three were undercharged by $11.84-$11.86 each; the fourth,
+  to Canada, was overcharged by $9.00. Each has one label and unchanged dispatched contents.
+  Four of the seven requests quoted at least 47 oz switched carrier; the other three stayed
+  on Asendia. Other Asendia labels exceed 48 oz, including 48.7 and 50 oz, so this is not
+  evidence of a simple hard carrier cap. These four account for 89 cents of the original
+  50-request mean absolute fee error. The corrected packing refuses one of them; the
+  remaining three account for 67 cents of the comparable replay's $1.12 error.
   The warehouse's reason for changing services is unconfirmed; do not invent a general
-  surcharge from these three labels. International requesters still pay their own postage.
+  surcharge or change the 3 lb rule from these four labels. International requesters still
+  pay their own postage.
 
   **Updating 2027 rates:** there is no rate-year constant to bump. Export new labels after
   the carrier's actual effective date, verify their weight/country prices against saved
