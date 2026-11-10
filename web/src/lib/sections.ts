@@ -1,3 +1,4 @@
+import { isPin } from './pin';
 import type { Item } from './types';
 
 /**
@@ -73,8 +74,8 @@ export const SECTIONS: Section[] = [
 		skus: ['Swa/'],
 		kinds: [
 			{ name: 'shirts', match: (i) => i.sku.startsWith('Swa/Shirt/') },
-			{ name: 'pins', match: (i) => i.finish === 'enamel' || i.sku.includes('/Pin/') },
-			{ name: 'plushies', match: (i) => i.sku.includes('/Plu/') || /plush/i.test(i.name) }
+			{ name: 'pins', match: isPin },
+			{ name: 'plushies', match: (i) => i.sku.includes('/Plu/') }
 		]
 	},
 	{ key: 'more', title: 'More', blurb: '', extra: true },
