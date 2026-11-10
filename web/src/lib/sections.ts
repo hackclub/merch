@@ -9,7 +9,6 @@ import type { Item } from './types';
  */
 export type Section = {
 	key: string;
-	title: string;
 	blurb: string;
 	/** SKU prefixes; the start section lists its items in this order. */
 	skus?: string[];
@@ -21,12 +20,12 @@ export type Section = {
 	featured?: string;
 	/** Everything but the featured item is shown as a grid under it. */
 	grid?: boolean;
+} & (
+	| { title: string; kinds?: never; lead?: never }
 	/** What the section can hold, in title order. The title names only the kinds listed,
-	 * after `lead` ("More cards"), so it never promises a plushie that this purpose doesn't offer.
-	 * Without kinds the title is fixed. */
-	kinds?: { name: string; match: (i: Item) => boolean }[];
-	lead?: string;
-};
+	 * after `lead` ("More cards"), so it never promises a plushie that this purpose doesn't offer. */
+	| { title?: never; kinds: { name: string; match: (i: Item) => boolean }[]; lead?: string }
+);
 
 // A single printed sheet (not a card, booklet or brochure), and whether it's bigger than letter size.
 const flat = (i: Item) => i.sku.startsWith('Pri/') && !i.packs && !i.binding;
@@ -42,7 +41,6 @@ export const SECTIONS: Section[] = [
 	// Cards hand out better than posters, so they come first. Flyers (letter size and smaller) follow the cards.
 	{
 		key: 'cards',
-		title: 'More cards and flyers',
 		blurb: '',
 		extra: true,
 		match: (i) => i.packs === 'postcard' || (flat(i) && !poster(i)),
@@ -56,7 +54,6 @@ export const SECTIONS: Section[] = [
 	{ key: 'posters', title: 'Posters', blurb: '', extra: true, match: flat },
 	{
 		key: 'booklets',
-		title: 'Magazine and brochure',
 		blurb: '',
 		extra: true,
 		match: (i) => !!i.binding,
@@ -68,7 +65,6 @@ export const SECTIONS: Section[] = [
 	// Staff alone are offered the plushie (staff_only), so clubs and events see "Shirts and pins".
 	{
 		key: 'wear',
-		title: 'Shirts, pins and plushies',
 		blurb: '',
 		extra: true,
 		skus: ['Swa/'],
@@ -100,9 +96,10 @@ const list = (words: string[]) => (words.length < 3 ? words.join(' and ') : `${w
 
 /** The section's title for the items it lists: only the kinds there are, then "more" for anything else. */
 export function sectionTitle(section: Section, items: Item[]): string {
-	if (!section.kinds) return section.title;
-	const names = section.kinds.filter((k) => items.some(k.match)).map((k) => k.name);
-	if (items.some((i) => !section.kinds!.some((k) => k.match(i)))) names.push('more');
+	const { kinds } = section;
+	if (!kinds) return section.title;
+	const names = kinds.filter((k) => items.some(k.match)).map((k) => k.name);
+	if (items.some((i) => !kinds.some((k) => k.match(i)))) names.push('more');
 	const title = [section.lead, list(names)].filter(Boolean).join(' ');
 	return title.charAt(0).toUpperCase() + title.slice(1);
 }

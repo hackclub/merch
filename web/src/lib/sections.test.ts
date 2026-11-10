@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sectionize, tileFact } from './sections';
+import { SECTIONS, sectionize, tileFact } from './sections';
 import type { Item } from './types';
 
 const base: Item = { id: 0, sku: '', name: '', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, staff_only: false, model: '', allow_backorder: false, clip: '' };
@@ -97,6 +97,11 @@ describe('section titles', () => {
 		expect(title([card, flyer], 'cards')).toBe('More cards and flyers');
 		expect(title([card], 'cards')).toBe('More cards');
 		expect(title([flyer], 'cards')).toBe('More flyers');
+	});
+
+	it('come from kinds alone where a section has them, so there is no unused fixed title to edit', () => {
+		const both = SECTIONS.filter((s) => 'kinds' in s && 'title' in s).map((s) => s.key);
+		expect(both).toEqual([]);
 	});
 
 	it('keep fixed titles where the section has no kinds', () => {
