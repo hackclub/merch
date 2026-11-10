@@ -324,7 +324,7 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   it fits. These are what AGH packs in: a #6x9 envelope (stickers, letter mail); the Uline Black
   Self-Seal Stayflats we stock there (S-11837 9x12, S-11838 11x13, S-11839 13x18; rigid, ¼"
   of contents, one stack); bubble mailers; 6x4x2 box mailers; and the cartons on AGH's invoices
-  (8x6x6, 10x8x6, 13x10x4, 14x10x6, 18x12x6, 18x14x10). StayFlat sizes and weights come from
+  (8x6x6, 10x8x6, 13x10x4, 14x10x6, 18x12x6, 18x14x10). StayFlat sizes and initial weights come from
   Uline's specs (case weight / 100). Carton weights scale Uline's 10x8x6 (0.44 lb) by board
   area, and each holds up to 70 lb (the USPS Ground Advantage and UPS limit). The bubble mailer's size isn't on the invoices; it's modeled as a #4 (9x13½, 1 oz).
   Posters (thin, longer than 13½") ship in the 13x18 StayFlat (6 oz recorded tare), or in an
@@ -351,31 +351,24 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   6.9 oz (XL); two or three shirts share one mailer. So `items.weight_oz` is the item alone
   (a size's own `weight_oz` in `variants` when sizes differ), `Pack` adds the mailer's `TareOz`,
   and postage estimates match history on that packed weight.
-- **Estimates** (`internal/swag/estimate.go`): arrival window = handling + transit, in business
-  days (Mon–Fri; the shop intro gives transit only, after "Shipped next day Mon–Fri"), from the 20th to the 80th percentile of past shipments to the same country and class. With fewer than
-  10 samples, it uses all US or all international shipments instead. US postage compares packages
-  of about the same packed weight (US parcels are also priced by ZIP zone, which isn't known), from
-  the last 180 days of history first (postage rises every
-  year: a 5-9 oz US parcel went from $4.71 in early 2025 to $7.27 in mid-2026), then older history.
-  Boxes over about 10 lb go UPS Ground, which the history left out until 2026-10-18 (big boxes got
-  $0, then about $8.50 whatever their weight; with it, 20 lb is about $16 and 40 lb $34). Without 10
-  parcels of about the same weight, postage takes the 10 nearest in weight (basis `US, nearest weights`).
-  **Abroad, postage comes off rate cards** (`internal/swag/ratecard.go`): Asendia and USPS price
-  each country by the whole ounce, base + per ounce, to the cent (Canada 2026: $8.90 + $0.414/oz;
-  India $6.51 + $0.508/oz; letters $1.93 up to 1 oz, $3.85 up to 2 oz). A price index chained
-  month to month brings old prices to today's rates (Asendia rose 5.3% in January 2025 and 15%
-  in January 2026, France 28%), each country's card is read at the packed weight rounded up to
-  the ounce, in-between weights read off the line, and countries with fewer than 3 packages use
-  all international ones of that weight. Past a card's heaviest weight, it follows the slope of
-  its heavier half when that's flatter: most countries stay on one line to 3 lb (Kenya's 7 oz card
-  priced a 24 oz parcel to 5¢), but the dearest bend over a pound (Mexico, Colombia, Egypt), and
-  following the whole line quoted Colombia $90 for 3 lb (now $47). Backtest any change with
-  `MERCH_BACKTEST_CSV=<history export> go test ./internal/swag -run Backtest -v`, which prices each
-  month's labels from the history before it. Backtested on 2025-26 parcels: 87-93% within 25¢ of
-  the label (median-by-weight, used before 2026-10-17: 2-29%, undercharging about $2 on
-  average). Ranges are shown only to admins (everyone sees the typical
-  postage in the cost table). The shop intro, the request form, My requests and the admin
-  request list show these estimates (`POST /api/shipping/estimate`, `GET /api/shipping`).
+- **Estimates** (`internal/swag/estimate.go`): arrival windows add handling and transit,
+  in business days (Mon–Fri), using the 20th–80th percentiles of past shipments to the same
+  country and class. With fewer than 10 samples, use all US or all international shipments.
+  US postage uses similar packed weights from the last 180 days first, then older history;
+  without 10 similar parcels, it takes the 10 nearest weights. Include UPS Ground and FedEx
+  history for big boxes. US ZIP zones and carrier choice are not modeled, so estimates are
+  typical costs rather than exact label quotes.
+  **Abroad, postage comes off rate cards** (`internal/swag/ratecard.go`): each country and
+  class is priced by packed weight rounded up to the whole ounce. A shared monthly index
+  brings older prices forward when at least three country/weight pairs overlap. If at least
+  three newer weights spanning three ounces show an exceptional annual country change
+  (median difference at least 25% and $1.50), discard that country's superseded annual card.
+  This handles changes to both base and per-ounce prices that a shared multiplier misses.
+  Between known weights, interpolate; beyond the heaviest, follow the heavier half's slope
+  when it is flatter. Countries with fewer than three parcels use international prices at
+  similar weights, which is less certain. Ranges are shown only to admins; everyone sees
+  typical postage in the cost table. The form, My requests and admin requests use these
+  estimates (`POST /api/shipping/estimate`, `GET /api/shipping`).
 - **Backorders:** the mail API gives each SKU's `in_stock` (below zero when orders wait on it) and
   `inbound` (units on order) but no arrival date. When stock can't cover a line and more is
   inbound (`swag.Backordered`), the shop's item list says "15k are inbound to Hack Club HQ. Your
@@ -480,80 +473,56 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
       zenventory.csv letters.csv > history.csv
   DATABASE_URL=… go run ./cmd/shiphistory load history.csv orders.csv   # replaces those sources
   ```
-  Asendia postage from 2026-10-01 through 2026-10-20 is left out (`zenventory.sql`): those
-  labels are logged at their country's 5 oz price whatever the weight. The next shipments,
-  on 2026-10-21, return to weight-based prices. The 2026-11-10 audit matched 302 app requests
-  to Zenventory labels: all saved `warehouse_postage_cents` matched exactly. Keep the bad
-  interval excluded; include the valid newer prices. Theseus's warehouse mirror still stops
-  at 2026-09-14, so it cannot supply newer handling or letter history.
-  The audit prepared a history refresh (not loaded during the audit): 48,064 rows through
-  2026-11-10, including 256 valid international parcels since October 21, preserving all
-  10,198 existing delivery dates. On November's held-out international parcels (132), the
-  refreshed history improves within-25-cent rate-card accuracy from 93.2% to 94.7%, mean
-  absolute error 17.3 to 13.9 cents, **at the label's recorded weight only**. This is not
-  what requesters pay: errors in packing and a different warehouse carrier also matter.
-  US November parcels
-  (192) improve mean absolute error $2.08 to $2.02, with mean underestimation $1.29 after
-  refresh; ZIP zones and service choice are still unmodeled. Five international letters
-  match exactly; nine US letters average 12 cents low. The backtest now includes the newest
-  month in its input, reports countries and months, and checks letters as well as parcels.
-  The second audit measures actual charges: 50 mailed international requests since October
-  21 had only 15 fees within 25 cents of warehouse postage, mean absolute error $2.10.
-  Exact quote joins (country + full original lines including SKUs + visitor/user + time)
-  give packed-weight mean absolute error 2.38 oz, bias +1.40 oz; joining by user/time alone
-  misattributes quotes when someone places multiple requests. The new packing replay,
-  with proposed Campfire size weights and Sprig flyer weight, refuses one overweight request.
-  On the comparable 49, fee mean absolute error falls $1.90 to $1.12, within-25-cent fees
-  rise 15 to 17, and packed-weight error falls 2.43 to 0.85 oz. This replay is in-sample:
-  mailer tare and packing were tuned on the same 50 requests. It is a retrospective
-  counterfactual, not measured post-deploy savings or an independent validation. Repeat
-  the exact quote-to-label comparison on requests created after landing, without retuning
-  on that cohort. Run `MERCH_PACKING_BACKTEST_JSON=…
-  MERCH_BACKTEST_CSV=… go test ./internal/swag -run BacktestPacked -v`; the JSON schema and
-  exact-join requirements are in `packing_backtest_test.go`. Raw exports never go in git.
-  Proposed catalog corrections (not written by the audit): Campfire T-Shirt (id 962),
-  size weights S 7.8, M 9.6, L 9.9, XL 9.9 oz; 8.5x11 Sprig Flyer (id 963), 0.59 oz
-  rather than its paper-volume fallback. A robust least-squares refit of 592 eligible
-  shipments (36 Campfire multi-item orders, 42 size-line observations; Campfire single-shirt
-  labels held out) gives S 7.83, M 9.63, L 9.94 oz and 0.94 oz mailer tare. Including
-  the single-shirt labels gives M 9.37 oz, so that size remains uncertain by a few tenths.
-  XL is poorly identified in the mixed-order fit; its held-out 10.8 oz single-shirt label
-  minus the fitted tare supports 9.9 oz, rather than retaining the item's 6.5 oz fallback.
-  Recheck all sizes on future shipments. Repeated three-flyer plus two-poster shipments
-  support the flyer value. Match both id and name when applying.
-  Country cards now discard prior-year prices when at least three newer weights spanning
-  three ounces imply a destination-specific change of at least 25% and $1.50. This catches
-  changes in both base and slope that a shared multiplier misses. China's 19 monthly
-  holdouts improve from 42% to 68% within 25 cents, mean error -$3.03 to -$0.99; the earliest
-  labels after a change still lack enough evidence. Sparse-country fallback remains weak
-  (AZ, DZ, KH, QA); do not interpret global card accuracy as accuracy for every country.
-  Four shipments used FedEx/GlobalPost Plus instead of the quoted Asendia, all with labels
-  logged at exactly 48.00 oz. Three were undercharged by $11.84-$11.86 each; the fourth,
-  to Canada, was overcharged by $9.00. Each has one label and unchanged dispatched contents.
-  Four of the seven requests quoted at least 47 oz switched carrier; the other three stayed
-  on Asendia. Other Asendia labels exceed 48 oz, including 48.7 and 50 oz, so this is not
-  evidence of a simple hard carrier cap. These four account for 89 cents of the original
-  50-request mean absolute fee error. The corrected packing refuses one of them; the
-  remaining three account for 67 cents of the comparable replay's $1.12 error.
-  The warehouse's reason for changing services is unconfirmed; do not invent a general
-  surcharge or change the 3 lb rule from these four labels. International requesters still
-  pay their own postage.
+  Asendia postage from 2026-10-01 through 2026-10-20 is excluded by `zenventory.sql`:
+  labels in that interval were logged at a fixed 5 oz price regardless of weight. Keep
+  those rows for transit, with postage blank. Later weight-based prices are included.
+  The warehouse's `theseus.*` mirror stops at 2026-09-14; check freshness before using it
+  for handling or letters. Preserve existing delivery dates and handling rows on a reload.
+  Restart the server afterward to rebuild its cached history and rate cards.
 
-  **Updating 2027 rates:** there is no rate-year constant to bump. Export new labels after
-  the carrier's actual effective date, verify their weight/country prices against saved
-  warehouse charges, and keep reporting defects excluded. Preserve existing delivery dates
-  and handling rows, replay the old and new histories by month, country, class and weight,
-  then replay complete packed quotes. The shared monthly index learns normal increases
-  when at least three country/weight pairs overlap; exceptional annual country changes
-  need the evidence above. Before enough new labels exist, do not pretend the old history
-  includes the new rates or apply a guessed universal increase. If an official new card
-  requires an early override, add its effective date and synthetic boundary tests first.
-  Do not assume a January USPS FCMI increase from Asendia's January changes: check each
-  carrier's announcement separately. After an approved history reload, restart the server
-  to rebuild its cached cards and verify real fees against labels again.
-  Loaded 2026-10-15 into dev and production: 47,167 shipments since 2025-01. That's 499 Asendia
-  deliveries since 2026-04-20, 5,027 US letter scans and 1,833 mail.hackclub.com orders. The
-  warehouse's `theseus.*` tables are a snapshot from before 2026-09-14.
+  **Validate complete quotes as well as rate cards.** The monthly backtest prices each
+  label using earlier history; it does not test whether packing predicted the right weight.
+  For the complete replay, export the packing catalog, original quotes/requests, and warehouse
+  labels with the read-only queries below. The request query matches country, complete lines
+  including SKUs and quantities, visitor/user, and time. It marks edited requests for exclusion.
+  The generator joins warehouse order numbers: tracking placeholders are not unique for letters.
+  It strips order and request ids, excludes ambiguous or incomplete pairs and disagreeing costs,
+  and reports skip counts on stderr. Review those counts before comparing results.
+  International comparisons use fees collected net of refunds; US comparisons use the recorded
+  postage estimate, since US requesters pay zero. A proposed catalog can be evaluated by editing
+  a local copy of catalog.json; this never updates the database.
+
+  ```sh
+  # Set replay_since and replay_until to mailing dates (until is exclusive).
+  scripts/prod-psql -At -f scripts/shipping-history/replay-catalog.sql > ~/merch-ship/catalog.json
+  scripts/prod-psql --csv -v since="$replay_since" -v until="$replay_until" \
+      -f scripts/shipping-history/replay-requests.sql > ~/merch-ship/requests.csv
+  # Use the warehouse read-only connection; never print its URL.
+  PGOPTIONS='-c default_transaction_read_only=on' psql "$WAREHOUSE_COOLIFY_URL" --csv \
+      -v since="$replay_since" -v until="$replay_until" \
+      -f scripts/shipping-history/replay-labels.sql > ~/merch-ship/labels.csv
+  go run ./cmd/shiphistory replay -catalog ~/merch-ship/catalog.json \
+      -requests ~/merch-ship/requests.csv -labels ~/merch-ship/labels.csv \
+      -scope international > ~/merch-ship/replay.json
+  MERCH_PACKING_BACKTEST_JSON=~/merch-ship/replay.json MERCH_BACKTEST_CSV=~/merch-ship/history.csv \
+      go test ./internal/swag -run Backtest -v
+  ```
+
+  Use `-scope US` for US postage comparisons. Compare fee/postage error and packed-weight error
+  by country, class and weight; report refusals separately and compare the same eligible cohort.
+  Packing and tare tuned on a replay are in-sample. Re-measure on requests created after landing
+  without retuning on that new cohort. Sparse countries, US zones, and warehouse carrier changes
+  remain uncertain. Carrier switches have appeared at labels logged as exactly 48.00 oz and can
+  raise or lower cost; do not infer a hard carrier cap or invent a surcharge from that pattern.
+
+  **New rates, including 2027:** export labels after each carrier's actual effective date,
+  verify their country/weight prices against recorded warehouse charges, and keep reporting
+  defects excluded. Run both backtests before reloading. The monthly index learns normal
+  changes with overlapping labels; exceptional annual country changes need the evidence above.
+  Before enough evidence exists, do not treat old history as new rates or guess a universal
+  increase. An official-card override needs an effective date and synthetic boundary tests.
+  Check Asendia and USPS announcements separately; do not assume January USPS FCMI changes
+  from Asendia's January schedule. After landing, verify real quote-to-label errors again.
 
 ## Usage analytics
 
