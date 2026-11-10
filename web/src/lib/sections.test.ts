@@ -56,6 +56,16 @@ describe('sectionize', () => {
 		expect(sectionize([])).toEqual([]);
 	});
 
+	it('keeps the Stardance poster designs together even at letter size, with cards separate', () => {
+		const designs = ['Rkt', 'Moon', 'Orion', 'Window', 'Eclipse'].map((design, n) => ({
+			...item(20 + n, `Pri/SD/x11/${design}`), width_in: 8.5, height_in: 11
+		}));
+		const postcard = { ...item(25, 'Pri/SD/4x6/1st'), packs: 'postcard' };
+		const shelves = sectionize([...designs, postcard, flyer]);
+		expect(shelves.find((s) => s.section.key === 'posters')?.tiles.map((t) => t.item.sku)).toEqual(designs.map((i) => i.sku));
+		expect(shelves.find((s) => s.section.key === 'cards')?.tiles.map((t) => t.item.sku)).toEqual([postcard.sku, flyer.sku]);
+	});
+
 	it('only makes a featured item big when its section has company', () => {
 		expect(sectionize([laptops])[0].tiles[0].big).toBe(false);
 	});

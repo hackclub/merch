@@ -27,9 +27,10 @@ export type Section = {
 	| { title?: never; kinds: { name: string; match: (i: Item) => boolean }[]; lead?: string }
 );
 
-// A single printed sheet (not a card, booklet or brochure), and whether it's bigger than letter size.
+// A single printed sheet (not a card, booklet or brochure), and whether it's a poster.
 const flat = (i: Item) => i.sku.startsWith('Pri/') && !i.packs && !i.binding;
-const poster = (i: Item) => Math.max(i.width_in ?? 0, i.height_in ?? 0) > 11;
+// Keep the Stardance NASA poster series together even on letter-size sheets.
+const poster = (i: Item) => i.sku.startsWith('Pri/SD/x11/') || Math.max(i.width_in ?? 0, i.height_in ?? 0) > 11;
 
 export const SECTIONS: Section[] = [
 	{
