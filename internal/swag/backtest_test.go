@@ -46,13 +46,19 @@ func TestBacktestPostage(t *testing.T) {
 	}
 	intl, us := map[string]*tally{}, map[string]*tally{}
 	start := time.Date(2025, 4, 1, 0, 0, 0, 0, time.UTC)
-	for m := start; m.Before(time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)); m = m.AddDate(0, 1, 0) {
+	var newest time.Time
+	for _, s := range ships {
+		if s.ShippedOn.After(newest) {
+			newest = s.ShippedOn
+		}
+	}
+	for m := start; !m.After(newest); m = m.AddDate(0, 1, 0) {
 		var train, test []PastShipment
 		for _, s := range ships {
 			switch {
 			case s.ShippedOn.Before(m):
 				train = append(train, s)
-			case s.ShippedOn.Before(m.AddDate(0, 1, 0)) && s.Class == ClassParcel && s.PostageCents > 0 && s.WeightOz > 0:
+			case s.ShippedOn.Before(m.AddDate(0, 1, 0)) && s.PostageCents > 0 && s.WeightOz > 0:
 				test = append(test, s)
 			}
 		}
@@ -65,8 +71,14 @@ func TestBacktestPostage(t *testing.T) {
 				if s.WeightOz > MaxInternationalOz {
 					continue
 				}
-				p, _, n := h.cards.estimate(s.Country, ClassParcel, s.WeightOz)
+				p, _, n := h.cards.estimate(s.Country, s.Class, s.WeightOz)
 				if n == 0 {
+					continue
+				}
+				add(intl, s.Class+", all", p[1], float64(s.PostageCents))
+				add(intl, s.Class+", country "+s.Country, p[1], float64(s.PostageCents))
+				add(intl, s.Class+", month "+m.Format("2006-01"), p[1], float64(s.PostageCents))
+				if s.Class != ClassParcel {
 					continue
 				}
 				k := cardPath(h.cards, s.Country, s.WeightOz)
@@ -81,7 +93,13 @@ func TestBacktestPostage(t *testing.T) {
 				}
 				continue
 			}
-			e := h.Estimate("US", Packing{Package: Package{Class: ClassParcel}, WeightOz: s.WeightOz}, s.ShippedOn)
+			e := h.Estimate("US", Packing{Package: Package{Class: s.Class}, WeightOz: s.WeightOz}, s.ShippedOn)
+			if e.PostageSamples > 0 {
+				add(us, s.Class+", month "+m.Format("2006-01"), float64(e.PostageTypicalCents), float64(s.PostageCents))
+			}
+			if s.Class != ClassParcel {
+				continue
+			}
 			if e.PostageSamples == 0 {
 				add(us, usBand(s.WeightOz)+" no estimate", 0, float64(s.PostageCents))
 				continue

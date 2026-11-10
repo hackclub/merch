@@ -8,16 +8,18 @@
 -- (Asendia, USPS and UPS tracking); tracking is dropped before import. ordered_on is left
 -- empty: handling time comes from theseus-orders.sql, the orders placed the way
 -- this app places them (these include bulk and hand-batched orders).
--- Asendia postage from 2026-10-01 on is left out (kept for transit): since then
--- every Asendia label is logged at its country's 5 oz price whatever the
+-- Asendia postage from 2026-10-01 through 2026-10-20 is left out (kept for transit):
+-- those labels were logged at their country's 5 oz price whatever the
 -- weight (a 39.4 oz parcel to India at $9.05, against $26.83 in September), so
--- it isn't the rate card. Bring it back once AGH confirms what it bills.
+-- it isn't the rate card. From 2026-10-21, labels match the weight-based cards
+-- again and match the postage charges recorded by mail.hackclub.com.
 select concat_ws(',',
     'zenventory',
     s.country,
     case when s.service ilike 'USPS First Class Mail%' then 'letter' else 'parcel' end,
     round((s.weight * 16)::numeric, 2),
-    case when s.carrier = 'Asendia' and s.shipped_date >= '2026-10-01' then ''
+    case when s.carrier = 'Asendia' and s.shipped_date >= '2026-10-01'
+              and s.shipped_date < '2026-10-21' then ''
          else round((s.shipping_handling * 100)::numeric)::text end,
     '',
     s.shipped_date,

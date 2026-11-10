@@ -475,9 +475,23 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
       zenventory.csv letters.csv > history.csv
   DATABASE_URL=… go run ./cmd/shiphistory load history.csv orders.csv   # replaces those sources
   ```
-  Asendia postage from 2026-10-01 on is left out (`zenventory.sql`): since then every label is
-  logged at its country's 5 oz price whatever the weight, which isn't the rate card. Ask AGH
-  what it really bills before bringing it back.
+  Asendia postage from 2026-10-01 through 2026-10-20 is left out (`zenventory.sql`): those
+  labels are logged at their country's 5 oz price whatever the weight. The next shipments,
+  on 2026-10-21, return to weight-based prices. The 2026-11-10 audit matched 302 app requests
+  to Zenventory labels: all saved `warehouse_postage_cents` matched exactly. Keep the bad
+  interval excluded; include the valid newer prices. Theseus's warehouse mirror still stops
+  at 2026-09-14, so it cannot supply newer handling or letter history.
+  The audit prepared a history refresh (not loaded during the audit): 48,064 rows through
+  2026-11-10, including 256 valid international parcels since October 21, preserving all
+  10,198 existing delivery dates. On November's held-out international parcels (132), the
+  refreshed history improves within-25-cent accuracy from 93.2% to 94.7%, mean absolute
+  error 17.3 to 13.9 cents. India (29), Canada (10), Britain (11), and Australia (7) remain
+  within a cent on average; sparse-country fallback remains uncertain (China's two parcels
+  were underquoted by $5.06 on average at their recorded weights). US November parcels
+  (192) improve mean absolute error $2.08 to $2.02, with mean underestimation $1.29 after
+  refresh; ZIP zones and service choice are still unmodeled. Five international letters
+  match exactly; nine US letters average 12 cents low. The backtest now includes the newest
+  month in its input, reports countries and months, and checks letters as well as parcels.
   Loaded 2026-10-15 into dev and production: 47,167 shipments since 2025-01. That's 499 Asendia
   deliveries since 2026-04-20, 5,027 US letter scans and 1,833 mail.hackclub.com orders. The
   warehouse's `theseus.*` tables are a snapshot from before 2026-09-14.
