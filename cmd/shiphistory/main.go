@@ -42,6 +42,14 @@ func main() {
 		err = track(*workers, *since, *cache, fs.Args())
 	case "load":
 		err = load(os.Args[2:])
+	case "replay":
+		fs := flag.NewFlagSet("replay", flag.ExitOnError)
+		catalog := fs.String("catalog", "", "packing catalog JSON (replay-catalog.sql)")
+		requests := fs.String("requests", "", "request/quote CSV (replay-requests.sql)")
+		labels := fs.String("labels", "", "warehouse label CSV (replay-labels.sql)")
+		scope := fs.String("scope", "international", "international, US or all")
+		fs.Parse(os.Args[2:])
+		err = replay(*catalog, *requests, *labels, *scope, os.Stdout, os.Stderr)
 	default:
 		usage()
 	}
@@ -52,7 +60,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: shiphistory track [-workers N] raw.csv… > history.csv | shiphistory load history.csv…")
+	fmt.Fprintln(os.Stderr, "usage: shiphistory track [-workers N] raw.csv… > history.csv | shiphistory load history.csv… | shiphistory replay -catalog catalog.json -requests requests.csv -labels labels.csv [-scope international|US|all] > replay.json")
 	os.Exit(2)
 }
 
