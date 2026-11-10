@@ -100,6 +100,16 @@ func newRateCards(ships []PastShipment) *rateCards {
 	}
 	rc := &rateCards{cards: map[cardKey]*rateCard{}, all: map[string][]cardShipment{}, newest: map[string]time.Time{}}
 	for class, ss := range byClass {
+		// A shared multiplier cannot represent a destination whose base and
+		// per-ounce price both changed. Detect that on raw prices first.
+		countries := map[string][]cardShipment{}
+		for _, s := range ss {
+			countries[s.country] = append(countries[s.country], s)
+		}
+		ss = nil
+		for _, cs := range countries {
+			ss = append(ss, currentCountryPrices(cs)...)
+		}
 		atToday(ss)
 		rc.all[class] = ss
 		byCountry := map[string][]cardShipment{}
@@ -116,6 +126,45 @@ func newRateCards(ships []PastShipment) *rateCards {
 		}
 	}
 	return rc
+}
+
+// currentCountryPrices leaves out superseded annual cards when there is enough
+// new evidence to reconstruct a destination's line. Normal annual increases
+// remain in the shared price index; one unusual label cannot trigger this.
+func currentCountryPrices(ss []cardShipment) []cardShipment {
+	var years []int
+	for _, s := range ss {
+		years = append(years, s.on.Year())
+	}
+	slices.Sort(years)
+	years = slices.Compact(years)
+	for _, year := range years[1:] {
+		var before, after []cardShipment
+		for _, s := range ss {
+			if s.on.Year() < year {
+				before = append(before, s)
+			} else if s.on.Year() == year {
+				after = append(after, s)
+			}
+		}
+		if len(before) < 3 || len(after) < 3 {
+			continue
+		}
+		c := newRateCard(after)
+		if len(c.prices) < 3 || !c.sloped || c.perOz <= 0 {
+			continue
+		}
+		var errors, ratios []float64
+		for _, s := range before {
+			p, _ := c.at(s.oz, c.perOz)
+			errors = append(errors, p[1]-s.cents)
+			ratios = append(ratios, p[1]/s.cents)
+		}
+		if math.Abs(median(errors)) >= 150 && math.Abs(median(ratios)-1) >= 0.25 {
+			ss = slices.DeleteFunc(ss, func(s cardShipment) bool { return s.on.Year() < year })
+		}
+	}
+	return ss
 }
 
 // atToday brings every price to today's rates with a price index chained

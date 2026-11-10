@@ -23,6 +23,36 @@ func packedAt(oz float64) Packing {
 
 var aug = time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
 
+// A destination can change both its base and its per-ounce price much more
+// than the shared index. A scalar increase cannot salvage its old card.
+func TestEstimateDropsSupersededCountryPrices(t *testing.T) {
+	old := time.Date(2025, 9, 1, 0, 0, 0, 0, time.UTC)
+	current := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	for _, country := range []string{"CN", "ZZ"} {
+		t.Run(country, func(t *testing.T) {
+			h := card(country, old, 246, 34.2, 2, 4, 6, 8, 13, 30)
+			h = append(h, card(country, current, 549, 76.2, 2, 3, 9)...)
+			for _, w := range []float64{4, 8, 13, 30} {
+				e := EstimateShipping(h, country, packedAt(w), now)
+				want := 549 + 76.2*w
+				if math.Abs(float64(e.PostageTypicalCents)-want) > 2 {
+					t.Errorf("%g oz: %d, want %.0f", w, e.PostageTypicalCents, want)
+				}
+			}
+		})
+	}
+}
+
+func TestCountryPriceChangeNeedsSeveralNewWeights(t *testing.T) {
+	old := time.Date(2025, 9, 1, 0, 0, 0, 0, time.UTC)
+	h := card("ZZ", old, 500, 40, 2, 4, 8, 13, 20)
+	h = append(h, card("ZZ", aug, 1000, 80, 2, 2, 2)...)
+	c := newRateCards(h).cards[cardKey{"ZZ", ClassParcel}]
+	if len(c.prices) < 3 {
+		t.Fatalf("one new weight discarded the old card: %+v", c.prices)
+	}
+}
+
 // Asendia prices each country by the whole ounce: a base plus so much an
 // ounce (Canada in 2026: $8.90 + $0.414/oz). Weights between the ones shipped
 // before read off the line between them.
