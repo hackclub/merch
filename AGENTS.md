@@ -347,10 +347,12 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
 - **Warehouse weights include the packaging.** AGH logs each package at its packaging plus a
   fixed weight per SKU (a fit over 767 orders since 2025-06 leaves a median 0.04 oz unexplained),
   and buys labels at that weight. One poster logs 7.2 oz (1.2 oz of paper in a 6 oz StayFlat),
-  n Mini-Magazines n × 0.96 + 1 oz, and a shirt in a mailer 5.5 (S), 6.0 (M), 6.6 (L) or
+  n Mini-Magazines n × 0.96 + 1 oz, and a Hack Club shirt in a mailer 5.5 (S), 6.0 (M), 6.6 (L) or
   6.9 oz (XL); two or three shirts share one mailer. So `items.weight_oz` is the item alone
   (a size's own `weight_oz` in `variants` when sizes differ), `Pack` adds the mailer's `TareOz`,
   and postage estimates match history on that packed weight.
+  Campfire shirt size weights are S 7.8, M 9.6, L/XL 9.9 oz; the 8.5x11 Sprig flyer is
+  0.59 oz, all excluding packaging.
 - **Estimates** (`internal/swag/estimate.go`): arrival windows add handling and transit,
   in business days (Mon–Fri), using the 20th–80th percentiles of past shipments to the same
   country and class. With fewer than 10 samples, use all US or all international shipments.
@@ -523,6 +525,8 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   increase. An official-card override needs an effective date and synthetic boundary tests.
   Check Asendia and USPS announcements separately; do not assume January USPS FCMI changes
   from Asendia's January schedule. After landing, verify real quote-to-label errors again.
+
+  Loaded 2026-11-10: 48,064 rows (12,802 Zenventory, 33,429 Theseus letters, 1,833 Theseus orders), 2025-01-02–2026-11-10; all 10,198 existing delivery dates preserved.
 
 ## Usage analytics
 
