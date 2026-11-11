@@ -46,22 +46,39 @@ func Connect(ctx context.Context, url string) (*Warehouse, error) {
 
 // Check effective privileges, including inherited and PUBLIC grants. A scoped
 // URL's name is not proof of isolation. Only PO columns needed by this adapter
-// are allowed; a failed check never falls back to an agent credential.
-func verifyScope(ctx context.Context, p *pgxpool.Pool) error {
-	var ok bool
-	err := p.QueryRow(ctx, `SELECT
+// and system/extension reads are allowed. Extension ownership is established by
+// pg_depend, never a name prefix. Extra write grants and access to other users'
+// SQL remain forbidden; a failed check never falls back to an agent credential.
+const scopeCheckSQL = `WITH relations AS (
+ SELECT c.oid,c.relname,n.nspname,
+ EXISTS(SELECT 1 FROM pg_depend d WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.objsubid=0 AND d.refclassid='pg_extension'::regclass AND d.deptype='e') AS extension_member,
+ n.nspname IN ('pg_catalog','information_schema') AND c.oid<16384
+ AND NOT EXISTS(SELECT 1 FROM pg_attribute att CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','REFERENCES']) AS privilege
+ WHERE att.attrelid=c.oid AND att.attnum>0 AND NOT att.attisdropped AND has_column_privilege(current_user,c.oid,att.attnum,privilege)
+ AND NOT EXISTS(SELECT 1 FROM aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a WHERE a.grantee=0 AND a.privilege_type=privilege)
+ AND NOT EXISTS(SELECT 1 FROM aclexplode(att.attacl) a WHERE a.grantee=0 AND a.privilege_type=privilege))
+ AND NOT EXISTS(SELECT 1 FROM unnest(ARRAY['DELETE','TRUNCATE','TRIGGER']) AS privilege WHERE has_table_privilege(current_user,c.oid,privilege)
+ AND NOT EXISTS(SELECT 1 FROM aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a WHERE a.grantee=0 AND a.privilege_type=privilege)) AS public_builtin
+ FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','v','m','p','f')
+ ) SELECT
  NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolcreatedb OR rolcreaterole))
- AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
- WHERE c.relkind IN ('r','v','m','p','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%'
- AND NOT(n.nspname='agh_fulfillment_zenventory' AND c.relname='purchase_orders')
- AND has_any_column_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,REFERENCES'))
+ AND NOT pg_has_role(current_user,'pg_read_all_stats','USAGE')
+ AND NOT EXISTS (SELECT 1 FROM relations c WHERE NOT c.public_builtin AND c.nspname NOT LIKE 'pg_toast%'
+ AND NOT(c.nspname='agh_fulfillment_zenventory' AND c.relname='purchase_orders')
+ AND ((has_any_column_privilege(current_user,c.oid,'SELECT') AND NOT c.extension_member)
+ OR has_any_column_privilege(current_user,c.oid,'INSERT,UPDATE,REFERENCES')
+ OR has_table_privilege(current_user,c.oid,'DELETE,TRUNCATE,TRIGGER')))
  AND NOT EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid='agh_fulfillment_zenventory.purchase_orders'::regclass AND a.attnum>0 AND NOT a.attisdropped
  AND a.attname NOT IN ('id','order_number','supplier_name','draft','deleted','completed','created_date','required_by_date','completed_date','_synced_at','items')
  AND has_column_privilege(current_user,a.attrelid,a.attname,'SELECT'))
  AND NOT has_table_privilege(current_user,'agh_fulfillment_zenventory.purchase_orders','INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
  AND NOT has_any_column_privilege(current_user,'agh_fulfillment_zenventory.purchase_orders','INSERT,UPDATE,REFERENCES')
  AND (SELECT bool_and(has_column_privilege(current_user,'agh_fulfillment_zenventory.purchase_orders',col,'SELECT')) FROM unnest(ARRAY['id','order_number','supplier_name','draft','deleted','completed','created_date','required_by_date','completed_date','_synced_at','items']) col)
- AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='S' AND n.nspname NOT IN ('pg_catalog','information_schema') AND has_sequence_privilege(current_user,c.oid,'SELECT,UPDATE,USAGE'))`).Scan(&ok)
+ AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='S' AND n.nspname NOT IN ('pg_catalog','information_schema') AND has_sequence_privilege(current_user,c.oid,'SELECT,UPDATE,USAGE'))`
+
+func verifyScope(ctx context.Context, p *pgxpool.Pool) error {
+	var ok bool
+	err := p.QueryRow(ctx, scopeCheckSQL).Scan(&ok)
 	if err != nil || !ok {
 		return errors.New("print PO login must have only scoped read access to the required PO columns")
 	}

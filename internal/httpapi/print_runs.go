@@ -420,7 +420,7 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 			a.ItemID = it.ID
 		}
 	}
-	if a.Action == "release" {
+	if a.Action == "release" && !(p.Stage == swag.PrintAvailable && p.ShipmentRequestID != nil) {
 		items, err := s.Store.ItemsBySKU(r.Context(), []string{p.SKU})
 		if err != nil || len(items) != 1 {
 			writeErr(w, 422, "prepare a complete listing first")
@@ -503,7 +503,10 @@ func (s *server) pollPrintRun(ctx context.Context, p *store.PrintRun) {
 	if err != nil {
 		return
 	}
-	s.track(&http.Request{URL: &url.URL{Path: "/internal/print-poll"}, Header: http.Header{}}, &store.User{ID: p.UserID}, "print_po_polled", map[string]any{"print_run_id": p.ID, "from": p.Stage, "to": updated.Stage, "reconcile": updated.Reconcile, "failed": a.PollError != ""})
+	changed := updated.Version != p.Version || updated.PollError != p.PollError
+	if changed || a.PollError != "" {
+		s.track(&http.Request{URL: &url.URL{Path: "/internal/print-poll"}, Header: http.Header{}}, &store.User{ID: p.UserID}, "print_po_polled", map[string]any{"print_run_id": p.ID, "from": p.Stage, "to": updated.Stage, "reconcile": updated.Reconcile, "failed": a.PollError != "", "changed": changed})
+	}
 }
 func (s *server) printWorkers(ctx context.Context) {
 	go func() {

@@ -11,6 +11,8 @@
 		poState,
 		actionPreview,
 		actionLabel,
+		printEventLabel,
+		approvalReviewer,
 		approvedQuantityLabel,
 		stockStale,
 		poLinkingMessage,
@@ -194,10 +196,10 @@
 					{#if admin && run.legacy_review && !['available', 'rejected', 'cancelled'].includes(run.stage)}<p
 							class="muted"
 						>
-							Legacy run. Unknown stage dates remain unknown. Audit the original order, listing and first shipment
-							links before continuing.
+							Legacy run. Unknown stage dates remain unknown. Audit the original order, listing and first shipment links
+							before continuing.
 						</p>{/if}
-					{#if run.reconcile}<p class="error">
+					{#if run.reconcile && !['rejected', 'cancelled'].includes(run.stage)}<p class="error">
 							{admin
 								? 'Warehouse evidence needs reconciliation. A reopened or corrected PO does not reverse receipt or release.'
 								: 'HQ is reviewing the latest warehouse update. Your saved stage has not changed.'}
@@ -229,7 +231,7 @@
 							>{run.approved_quantity || (run.origin === 'legacy' ? 'Unknown (legacy)' : 'Not yet approved')}</strong
 						>
 					</p>
-					{#if run.approved_at}<p>Approved {fmt(run.approved_at)} · reviewer #{run.approved_by}</p>
+					{#if run.approved_at}<p>Approved {fmt(run.approved_at)} · {approvalReviewer(admin, run.approved_by)}</p>
 						<p data-private>{run.specifications}</p>{/if}
 					{#if run.parent_id}<a href={`/print-requests/${run.parent_id}`}>Previous print run #{run.parent_id}</a>{/if}
 					{#if run.public_note}<p data-private>HQ update: {run.public_note}</p>{/if}
@@ -421,14 +423,8 @@
 				</div>
 				<div class="card">
 					<h2>Activity</h2>
-					{#each data.history as e}<article>
-							<strong
-								>{e.action === 'observe'
-									? admin
-										? actionLabel(e.action)
-										: stageLabel[e.stage]
-									: actionLabel(e.action)}</strong
-							>
+					{#each data.history as e, i}<article>
+							<strong>{printEventLabel(e, data.history[i + 1]?.stage, admin)}</strong>
 							<div class="muted">{fmt(e.at)} · {e.source}{e.actor_id ? ` · account #${e.actor_id}` : ''}</div>
 							{#if !e.at}<div class="muted">Recorded {fmt(e.recorded_at)}; event date unknown</div>{/if}{#if e.note}<p
 									data-private

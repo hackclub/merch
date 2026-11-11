@@ -223,6 +223,18 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			if r.ETA != "2026-11-30" {
 				t.Fatalf("ETA must use UTC date: %s", r.ETA)
 			}
+			formVersion := r.Version
+			pollAt := time.Now().UTC()
+			p.SyncedAt = pollAt
+			p.PolledAt = pollAt
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}, Now: pollAt})
+			if err != nil || r.Version != formVersion || r.LastPollAt == nil || !r.LastPollAt.Equal(pollAt) {
+				t.Fatalf("no-change poll invalidated form or lost metadata: %+v %v", r, err)
+			}
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: formVersion, Action: "update", ActorID: u.ID, InternalNote: "Reviewed the current printer order"})
+			if err != nil {
+				t.Fatalf("admin form must survive metadata-only poll: %v", err)
+			}
 			p.Completed = true
 			p.CompletedAt = nil // Unknown completion date remains unknown.
 			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}})
@@ -295,6 +307,32 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			}
 			if firstNotices != want {
 				t.Fatalf("first parcel notifications %d want %d", firstNotices, want)
+			}
+			if _, err = s.pool.Exec(ctx, `update print_runs set data=jsonb_set(data,'{last_poll_at}',to_jsonb(now())) where id=$1`, r.ID); err != nil {
+				t.Fatal(err)
+			}
+			polls, err := s.PrintRunsToPoll(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, candidate := range polls {
+				if candidate.ID == r.ID {
+					t.Fatal("completed Available run should poll less often")
+				}
+			}
+			if _, err = s.pool.Exec(ctx, `update print_runs set data=jsonb_set(data,'{last_poll_at}',to_jsonb(now()-interval '16 minutes')) where id=$1`, r.ID); err != nil {
+				t.Fatal(err)
+			}
+			polls, err = s.PrintRunsToPoll(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, candidate := range polls {
+				found = found || candidate.ID == r.ID
+			}
+			if !found {
+				t.Fatal("Available runs must still be checked for reopened POs")
 			}
 			r, _ = s.PrintRun(ctx, r.ID)
 			p.Completed = false

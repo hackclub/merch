@@ -76,6 +76,35 @@ func TestPrintPOLinkReceiptAndReleaseAPI(t *testing.T) {
 	if len(h.events("print_po_polled")) < 2 {
 		t.Fatal("polls were not instrumented")
 	}
+	before := len(h.events("print_po_polled"))
+	if c := h.do(admin, "POST", path, map[string]any{"action": "refresh_po", "version": p.Version}, &p); c != 200 {
+		t.Fatal(c)
+	}
+	if len(h.events("print_po_polled")) != before {
+		t.Fatal("no-change poll must not emit usage activity")
+	}
+	version := p.Version
+	po.fail = true
+	for i := 0; i < 2; i++ {
+		if c := h.do(admin, "POST", path, map[string]any{"action": "refresh_po", "version": version}, &p); c != 200 || p.Version != version || p.PollError == "" {
+			t.Fatalf("failed poll metadata must not invalidate forms: %d %+v", c, p)
+		}
+	}
+	po.fail = false
+	if c := h.do(admin, "POST", path, map[string]any{"action": "refresh_po", "version": version}, &p); c != 200 || p.Version != version || p.PollError != "" {
+		t.Fatalf("poll recovery changed form version: %d", c)
+	}
+	if len(h.events("print_po_polled")) != before+3 {
+		t.Fatal("errors and recovery must be tracked without successful poll heartbeat noise")
+	}
+	// Retrying a completed release must return its parcel even if inventory is stale.
+	h.wh.mu.Lock()
+	h.wh.skuFail = fmt.Errorf("demo inventory source unavailable")
+	h.wh.mu.Unlock()
+	now = now.Add(2 * time.Minute)
+	if c := h.do(admin, "POST", path, map[string]any{"action": "release", "version": 1}, &p); c != 200 || p.ShipmentRequestID == nil {
+		t.Fatalf("idempotent stale-stock release %d", c)
+	}
 }
 
 func TestPrintRunAccessAndActions(t *testing.T) {

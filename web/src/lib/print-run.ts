@@ -79,7 +79,13 @@ export type PrintRun = {
 	links: PO[];
 };
 export type PrintEvent = {
-	details?: { specifications?: string; approved_quantity?: number; art_revision?: number; update_source?: string };
+	details?: {
+		stage_changed?: boolean;
+		specifications?: string;
+		approved_quantity?: number;
+		art_revision?: number;
+		update_source?: string;
+	};
 	id: number;
 	stage: string;
 	action: string;
@@ -121,6 +127,7 @@ export function nextOwner(
 	r: Pick<PrintRun, 'stage' | 'legacy_review' | 'reconcile'> & { origin?: string },
 	admin = true
 ): string {
+	if (['rejected', 'cancelled'].includes(r.stage)) return 'Closed';
 	if (r.origin === 'legacy') {
 		if (['available', 'rejected', 'cancelled'].includes(r.stage)) return 'Closed';
 		return admin ? 'HQ: audit legacy run' : 'HQ review';
@@ -194,6 +201,15 @@ export function actionLabel(action: string): string {
 			} as Record<string, string>
 		)[action] || 'Print request updated'
 	);
+}
+export function printEventLabel(event: PrintEvent, previousStage: string | undefined, admin: boolean): string {
+	if (event.action !== 'observe') return actionLabel(event.action);
+	if (!admin) return stageLabel[event.stage] || 'Warehouse update';
+	const changed = event.details?.stage_changed ?? (previousStage !== undefined && previousStage !== event.stage);
+	return changed ? `${stageLabel[event.stage]} · Warehouse PO sync` : actionLabel('observe');
+}
+export function approvalReviewer(admin: boolean, id: number): string {
+	return admin ? `reviewer #${id}` : 'HQ';
 }
 export function printPOStatus(r: Pick<PrintRun, 'poll_error' | 'links'>, now = Date.now()): string {
 	if (r.poll_error) return 'Not yet confirmed in latest copy';

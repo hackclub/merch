@@ -6,8 +6,28 @@ import {
 	actionLabel,
 	approvedQuantityLabel,
 	stockStale,
-	poLinkingMessage
+	poLinkingMessage,
+	printEventLabel,
+	approvalReviewer
 } from './print-run';
+it('labels automatic stage changes separately from evidence-only observations', () => {
+	expect(
+		printEventLabel({ stage: 'ordered', action: 'observe', details: { stage_changed: true } } as any, 'approved', true)
+	).toBe('Ordered from printer · Warehouse PO sync');
+	expect(
+		printEventLabel({ stage: 'received', action: 'observe', details: { stage_changed: true } } as any, 'ordered', true)
+	).toBe('Received at warehouse · Warehouse PO sync');
+	expect(
+		printEventLabel({ stage: 'ordered', action: 'observe', details: { stage_changed: false } } as any, 'ordered', true)
+	).toBe('Warehouse evidence updated');
+	expect(printEventLabel({ stage: 'received', action: 'observe' } as any, 'ordered', true)).toBe(
+		'Received at warehouse · Warehouse PO sync'
+	);
+	expect(approvalReviewer(false, 1)).toBe('HQ');
+	expect(approvalReviewer(true, 1)).toBe('reviewer #1');
+	for (const stage of ['cancelled', 'rejected'])
+		expect(nextOwner({ stage, legacy_review: false, reconcile: true })).toBe('Closed');
+});
 it('gives legacy runs a truthful owner, approval label and needs-action state', () => {
 	const base = {
 		origin: 'legacy',

@@ -116,7 +116,11 @@ func (s *Store) PrintRunsForSources(ctx context.Context, prints, authors []int64
 // Poll fairly across all linked runs, including releases that may later need
 // reconciliation. Closed newer requests must not starve old active runs.
 func (s *Store) PrintRunsToPoll(ctx context.Context) ([]*PrintRun, error) {
-	rows, err := s.pool.Query(ctx, printRunSelect+` WHERE r.stage IN ('approved','ordered','in_transit','received','available') AND EXISTS(SELECT 1 FROM print_run_po_links l WHERE l.run_id=r.id) ORDER BY r.data->>'last_poll_at' NULLS FIRST,r.id LIMIT 50`)
+	rows, err := s.pool.Query(ctx, printRunSelect+` WHERE r.stage IN ('approved','ordered','in_transit','received','available') AND EXISTS(SELECT 1 FROM print_run_po_links l WHERE l.run_id=r.id)
+ AND (r.stage<>'available' OR r.data->>'reconcile'='true' OR coalesce(r.data->>'poll_error','')<>''
+ OR (r.data->>'last_poll_at') IS NULL OR (r.data->>'last_poll_at')::timestamptz<=now()-interval '15 minutes'
+ OR EXISTS(SELECT 1 FROM print_run_po_links l WHERE l.run_id=r.id AND (l.evidence->>'completed' IS DISTINCT FROM 'true' OR l.evidence->>'draft'='true' OR l.evidence->>'deleted'='true')))
+ ORDER BY r.data->>'last_poll_at' NULLS FIRST,r.id LIMIT 50`)
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +419,6 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 		r.LastPollAt = &now
 		r.PollError = a.PollError
 		if a.PollError != "" {
-			r.Reconcile = true
 			break
 		}
 		for _, p := range a.Evidence {
@@ -472,7 +475,7 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 			}
 		}
 	case "release":
-		if r.Stage != swag.PrintReceived || r.LegacyReview || r.Reconcile || r.ItemID == 0 || r.SKU == "" || a.Sellable < 1 {
+		if r.Stage != swag.PrintReceived || r.LegacyReview || r.Reconcile || r.PollError != "" || r.ItemID == 0 || r.SKU == "" || a.Sellable < 1 {
 			return invalid("receipt, reconciled complete listing and confirmed sellable stock required")
 		}
 		if r.Request.InitialQuantity < 1 && r.Origin != "legacy" {
@@ -565,13 +568,16 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 	if a.Note != "" {
 		r.PublicNote = a.Note
 	}
-	r.Version++
+	recordEvent := a.Action != "observe" || prev != r.Stage || notify || previousReconcile != r.Reconcile || previousEvidence != printEvidenceDigest(r.Links)
+	if recordEvent {
+		r.Version++
+	}
 	_, err = tx.Exec(ctx, `UPDATE print_runs SET stage=$2,version=$3,data=$4,internal_note=$5,shipment_request_id=$6 WHERE id=$1`, id, r.Stage, r.Version, r.PrintRunData, r.InternalNote, r.ShipmentRequestID)
 	if err != nil {
 		return nil, err
 	}
 	// Poll metadata alone does not fabricate timeline activity or notifications.
-	if a.Action != "observe" || prev != r.Stage || notify || previousReconcile != r.Reconcile || previousEvidence != printEvidenceDigest(r.Links) {
+	if recordEvent {
 		var eid int64
 		var actor *int64
 		if a.ActorID != 0 {
@@ -583,7 +589,7 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 		} else if a.ActorID == r.UserID {
 			source = "requester"
 		}
-		details := map[string]any{"approved_quantity": r.ApprovedQuantity, "specifications": r.Specifications, "art_revision": r.Revision, "sku": r.SKU, "item_id": r.ItemID, "update_source": a.ETASource, "po_links": r.Links}
+		details := map[string]any{"from_stage": prev, "stage_changed": prev != r.Stage, "approved_quantity": r.ApprovedQuantity, "specifications": r.Specifications, "art_revision": r.Revision, "sku": r.SKU, "item_id": r.ItemID, "update_source": a.ETASource, "po_links": r.Links}
 		eventAction := a.Action
 		if a.Action == "observe" && prev == r.Stage && notify {
 			eventAction = "eta_update"
