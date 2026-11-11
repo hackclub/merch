@@ -48,18 +48,7 @@ func (s *server) overlayLegacyPrints(ctx context.Context, prints []*store.PrintR
 		p.SKU = r.SKU
 		p.AdminNote = r.PublicNote
 		p.ShipmentRequestID = r.ShipmentRequestID
-		switch r.Stage {
-		case swag.PrintApproved:
-			p.Status = "submitted"
-		case swag.PrintInTransit:
-			p.Status = "ordered"
-		case swag.PrintReceived, swag.PrintAvailable:
-			p.Status = "stocked"
-		case swag.PrintCancelled:
-			p.Status = "rejected"
-		default:
-			p.Status = string(r.Stage)
-		}
+		p.Status = swag.LegacyPrintRequestStatus(r.Stage)
 	}
 	return nil
 }
@@ -87,16 +76,7 @@ func (s *server) overlayLegacyAuthors(ctx context.Context, subs []*store.Submiss
 		p.PrintStage = r.Stage
 		p.SKU = r.SKU
 		p.AdminNote = r.PublicNote
-		switch r.Stage {
-		case swag.PrintOrdered, swag.PrintInTransit:
-			p.Status = "printing"
-		case swag.PrintReceived, swag.PrintAvailable:
-			p.Status = "stocked"
-		case swag.PrintCancelled:
-			p.Status = "rejected"
-		default:
-			p.Status = string(r.Stage)
-		}
+		p.Status = swag.LegacySubmissionStatus(r.Stage)
 	}
 	return nil
 }

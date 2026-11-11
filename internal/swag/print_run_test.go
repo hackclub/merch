@@ -130,3 +130,26 @@ func TestPrintRequestableStock(t *testing.T) {
 		}
 	}
 }
+
+func TestLegacyPrintStatus(t *testing.T) {
+	for _, tc := range []struct {
+		stage              PrintStage
+		staff, submissions string
+	}{
+		{PrintSubmitted, "submitted", "submitted"},
+		{PrintApproved, "submitted", "approved"},
+		{PrintOrdered, "ordered", "printing"},
+		{PrintInTransit, "ordered", "printing"},
+		{PrintReceived, "stocked", "stocked"},
+		{PrintAvailable, "stocked", "stocked"},
+		{PrintRejected, "rejected", "rejected"},
+		{PrintCancelled, "rejected", "rejected"},
+	} {
+		if got := LegacyPrintRequestStatus(tc.stage); got != tc.staff {
+			t.Errorf("print request %s: %q want %q", tc.stage, got, tc.staff)
+		}
+		if got := LegacySubmissionStatus(tc.stage); got != tc.submissions {
+			t.Errorf("submission %s: %q want %q", tc.stage, got, tc.submissions)
+		}
+	}
+}

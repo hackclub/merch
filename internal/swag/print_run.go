@@ -36,6 +36,36 @@ func CanTransitionPrint(from, to PrintStage) bool {
 	return false
 }
 
+// LegacyPrintRequestStatus is a run's stage in the old print_requests statuses
+// (submitted, ordered, stocked, rejected), for the old read APIs.
+func LegacyPrintRequestStatus(stage PrintStage) string {
+	switch stage {
+	case PrintApproved:
+		return "submitted"
+	case PrintInTransit:
+		return "ordered"
+	case PrintReceived, PrintAvailable:
+		return "stocked"
+	case PrintCancelled:
+		return "rejected"
+	}
+	return string(stage)
+}
+
+// LegacySubmissionStatus is a run's stage in the old author_submissions
+// statuses (submitted, approved, printing, stocked, rejected).
+func LegacySubmissionStatus(stage PrintStage) string {
+	switch stage {
+	case PrintOrdered, PrintInTransit:
+		return "printing"
+	case PrintReceived, PrintAvailable:
+		return "stocked"
+	case PrintCancelled:
+		return "rejected"
+	}
+	return string(stage)
+}
+
 // PrintPOLink is explicitly selected by HQ; SKU matching only suggests links.
 type PrintPOLink struct {
 	POID   int64  `json:"po_id"`
