@@ -104,40 +104,7 @@ INSERT INTO print_run_events(run_id,stage,action,event_at,note,source,version)
  'legacy_status_change',at,'Original status: '||original_stage,'usage_events',
  -row_number() over(partition by run_id order by at,event_id) FROM transitions;
 
--- Inserts through either established entry path get a canonical identity in the
--- same transaction. The snapshot is immutable; reorders are distinct source rows.
--- +goose StatementBegin
-CREATE FUNCTION new_print_run() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE rid bigint; eid bigint; snapshot jsonb; src text;
-BEGIN
- snapshot=to_jsonb(NEW);
- IF TG_TABLE_NAME='print_requests' THEN
-  src='staff';
-  snapshot=snapshot||jsonb_build_object('needed_by',NEW.needed_by::timestamp AT TIME ZONE 'UTC');
-  INSERT INTO print_runs(user_id,source_print_id,origin,stage,request,data) VALUES(NEW.user_id,NEW.id,src,'submitted',snapshot,jsonb_build_object('slack_opt_in',NEW.slack_opt_in)) RETURNING id INTO rid;
- ELSE
-  src='author'; snapshot=snapshot||jsonb_build_object('product','custom','front_url',NEW.file_url,'note',NEW.description);
-  INSERT INTO print_runs(user_id,source_author_id,origin,stage,request,data) VALUES(NEW.user_id,NEW.id,src,'submitted',snapshot,jsonb_build_object('slack_opt_in',NEW.slack_opt_in)) RETURNING id INTO rid;
- END IF;
- INSERT INTO print_art_revisions(run_id,revision,front_url,back_url,created_at) VALUES(rid,1,snapshot->>'front_url',coalesce(snapshot->>'back_url',''),NEW.created_at);
- INSERT INTO print_run_events(run_id,stage,action,actor_id,event_at,source,version) VALUES(rid,'submitted','submit',NEW.user_id,now(),src,1) RETURNING id INTO eid;
- INSERT INTO print_notifications(run_id,event_id,channel,destination,subject,body)
- SELECT rid,eid,'email',email,'Print request received',
- 'We received your '||NEW.title||' print request. HQ will review the artwork and quantity. No order has been placed.' FROM users WHERE id=NEW.user_id;
- IF NEW.slack_opt_in THEN
- INSERT INTO print_notifications(run_id,event_id,channel,destination,subject,body)
- SELECT rid,eid,'slack',slack_id,'Print request received','We received your print request. HQ will review the artwork and quantity. No order has been placed.' FROM users WHERE id=NEW.user_id AND slack_id<>'';
- END IF;
- RETURN NEW;
-END $$;
--- +goose StatementEnd
-CREATE TRIGGER staff_print_run AFTER INSERT ON print_requests FOR EACH ROW EXECUTE FUNCTION new_print_run();
-CREATE TRIGGER author_print_run AFTER INSERT ON author_submissions FOR EACH ROW EXECUTE FUNCTION new_print_run();
-
 -- +goose Down
-DROP TRIGGER author_print_run ON author_submissions;
-DROP TRIGGER staff_print_run ON print_requests;
-DROP FUNCTION new_print_run();
 DROP TABLE print_po_observations;
 DROP TABLE print_run_po_links;
 DROP TABLE print_art_revisions;

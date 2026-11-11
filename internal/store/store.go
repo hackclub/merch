@@ -768,15 +768,30 @@ func scanSubmission(row pgx.Row) (*Submission, error) {
 }
 
 func (s *Store) CreateSubmission(ctx context.Context, sub Submission) (*Submission, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
 	var id int64
-	err := s.pool.QueryRow(ctx, `
+	err = tx.QueryRow(ctx, `
 		INSERT INTO author_submissions (user_id, program, title, description, kind, file_url, quantity,slack_opt_in,initial_quantity,address,deadline)
 		VALUES ($1, $2, $3, $4, $5, $6, $7,$8,$9,$10,$11) RETURNING id`,
 		sub.UserID, sub.Program, sub.Title, sub.Description, sub.Kind, sub.FileURL, sub.Quantity, sub.SlackOptIn, sub.InitialQuantity, sub.Address, sub.Deadline).Scan(&id)
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	return scanSubmission(s.pool.QueryRow(ctx, submissionSelect+` WHERE s.id = $1`, id))
+	created, err := scanSubmission(tx.QueryRow(ctx, submissionSelect+` WHERE s.id = $1`, id))
+	if err != nil {
+		return nil, err
+	}
+	request := PrintRequest{ID: id, UserID: sub.UserID, Product: "custom", Program: sub.Program, Title: sub.Title,
+		Note: sub.Description, Quantity: sub.Quantity, FrontURL: sub.FileURL, InitialQuantity: sub.InitialQuantity,
+		Address: sub.Address, Deadline: sub.Deadline, SlackOptIn: sub.SlackOptIn, Status: created.Status, CreatedAt: created.CreatedAt}
+	if _, err = createPrintRun(ctx, tx, nil, &id, "author", request); err != nil {
+		return nil, err
+	}
+	return created, tx.Commit(ctx)
 }
 
 func (s *Store) ListSubmissionsByUser(ctx context.Context, userID int64) ([]*Submission, error) {

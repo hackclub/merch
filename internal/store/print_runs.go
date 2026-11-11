@@ -686,6 +686,31 @@ func preparePrintItem(ctx context.Context, tx pgx.Tx, request PrintRequest, sku 
 	return id, mapErr(err)
 }
 
+// createPrintRun is shared by the staff and author entry paths. The caller
+// commits the source row, artwork, event and received messages together.
+func createPrintRun(ctx context.Context, tx pgx.Tx, printID, authorID *int64, origin string, request PrintRequest) (int64, error) {
+	request.UserEmail, request.UserName = "", ""
+	r := &PrintRun{UserID: request.UserID, Origin: origin, Stage: swag.PrintSubmitted, Version: 1, Request: request,
+		PrintRunData: PrintRunData{SlackOptIn: request.SlackOptIn}}
+	err := tx.QueryRow(ctx, `insert into print_runs(user_id,source_print_id,source_author_id,origin,stage,request,data,created_at) values($1,$2,$3,$4,'submitted',$5,$6,$7) returning id`,
+		r.UserID, printID, authorID, origin, request, r.PrintRunData, request.CreatedAt).Scan(&r.ID)
+	if err != nil {
+		return 0, err
+	}
+	if _, err = tx.Exec(ctx, `insert into print_art_revisions(run_id,revision,front_url,back_url,created_at) values($1,1,$2,$3,$4)`, r.ID, request.FrontURL, request.BackURL, request.CreatedAt); err != nil {
+		return 0, err
+	}
+	var eventID int64
+	err = tx.QueryRow(ctx, `insert into print_run_events(run_id,stage,action,actor_id,event_at,source,version) values($1,'submitted','submit',$2,$3,$4,1) returning id`, r.ID, r.UserID, request.CreatedAt, origin).Scan(&eventID)
+	if err != nil {
+		return 0, err
+	}
+	if err = tx.QueryRow(ctx, `select email from users where id=$1`, r.UserID).Scan(&r.UserEmail); err != nil {
+		return 0, err
+	}
+	return r.ID, queuePrintNotice(ctx, tx, r, eventID, printStageMessage(r, PrintAction{}))
+}
+
 // ReorderPrintRun uses the parent's submitted version as a retry key. A fresh
 // intentional reorder reloads the new parent version, giving a distinct run.
 func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64) (*PrintRun, error) {
@@ -713,11 +738,13 @@ func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64) (*PrintR
 		return nil, ErrPrintAction
 	}
 	r := p.Request
-	var source, idNew int64
-	err = tx.QueryRow(ctx, `insert into print_requests(user_id,product,title,quantity,front_url,back_url,note,initial_quantity,address,front_preview_url,back_preview_url,landscape,program,deadline,finish,slack_opt_in) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) returning id`, p.UserID, r.Product, r.Title, r.Quantity, r.FrontURL, r.BackURL, r.Note, r.InitialQuantity, r.Address, r.FrontPreviewURL, r.BackPreviewURL, r.Landscape, r.Program, r.Deadline, r.Finish, p.SlackOptIn).Scan(&source)
+	r.UserID, r.SlackOptIn = p.UserID, p.SlackOptIn
+	created, err := insertPrintRequest(ctx, tx, r)
 	if err != nil {
 		return nil, err
 	}
+	source := created.ID
+	var idNew int64
 	origin := p.Origin
 	if origin == "legacy" {
 		origin = "staff"
@@ -743,6 +770,10 @@ func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64) (*PrintR
 	return s.PrintRun(ctx, idNew)
 }
 
+func printReceivedMessage(title string) string {
+	return "We received your " + title + " print request. HQ will review the artwork and quantity. No order has been placed."
+}
+
 func printStageMessage(r *PrintRun, a PrintAction) string {
 	item := r.Request.Title
 	eta := r.ETA
@@ -750,6 +781,8 @@ func printStageMessage(r *PrintRun, a PrintAction) string {
 		eta = "not confirmed"
 	}
 	switch r.Stage {
+	case swag.PrintSubmitted:
+		return printReceivedMessage(item)
 	case swag.PrintApproved:
 		return fmt.Sprintf("Your %s request is approved for %d. HQ will place the printer order next.", item, r.ApprovedQuantity)
 	case swag.PrintOrdered:
@@ -783,6 +816,9 @@ func queuePrintNotice(ctx context.Context, tx pgx.Tx, r *PrintRun, eid int64, bo
 		return nil
 	}
 	subject := fmt.Sprintf("Print #%d · %s", r.ID, printStageLabel(r.Stage))
+	if r.Stage == swag.PrintSubmitted {
+		subject = "Print request received"
+	}
 	_, err := tx.Exec(ctx, `INSERT INTO print_notifications(run_id,event_id,channel,destination,subject,body) VALUES($1,$2,'email',$3,$4,$5)`, r.ID, eid, r.UserEmail, subject, body)
 	if err != nil {
 		return err
@@ -791,6 +827,9 @@ func queuePrintNotice(ctx context.Context, tx pgx.Tx, r *PrintRun, eid int64, bo
 		// Free-text HQ updates can contain invoice or address details. Slack
 		// receives stage facts and a link; full private updates stay in email.
 		slackBody := fmt.Sprintf("Print request #%d: %s. Requested %d; approved %d. Printing status is separate from your first parcel.", r.ID, printStageLabel(r.Stage), r.Request.Quantity, r.ApprovedQuantity)
+		if r.Stage == swag.PrintSubmitted {
+			slackBody = "We received your print request. HQ will review the artwork and quantity. No order has been placed."
+		}
 		if _, err := time.Parse(time.DateOnly, r.ETA); err == nil {
 			slackBody += " Expected warehouse date: " + r.ETA + " (estimate)."
 		}

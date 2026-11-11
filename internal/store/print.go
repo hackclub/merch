@@ -69,8 +69,22 @@ func scanPrintRequest(row pgx.Row) (*PrintRequest, error) {
 }
 
 func (s *Store) CreatePrintRequest(ctx context.Context, p PrintRequest) (*PrintRequest, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+	created, err := insertPrintRequest(ctx, tx, p)
+	if err != nil {
+		return nil, err
+	}
+	return created, tx.Commit(ctx)
+}
+
+// insertPrintRequest also creates its run and received notification in this transaction.
+func insertPrintRequest(ctx context.Context, tx pgx.Tx, p PrintRequest) (*PrintRequest, error) {
 	var id int64
-	err := s.pool.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		INSERT INTO print_requests (user_id, product, title, quantity, front_url, back_url, note, needed_by, estimate_cents,
 			initial_quantity, address, front_preview_url, back_preview_url, landscape, program, deadline, finish, slack_opt_in)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id`,
@@ -79,7 +93,12 @@ func (s *Store) CreatePrintRequest(ctx context.Context, p PrintRequest) (*PrintR
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	return s.GetPrintRequest(ctx, id)
+	created, err := scanPrintRequest(tx.QueryRow(ctx, printRequestSelect+` WHERE p.id=$1`, id))
+	if err != nil {
+		return nil, err
+	}
+	_, err = createPrintRun(ctx, tx, &id, nil, "staff", *created)
+	return created, err
 }
 
 func (s *Store) GetPrintRequest(ctx context.Context, id int64) (*PrintRequest, error) {
