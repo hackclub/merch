@@ -999,12 +999,12 @@ func TestAuthorSubmissionFlow(t *testing.T) {
 	}
 
 	var upd store.Submission
-	if code := h.do(admin, "PUT", fmt.Sprintf("/api/admin/submissions/%d", sub.ID), map[string]any{"status": "stocked", "sku": "Sti/Spr/1", "admin_note": "done"}, &upd); code != 200 || upd.Status != "stocked" {
+	if code := h.do(admin, "PUT", fmt.Sprintf("/api/admin/submissions/%d", sub.ID), map[string]any{"status": "stocked", "sku": "Sti/Spr/1", "admin_note": "done"}, &upd); code != 409 {
 		t.Fatalf("update = %d %+v", code, upd)
 	}
 	var mine struct{ Submissions []store.Submission }
 	h.do(author, "GET", "/api/author/submissions", nil, &mine)
-	if len(mine.Submissions) != 1 || mine.Submissions[0].SKU != "Sti/Spr/1" {
+	if len(mine.Submissions) != 1 || mine.Submissions[0].Status != "submitted" {
 		t.Fatalf("mine = %+v", mine)
 	}
 }

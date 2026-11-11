@@ -16,7 +16,7 @@
 	import { thumb } from '$lib/thumb';
 
 	type Tab = 'requests' | 'items' | 'settings' | 'submissions' | 'emails' | 'api keys';
-	let tab = $state<Tab>('requests');
+	let tab = $state<Tab>(typeof window !== 'undefined' && ['submissions','print-requests'].includes(new URLSearchParams(window.location.search).get('tab') || '') ? 'submissions' : 'requests');
 	let error = $state('');
 	let flash = $state('');
 
@@ -229,7 +229,7 @@
 {:else}
 	<div class="row" style="margin-bottom: 1rem">
 		{#each ['requests', 'items', 'settings', 'submissions', 'emails', 'api keys'] as t}
-			<button class:secondary={tab !== t} onclick={() => (tab = t as Tab)}>{t}</button>
+			<button class:secondary={tab !== t} onclick={() => (tab = t as Tab)}>{t === 'submissions' ? 'Print requests' : t === 'requests' ? 'Shipment requests' : t}</button>
 		{/each}
 	</div>
 	{#if error}<p class="error">{error}</p>{/if}
@@ -566,29 +566,6 @@
 		</table>
 	{:else if tab === 'submissions'}
 		<PrintRequestsAdmin />
-		<table>
-			<thead><tr><th>Author</th><th>Material</th><th>Qty</th><th>Status / SKU / note</th><th></th></tr></thead>
-			<tbody>
-				{#each submissions as s (s.id)}
-					<tr>
-						<td>{s.user_email}<div class="muted">{s.program}</div></td>
-						<td><a href={s.file_url} target="_blank" rel="noreferrer">{s.title}</a> <span class="muted">({s.kind})</span>
-							{#if s.description}<div class="muted">{s.description}</div>{/if}</td>
-						<td>{s.quantity}</td>
-						<td>
-							<select bind:value={s.status}>
-								{#each ['submitted', 'approved', 'printing', 'stocked', 'rejected'] as st}<option value={st}>{statusLabel[st]}</option>{/each}
-							</select>
-							<input bind:value={s.sku} placeholder="warehouse SKU once stocked" />
-							<input bind:value={s.admin_note} placeholder="note to author" />
-						</td>
-						<td><button onclick={() => saveSubmission(s)}>Save</button></td>
-					</tr>
-				{:else}
-					<tr><td colspan="5" class="muted">No submissions yet.</td></tr>
-				{/each}
-			</tbody>
-		</table>
 	{/if}
 {/if}
 

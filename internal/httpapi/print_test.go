@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -261,89 +260,9 @@ func TestPrintRequestFlow(t *testing.T) {
 	if code := h.do(agent, "PUT", path, map[string]any{"status": "ordered"}, nil); code != 401 {
 		t.Fatalf("agent update = %d", code)
 	}
-	// Stocked needs the SKU it's under, to list it and send the first shipment.
-	if code := h.do(admin, "PUT", path, map[string]any{"status": "stocked"}, nil); code != 422 {
-		t.Fatalf("stocked without SKU = %d", code)
-	}
-	var upd store.PrintRequest
-	if code := h.do(admin, "PUT", path, map[string]any{"status": "stocked", "admin_note": "In the shop", "sku": " Pri/Hav/4x6/1st "}, &upd); code != 200 || upd.Status != "stocked" || upd.SKU != "Pri/Hav/4x6/1st" {
-		t.Fatalf("update = %d %+v", code, upd)
-	}
-	// It's listed in the shop for everyone, made from the art (landscape like the art).
-	items, _ := h.store.ItemsBySKU(context.Background(), []string{"Pri/Hav/4x6/1st"})
-	if len(items) != 1 {
-		t.Fatalf("items = %+v", items)
-	}
-	it := items[0]
-	if !it.Visible || it.StaffOnly || it.Name != "Haven postcard" || it.Packs != "postcard" || it.Finish != "linen" || *it.WidthIn != 6 || *it.HeightIn != 4 ||
-		len(it.Images) != 2 || it.Images[0] != "https://cdn.example/3/front-preview.jpg" {
-		t.Fatalf("item = %+v", it)
-	}
-	// The first shipment is a request on their account, waiting for review like any other.
-	if upd.ShipmentRequestID == nil {
-		t.Fatalf("no first shipment request: %+v", upd)
-	}
-	req, err := h.store.GetRequest(context.Background(), *upd.ShipmentRequestID)
-	if err != nil || req.Status != swag.StatusPending || req.Purpose != "staff" || req.Address.City != "Burlington" ||
-		len(req.Lines) != 1 || req.Lines[0].ItemID != it.ID || req.Lines[0].Quantity != 25 || !strings.Contains(req.Note, "first 25") {
-		t.Fatalf("first shipment = %+v, %v", req, err)
-	}
-	if e := h.events("print_request_updated"); len(e) != 1 || props(t, e[0])["shipment_request_id"] != float64(req.ID) {
-		t.Fatalf("stocked events = %+v", e)
-	}
-	// Saving it again doesn't send a second shipment.
-	if code := h.do(admin, "PUT", path, map[string]any{"status": "stocked", "sku": "Pri/Hav/4x6/1st"}, &upd); code != 200 || *upd.ShipmentRequestID != req.ID {
-		t.Fatalf("resave = %d %+v", code, upd)
-	}
-	if code := h.do(admin, "PUT", path, map[string]any{"status": "lost"}, nil); code != 422 {
-		t.Fatalf("bad status = %d", code)
-	}
-	if e := h.events("print_request_updated"); len(e) != 2 || props(t, e[0])["from"] != "submitted" || props(t, e[0])["to"] != "stocked" {
-		t.Fatalf("update events = %+v", e)
-	}
-}
-
-// A run stocked under a SKU that's already listed ships from that item; abroad,
-// the first shipment waits for its postage like any international request.
-func TestPrintFirstShipmentUsesListedItem(t *testing.T) {
-	h := newHarness(t)
-	staff, admin := h.client("staff@hackclub.com"), h.client(adminEmail)
-	listed := h.mkItem("Pri/Spr/11x/Lar", true)
-	var pr store.PrintRequest
-	if code := h.do(staff, "POST", "/api/print-requests", map[string]any{"product": "poster_11x17", "title": "Sprig poster", "program": "Sprig", "deadline": "None",
-		"quantity": 100, "front_url": "https://cdn.example/f.png", "note": "Libraries", "initial_quantity": 5, "address": deAddr}, &pr); code != 201 {
-		t.Fatalf("create = %d", code)
-	}
-	var upd store.PrintRequest
-	if code := h.do(admin, "PUT", fmt.Sprintf("/api/admin/print-requests/%d", pr.ID), map[string]any{"status": "stocked", "sku": "Pri/Spr/11x/Lar"}, &upd); code != 200 || upd.ShipmentRequestID == nil {
-		t.Fatalf("stocked = %d %+v", code, upd)
-	}
-	req, _ := h.store.GetRequest(context.Background(), *upd.ShipmentRequestID)
-	if req.Lines[0].ItemID != listed.ID || req.Status != swag.StatusAwaitingPayment || req.ShippingFeeCents <= 0 {
-		t.Fatalf("first shipment = %+v", req)
-	}
-	if items, _ := h.store.ItemsBySKU(context.Background(), []string{"Pri/Spr/11x/Lar"}); len(items) != 1 {
-		t.Fatalf("items = %d, want the one listed", len(items))
-	}
-}
-
-// A glossy poster run is listed glossy, so the shop's 3D view shows it shiny.
-func TestPrintGlossyPoster(t *testing.T) {
-	h := newHarness(t)
-	staff, admin := h.client("staff@hackclub.com"), h.client(adminEmail)
-	var pr store.PrintRequest
-	if code := h.do(staff, "POST", "/api/print-requests", map[string]any{"product": "poster_11x17", "finish": "gloss", "title": "Sprig poster", "program": "Sprig",
-		"deadline": "None", "quantity": 100, "front_url": "https://cdn.example/f.png", "note": "Libraries", "initial_quantity": 5, "address": usAddr}, &pr); code != 201 || pr.Finish != "gloss" {
-		t.Fatalf("create = %d %+v", code, pr)
-	}
-	if e := h.events("print_request_created"); len(e) != 1 || props(t, e[0])["finish"] != "gloss" {
-		t.Fatalf("events = %+v", e)
-	}
-	if code := h.do(admin, "PUT", fmt.Sprintf("/api/admin/print-requests/%d", pr.ID), map[string]any{"status": "stocked", "sku": "Pri/Spr/11x/Gls"}, nil); code != 200 {
-		t.Fatalf("stocked = %d", code)
-	}
-	if items, _ := h.store.ItemsBySKU(context.Background(), []string{"Pri/Spr/11x/Gls"}); len(items) != 1 || items[0].Finish != "gloss" {
-		t.Fatalf("items = %+v", items)
+	// Legacy status writes cannot bypass approval or PO evidence.
+	if code := h.do(admin, "PUT", path, map[string]any{"status": "stocked", "sku": "Demo/Card"}, nil); code != 409 {
+		t.Fatalf("legacy update = %d", code)
 	}
 }
 

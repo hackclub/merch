@@ -38,7 +38,7 @@ export default defineConfig({
 		// xfwd sends X-Forwarded-Host, which the Go server uses to pick the OAuth
 		// redirect for whichever origin (localhost / porygon) the browser is on.
 		proxy: Object.fromEntries(
-			['/api', '/auth', '/healthz'].map((p) => [p, { target: backend, xfwd: true }])
+			['/api', '^/auth/', '/healthz'].map((p) => [p, { target: backend, xfwd: true }])
 		)
 	},
 	test: {

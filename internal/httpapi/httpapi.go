@@ -56,20 +56,22 @@ type ImageStore interface {
 }
 
 type Deps struct {
-	Config    *config.Config
-	Store     *store.Store
-	Provider  auth.Provider
-	Authors   authors.Directory
-	Warehouse Warehouse
-	Images    ImageStore    // nil disables image uploads
-	Places    AddressFinder // nil disables address autocomplete
-	Payments  Payments      // card payments for international shipping (Stripe)
-	Mailer    Mailer        // nil sends no emails
-	Static    fs.FS         // built PWA (web/build); nil disables static serving
-	Now       func() time.Time
-	Log       *slog.Logger
-	Warm      bool // load caches (shipping history) in the background at start
-	RateLimit bool // per-client limits on /api and /auth (guard.go)
+	PrintPOs      PrintPOReader
+	WorkerContext context.Context // production lifecycle; nil in tests
+	Config        *config.Config
+	Store         *store.Store
+	Provider      auth.Provider
+	Authors       authors.Directory
+	Warehouse     Warehouse
+	Images        ImageStore    // nil disables image uploads
+	Places        AddressFinder // nil disables address autocomplete
+	Payments      Payments      // card payments for international shipping (Stripe)
+	Mailer        Mailer        // nil sends no emails
+	Static        fs.FS         // built PWA (web/build); nil disables static serving
+	Now           func() time.Time
+	Log           *slog.Logger
+	Warm          bool // load caches (shipping history) in the background at start
+	RateLimit     bool // per-client limits on /api and /auth (guard.go)
 }
 
 type server struct {
@@ -101,10 +103,18 @@ func New(d Deps) http.Handler {
 		d.Log = slog.Default()
 	}
 	s := &server{Deps: d, release: buildRelease(d.Static)}
+	if d.WorkerContext != nil {
+		go s.printWorkers(d.WorkerContext)
+	}
 	if d.Warm {
 		go s.warm(context.Background())
 	}
 	mux := http.NewServeMux()
+	mux.Handle("GET /api/print-runs", s.requireUser(s.printRuns))
+	mux.Handle("GET /api/print-runs/{id}", s.requireUser(s.printRunDetail))
+	mux.Handle("POST /api/print-runs/{id}/actions", s.requireUser(s.printRunAction))
+	mux.Handle("GET /api/admin/print-runs", s.requireAdmin(s.printRuns))
+	mux.Handle("GET /api/admin/print-po-suggestions", s.requireAdmin(s.printPOSuggestions))
 
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /auth/login", s.login)
@@ -1431,39 +1441,9 @@ func (s *server) adminSubmissions(w http.ResponseWriter, r *http.Request, v view
 var submissionStatuses = map[string]bool{"submitted": true, "approved": true, "printing": true, "stocked": true, "rejected": true}
 
 func (s *server) adminUpdateSubmission(w http.ResponseWriter, r *http.Request, v viewer) {
-	id, ok := pathID(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		Status    string `json:"status"`
-		AdminNote string `json:"admin_note"`
-		SKU       string `json:"sku"`
-	}
-	if !readJSON(w, r, &body) {
-		return
-	}
-	if !submissionStatuses[body.Status] {
-		writeErr(w, http.StatusUnprocessableEntity, "unknown status")
-		return
-	}
-	from := ""
-	if prev, err := s.Store.GetSubmission(r.Context(), id); err == nil {
-		from = prev.Status
-	}
-	sub, err := s.Store.UpdateSubmission(r.Context(), id, body.Status, body.AdminNote, strings.TrimSpace(body.SKU))
-	if errors.Is(err, store.ErrNotFound) {
-		writeErr(w, http.StatusNotFound, "submission not found")
-		return
-	} else if err != nil {
-		s.serverErr(w, err)
-		return
-	}
-	s.trackAdmin(r, v, "submission_updated", map[string]any{"submission_id": sub.ID, "from": from, "to": sub.Status, "kind": sub.Kind, "has_sku": sub.SKU != ""})
-	writeJSON(w, http.StatusOK, sub)
+	s.trackAdmin(r, v, "submission_updated", map[string]any{"refused": true})
+	writeErr(w, http.StatusConflict, "Use the Print requests queue for versioned actions; old submissions remain available there.")
 }
-
-// ---- static PWA ----
 
 func (s *server) static(w http.ResponseWriter, r *http.Request) {
 	if s.Static == nil {

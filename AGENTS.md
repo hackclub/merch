@@ -532,6 +532,12 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
 
 ## Usage analytics
 
+Print-run events: `print_run_action` (`print_run_id`, `action`, `from`, `to`,
+`version`, `has_note`; reorder adds `new_run_id`), `print_po_polled`
+(`print_run_id`, `from`, `to`, `reconcile`, `failed`), and
+`print_notification_attempted` (`print_run_id`, `event_id`, `channel`, `failed`).
+No artwork URLs, notes, specifications, addresses or PO details go in these events.
+
 Everything people do on the site goes to the `usage_events` table, so agents can see how the shop is
 used and improve it. **Use it as evidence, and keep it complete:**
 

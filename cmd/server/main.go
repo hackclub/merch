@@ -23,6 +23,7 @@ import (
 	"github.com/hackclub/merch/internal/httpapi"
 	"github.com/hackclub/merch/internal/loops"
 	"github.com/hackclub/merch/internal/places"
+	"github.com/hackclub/merch/internal/printpo"
 	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/stripe"
 	"github.com/hackclub/merch/internal/theseus"
@@ -114,8 +115,18 @@ func run(log *slog.Logger) error {
 	}
 
 	warehouse := theseus.New(cfg.TheseusBaseURL, cfg.TheseusAPIKey, nil)
+	var poReader httpapi.PrintPOReader
+	if cfg.PrintPODatabaseURL != "" {
+		reader, err := printpo.Connect(ctx, cfg.PrintPODatabaseURL)
+		if err != nil {
+			return err
+		}
+		defer reader.Close()
+		poReader = reader
+	}
 	warehouse.BillingProfileID = cfg.TheseusBillingProfileID
 	h := httpapi.New(httpapi.Deps{
+		PrintPOs: poReader, WorkerContext: ctx,
 		Config: cfg,
 		Store:  store.New(pool),
 		Provider: auth.NewHCA(auth.HCAConfig{

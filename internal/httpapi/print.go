@@ -327,51 +327,8 @@ func (s *server) adminPrintRequests(w http.ResponseWriter, r *http.Request, v vi
 var printRequestStatuses = map[string]bool{"submitted": true, "ordered": true, "stocked": true, "rejected": true}
 
 func (s *server) adminUpdatePrintRequest(w http.ResponseWriter, r *http.Request, v viewer) {
-	id, ok := pathID(w, r)
-	if !ok {
-		return
-	}
-	var body struct {
-		Status    string `json:"status"`
-		AdminNote string `json:"admin_note"`
-		SKU       string `json:"sku"`
-	}
-	if !readJSON(w, r, &body) {
-		return
-	}
-	body.SKU = strings.TrimSpace(body.SKU)
-	if !printRequestStatuses[body.Status] {
-		writeErr(w, http.StatusUnprocessableEntity, "unknown status")
-		return
-	}
-	if body.Status == "stocked" && body.SKU == "" {
-		writeErr(w, http.StatusUnprocessableEntity, "add the warehouse SKU it's stocked under: it's listed in the shop under it")
-		return
-	}
-	prev, err := s.Store.GetPrintRequest(r.Context(), id)
-	if errors.Is(err, store.ErrNotFound) {
-		writeErr(w, http.StatusNotFound, "print request not found")
-		return
-	} else if err != nil {
-		s.serverErr(w, err)
-		return
-	}
-	pr, err := s.Store.UpdatePrintRequest(r.Context(), id, body.Status, strings.TrimSpace(body.AdminNote), body.SKU)
-	if err != nil {
-		s.serverErr(w, err)
-		return
-	}
-	// In the warehouse: list it, and send them their first ones (once; saving again retries a failure).
-	if pr.Status == "stocked" && pr.InitialQuantity > 0 && pr.Address != nil && pr.ShipmentRequestID == nil {
-		if pr, err = s.sendFirstShipment(r, pr); err != nil {
-			s.serverErr(w, err)
-			return
-		}
-	}
-	s.trackAdmin(r, v, "print_request_updated", map[string]any{"print_request_id": pr.ID, "from": prev.Status, "to": pr.Status,
-		"product": pr.Product, "quantity": pr.Quantity, "has_note": pr.AdminNote != "", "has_sku": pr.SKU != "",
-		"wait_h": int(s.Now().Sub(pr.CreatedAt).Hours()), "shipment_request_id": pr.ShipmentRequestID})
-	writeJSON(w, http.StatusOK, pr)
+	s.trackAdmin(r, v, "print_request_updated", map[string]any{"refused": true})
+	writeErr(w, http.StatusConflict, "Use the Print requests queue for versioned actions; direct status changes are no longer supported.")
 }
 
 // printItem is the shop item a stocked print run is listed as: the one under
@@ -383,6 +340,7 @@ func (s *server) printItem(ctx context.Context, pr *store.PrintRequest) (swag.It
 	}
 	p, _ := swag.PrintProductByKey(pr.Product)
 	it := p.Item(pr.SKU, pr.Title, pr.Finish, pr.Landscape)
+	it.Visible = false
 	images := []string{}
 	for _, u := range []string{pr.FrontPreviewURL, pr.BackPreviewURL} {
 		if u != "" {

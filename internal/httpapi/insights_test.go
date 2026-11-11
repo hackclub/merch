@@ -123,7 +123,7 @@ func TestCatalogAndSettingsChangesAreTracked(t *testing.T) {
 	var sub store.Submission
 	h.do(h.client(authorEmail), "POST", "/api/author/submissions", map[string]any{"program": "Sprig", "title": "Sprig sticker", "kind": "sticker", "file_url": "https://cdn.hackclub.com/sprig.png", "quantity": 500}, &sub)
 	h.do(admin, "PUT", fmt.Sprintf("/api/admin/submissions/%d", sub.ID), map[string]any{"status": "approved", "admin_note": "nice"}, nil)
-	if evs := h.events("submission_updated"); len(evs) != 1 || props(t, evs[0])["from"] != "submitted" || props(t, evs[0])["to"] != "approved" {
+	if evs := h.events("submission_updated"); len(evs) != 1 || props(t, evs[0])["refused"] != true {
 		t.Errorf("submission_updated = %+v", evs)
 	}
 }

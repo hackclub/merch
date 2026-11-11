@@ -10,8 +10,10 @@ import (
 )
 
 type Config struct {
-	Port    string
-	BaseURL string // public origin, e.g. https://swag.hackclub.com
+	PrintPODatabaseURL string
+	PrintPOAutomatic   bool
+	Port               string
+	BaseURL            string // public origin, e.g. https://swag.hackclub.com
 	// Other origins the app is reachable at (e.g. http://porygon:5173 over
 	// Tailscale). Each one's /auth/callback must be registered with Hack Club Auth.
 	ExtraBaseURLs []string
@@ -73,6 +75,8 @@ func Load(getenv func(string) string) (*Config, error) {
 		return def
 	}
 	c := &Config{
+		PrintPODatabaseURL:      get("PRINT_PO_DATABASE_URL", ""),
+		PrintPOAutomatic:        get("PRINT_PO_AUTOMATIC", "false") == "true",
 		Port:                    get("PORT", "8080"),
 		BaseURL:                 strings.TrimRight(get("BASE_URL", ""), "/"),
 		DatabaseURL:             get("DATABASE_URL", ""),
@@ -125,6 +129,9 @@ func Load(getenv func(string) string) (*Config, error) {
 	}
 
 	var missing []string
+	if c.PrintPOAutomatic && c.PrintPODatabaseURL == "" {
+		return nil, errors.New("PRINT_PO_AUTOMATIC requires dedicated PRINT_PO_DATABASE_URL")
+	}
 	for k, v := range map[string]string{
 		"DATABASE_URL":               c.DatabaseURL,
 		"BASE_URL":                   c.BaseURL,
