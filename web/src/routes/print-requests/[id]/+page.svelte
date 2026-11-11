@@ -2,7 +2,7 @@
 	import { blankAddress, prefillAddress } from '$lib/address';
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { api } from '$lib/api';
+	import { api, ApiError } from '$lib/api';
 	import { session } from '$lib/session.svelte';
 	import {
 		stageLabel,
@@ -10,6 +10,10 @@
 		nextOwner,
 		poState,
 		actionPreview,
+		actionLabel,
+		approvedQuantityLabel,
+		stockStale,
+		poLinkingMessage,
 		type PrintDetail,
 		type PO,
 		type PrintRun
@@ -67,7 +71,10 @@
 				await api.get<{ suggestions: PO[] }>(`/api/admin/print-po-suggestions?sku=${encodeURIComponent(sku)}`)
 			).suggestions;
 		} catch (e) {
-			error = (e as Error).message;
+			error =
+				e instanceof ApiError && [502, 503].includes(e.status)
+					? 'The PO copy is temporarily unavailable. Your request is saved; try again shortly.'
+					: (e as Error).message;
 		}
 	}
 	function choose(a: string) {
@@ -112,7 +119,10 @@
 			internal = '';
 			await load();
 		} catch (e) {
-			error = (e as Error).message;
+			error =
+				e instanceof ApiError && e.status === 503 && ['link', 'replace_links'].includes(action)
+					? poLinkingMessage(false)
+					: (e as Error).message;
 		} finally {
 			busy = false;
 		}
@@ -180,13 +190,17 @@
 			<section>
 				<div class="card">
 					<h2>{stageLabel[run.stage]}</h2>
-					<p class="callout">{nextOwner(run)}</p>
-					{#if run.legacy_review}<p class="error">
-							Legacy warehouse confirmation. Unknown stage dates remain unknown. Audit the listing and existing first
-							shipment before release.
+					<p class="callout">{nextOwner(run, admin)}</p>
+					{#if admin && run.legacy_review && !['available', 'rejected', 'cancelled'].includes(run.stage)}<p
+							class="muted"
+						>
+							Legacy run. Unknown stage dates remain unknown. Audit the original order, listing and first shipment
+							links before continuing.
 						</p>{/if}
 					{#if run.reconcile}<p class="error">
-							Warehouse evidence needs reconciliation. A reopened or corrected PO does not reverse receipt or release.
+							{admin
+								? 'Warehouse evidence needs reconciliation. A reopened or corrected PO does not reverse receipt or release.'
+								: 'HQ is reviewing the latest warehouse update. Your saved stage has not changed.'}
 						</p>{/if}
 					{#if run.request.front_preview_url}<div class="art">
 							<img src={run.request.front_preview_url} alt="Front artwork" />{#if run.request.back_preview_url}<img
@@ -227,11 +241,13 @@
 						</p>{/if}
 					<div class="row" data-track="print_actions">
 						{#if admin}
+							{#if !data.po_linking_available}<p class="muted" role="status">{poLinkingMessage(false)}</p>{/if}
 							{#if run.stage === 'submitted'}<button onclick={() => choose('approve')}>Approve print run</button><button
 									class="secondary"
 									onclick={() => choose('reject')}>Reject with reason</button
 								>{/if}
 							{#if (run.stage === 'approved' || (run.stage === 'ordered' && run.reviewed_existing_order)) && !run.links.length}<button
+									disabled={!data.po_linking_available || run.legacy_review}
 									onclick={() => choose('link')}>Link warehouse purchase orders</button
 								>{/if}
 							{#if run.stage === 'approved' && !hasOrder}<button class="secondary" onclick={() => choose('reject')}
@@ -239,6 +255,7 @@
 								>{/if}
 							{#if ['approved', 'ordered'].includes(run.stage) && run.links.length}<button
 									class="secondary"
+									disabled={!data.po_linking_available}
 									onclick={() => choose('replace_links')}>Correct linked PO lines</button
 								>{/if}
 							{#if run.stage === 'ordered'}<button onclick={() => choose('dispatch')}>Record printer dispatch</button
@@ -250,12 +267,16 @@
 									class="secondary"
 									onclick={() => choose('review_order')}>Review order discrepancy</button
 								>{/if}
-							<button class="secondary" onclick={() => choose('refresh_po')}>Refresh PO copy</button>
+							<button class="secondary" disabled={!data.po_automation} onclick={() => choose('refresh_po')}
+								>Refresh PO copy</button
+							>
 							{#if run.reconcile && ['received', 'available'].includes(run.stage)}<button
 									class="secondary"
 									onclick={() => choose('review_receipt')}>Review corrected receipt</button
 								>{/if}
-							{#if run.legacy_review}<button onclick={() => choose('audit_legacy')}>Audit legacy links</button>{/if}
+							{#if run.legacy_review && !['available', 'rejected', 'cancelled'].includes(run.stage)}<button
+									onclick={() => choose('audit_legacy')}>Audit legacy links</button
+								>{/if}
 							{#if !['rejected', 'cancelled'].includes(run.stage)}<button
 									class="secondary"
 									onclick={() => choose('update')}>Record warehouse / delivery update</button
@@ -284,7 +305,7 @@
 							}}
 							data-track="print_action_form"
 						>
-							<h3>{action.replaceAll('_', ' ')}</h3>
+							<h3>{actionLabel(action)}</h3>
 							{#if ['approve', 'review_order', 'audit_legacy'].includes(action)}<label
 									>Approved quantity<input type="number" min="1" max="100000" required bind:value={quantity} /></label
 								><label
@@ -401,7 +422,13 @@
 				<div class="card">
 					<h2>Activity</h2>
 					{#each data.history as e}<article>
-							<strong>{stageLabel[e.stage]} · {e.action.replaceAll('_', ' ')}</strong>
+							<strong
+								>{e.action === 'observe'
+									? admin
+										? actionLabel(e.action)
+										: stageLabel[e.stage]
+									: actionLabel(e.action)}</strong
+							>
 							<div class="muted">{fmt(e.at)} · {e.source}{e.actor_id ? ` · account #${e.actor_id}` : ''}</div>
 							{#if !e.at}<div class="muted">Recorded {fmt(e.recorded_at)}; event date unknown</div>{/if}{#if e.note}<p
 									data-private
@@ -424,9 +451,15 @@
 						<dt>Requested</dt>
 						<dd>{run.request.quantity}</dd>
 						<dt>Approved</dt>
-						<dd>{run.approved_quantity || (run.origin === 'legacy' ? 'Unknown (legacy)' : 'Not yet approved')}</dd>
+						<dd>{approvedQuantityLabel(run)}</dd>
 						<dt>PO line ordered</dt>
-						<dd>{run.links.length ? run.links.reduce((n, p) => n + p.quantity, 0) : 'Not linked'}</dd>
+						<dd>
+							{admin
+								? run.links.length
+									? run.links.reduce((n, p) => n + p.quantity, 0)
+									: 'Not linked'
+								: (run.po_line_ordered ?? 'Not linked')}
+						</dd>
 						<dt>Inbound stock</dt>
 						<dd>{data.stock.inbound ?? 'Unavailable'}</dd>
 						<dt>Warehouse sellable</dt>
@@ -442,7 +475,7 @@
 					</p>
 					<p>
 						Stock synced: {fmt(data.stock.synced_at)}{data.stock.synced_at &&
-						Date.now() - new Date(data.stock.synced_at).getTime() > 60000
+						stockStale(data.stock.synced_at, data.stock.max_age_seconds)
 							? ' (stale; availability is not promised)'
 							: ''}
 					</p>
@@ -464,22 +497,23 @@
 						{#if data.shipment.tracking_number}<p>
 								{data.shipment.carrier} · {data.shipment.tracking_number}
 							</p>{/if}{:else}<p>
-							{#if ['rejected', 'cancelled'].includes(run.stage)}No parcel has been created.{:else}First {run.request.initial_quantity || 0} · Awaiting shop release. No parcel has been created.{/if}
+							{#if ['rejected', 'cancelled'].includes(run.stage)}No parcel has been created.{:else}First {run.request
+									.initial_quantity || 0} · Awaiting shop release. No parcel has been created.{/if}
 						</p>{/if}
 				</div>
 				<div class="card">
-					<h2>Warehouse PO evidence</h2>
-					{#if !data.po_automation}<p class="muted">
+					<h2>{admin ? 'Warehouse PO evidence' : 'Warehouse status'}</h2>
+					{#if admin && !data.po_automation}<p class="muted">
 							Automatic transitions are off until the read-only source is enabled.
 						</p>{/if}{#if admin}{#each data.confirmations || [] as c}<p>
 								<a href={c.url} target="_blank" rel="noreferrer">Printer confirmation · {fmt(c.at)}</a>
 							</p>{/each}{/if}
 					<p>Last merch poll: {fmt(run.last_poll_at)}</p>
 					{#if run.poll_error}<p>{run.poll_error}</p>{/if}{#each run.links as p}<article>
-							<strong>{p.order_number || 'Purchase order'} · PO ID {p.po_id} · line {p.line_id}</strong>
+							{#if admin}<strong>{p.order_number || 'Purchase order'} · PO ID {p.po_id} · line {p.line_id}</strong>{/if}
 							<p>{poState(p)}</p>
-							<p>{p.supplier || 'Supplier unknown'}</p>
-							<p>Exact SKU: {p.sku} · PO line ordered: {p.quantity}</p>
+							{#if admin}<p>{p.supplier || 'Supplier unknown'}</p>
+								<p>Exact SKU: {p.sku} · PO line ordered: {p.quantity}</p>{/if}
 							<p>
 								Created: {fmt(p.created_at)}<br />Required-by: {p.required_by?.slice(0, 10) || 'Unknown'} (expected date)<br
 								/>Completed: {fmt(p.completed_at)}<br />Source sync: {fmt(p.synced_at)}<br />Last poll: {fmt(

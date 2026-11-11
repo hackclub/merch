@@ -790,6 +790,7 @@ func (s *server) createSubmission(w http.ResponseWriter, r *http.Request, v view
 		return
 	}
 	body.UserID = v.user.ID
+	body.SlackOptIn = body.SlackOptIn && s.PrintSlack != nil && v.user.SlackID != ""
 	if body.InitialQuantity < 0 || body.InitialQuantity > body.Quantity || len(body.Deadline) > 2000 {
 		writeErr(w, 422, "invalid first quantity or deadline")
 		return

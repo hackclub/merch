@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from './api';
-	import { stageLabel, nextOwner, printPOStatus, filterPrintRuns, type PrintRun } from './print-run';
+	import { stageLabel, nextOwner, printPOStatus, poLinkingMessage, filterPrintRuns, type PrintRun } from './print-run';
+	let poLinkingAvailable = $state(true);
 	let runs = $state<PrintRun[]>([]),
 		error = $state(''),
 		origin = $state(''),
@@ -14,7 +15,9 @@
 	]);
 	onMount(async () => {
 		try {
-			runs = (await api.get<{ runs: PrintRun[] }>('/api/admin/print-runs')).runs;
+			const result = await api.get<{ runs: PrintRun[]; po_linking_available: boolean }>('/api/admin/print-runs');
+			runs = result.runs;
+			poLinkingAvailable = result.po_linking_available;
 		} catch (e) {
 			error = (e as Error).message;
 		}
@@ -23,6 +26,7 @@
 
 <h2>Print requests</h2>
 <p>One queue for staff print runs and YSWS author material.</p>
+{#if !poLinkingAvailable}<p class="muted" role="status">{poLinkingMessage(false)}</p>{/if}
 <div class="row" data-track="print_queue_filter">
 	<button class:secondary={!needs} onclick={() => (needs = !needs)}>Needs action</button><label
 		>Origin<select bind:value={origin}

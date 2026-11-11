@@ -62,8 +62,16 @@ func TestLegacyPrintMigrationPreservesLinksAndUnknownDates(t *testing.T) {
 					t.Fatal("invented stocked date")
 				}
 			}
-		} else if r.Stage != swag.PrintSubmitted {
-			t.Fatal("inferred order from printing")
+		} else {
+			if r.Stage != swag.PrintApproved {
+				t.Fatal("printing should retain approval and require audit, without inferring an order")
+			}
+			if _, err := s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "approve", ActorID: u.ID, ApprovedQuantity: 500, Specifications: "Checked"}); err == nil {
+				t.Fatal("replayed approval for a legacy printing run")
+			}
+			if _, err := s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "link", ActorID: u.ID, SKU: "Demo/Legacy", ConfirmationURL: "https://example.com/confirmation", Evidence: []swag.PrintPOEvidence{{PrintPOLink: swag.PrintPOLink{POID: 42, LineID: 10, SKU: "Demo/Legacy"}}}}); !errors.Is(err, ErrPrintAction) {
+				t.Fatalf("legacy link must require audit, got %v", err)
+			}
 		}
 	}
 	var jobs, parcels int
@@ -93,6 +101,30 @@ func TestPrintNotificationCrashWindow(t *testing.T) {
 	}
 }
 
+func TestUnconfiguredPrintSlackIsSkipped(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "skip-dm", "skip@x.com")
+	if _, err := s.pool.Exec(ctx, `update users set slack_id='UDEMO' where id=$1`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/art.png", SlackOptIn: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SkipUnconfiguredPrintSlack(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	if err := s.pool.QueryRow(ctx, `select status from print_notifications where channel='slack'`).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "skipped" {
+		t.Fatal(status)
+	}
+	if err := s.DeliverPrintNotifications(ctx, "slack", func(PrintNotification) error { t.Fatal("skipped DM delivered"); return nil }); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPrintSlackOptInAndPrivateNotes(t *testing.T) {
 	s := newStore(t)
 	u := mkUser(t, s, "slack-demo", "slack@x.com")
@@ -116,6 +148,16 @@ func TestPrintSlackOptInAndPrivateNotes(t *testing.T) {
 	}
 	if strings.Contains(body, "Private delivery") {
 		t.Fatal("private notes copied into Slack")
+	}
+	if !strings.Contains(body, "Rejected") {
+		t.Fatal("Slack must use a human stage label")
+	}
+	var subject string
+	if err = s.pool.QueryRow(ctx, `select subject from print_notifications where channel='email' order by id desc limit 1`).Scan(&subject); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(subject, "Rejected") {
+		t.Fatalf("raw stage in subject: %s", subject)
 	}
 	_, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, ActorID: u.ID, Action: "preferences", SlackOptIn: false})
 	if err != nil {
@@ -168,6 +210,8 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			}
 			created := approved.Add(time.Minute)
 			p := swag.PrintPOEvidence{PrintPOLink: swag.PrintPOLink{POID: 12, LineID: 34, SKU: it.SKU}, Quantity: 800, CreatedAt: &created, SyncedAt: time.Now(), PolledAt: time.Now()}
+			due := time.Date(2026, 12, 1, 0, 30, 0, 0, time.FixedZone("Demo east", 14*60*60))
+			p.RequiredBy = &due
 			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "link", ActorID: u.ID, SKU: it.SKU, ItemID: it.ID, ConfirmationURL: "https://example.com/confirmation", Evidence: []swag.PrintPOEvidence{p}})
 			if err != nil {
 				t.Fatal(err)
@@ -175,6 +219,9 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}})
 			if err != nil || r.Stage != swag.PrintOrdered {
 				t.Fatalf("ordered %+v %v", r, err)
+			}
+			if r.ETA != "2026-11-30" {
+				t.Fatalf("ETA must use UTC date: %s", r.ETA)
 			}
 			p.Completed = true
 			p.CompletedAt = nil // Unknown completion date remains unknown.
@@ -237,6 +284,17 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			held, _ := s.HeldQuantities(ctx)
 			if held[it.SKU] != 25 {
 				t.Fatalf("holds %+v", held)
+			}
+			var firstNotices int
+			if err := s.pool.QueryRow(ctx, `select count(*) from print_notifications where run_id=$1 and channel='shipment_email'`, r.ID).Scan(&firstNotices); err != nil {
+				t.Fatal(err)
+			}
+			want := 0
+			if country == "US" {
+				want = 1
+			}
+			if firstNotices != want {
+				t.Fatalf("first parcel notifications %d want %d", firstNotices, want)
 			}
 			r, _ = s.PrintRun(ctx, r.ID)
 			p.Completed = false

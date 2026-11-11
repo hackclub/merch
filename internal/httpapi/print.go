@@ -285,7 +285,7 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 		return
 	}
 	pr, err := s.Store.CreatePrintRequest(r.Context(), store.PrintRequest{
-		SlackOptIn: body.SlackOptIn,
+		SlackOptIn: body.SlackOptIn && s.PrintSlack != nil && v.user.SlackID != "",
 		UserID:     v.user.ID, Product: p.Key, Title: title, Finish: finish, Program: program, Deadline: deadline, Quantity: body.Quantity, FrontURL: strings.TrimSpace(body.FrontURL),
 		BackURL: strings.TrimSpace(body.BackURL), Note: note, NeededBy: due, EstimateCents: e.TotalCents,
 		InitialQuantity: body.InitialQuantity, Address: body.Address, FrontPreviewURL: body.FrontPreviewURL,

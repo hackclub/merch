@@ -18,10 +18,14 @@ export function filterPrintRuns(runs: PrintRun[], f: PrintFilter): PrintRun[] {
 			(!f.origin || r.origin === f.origin) &&
 			(!f.stage || r.stage === f.stage) &&
 			(!f.owner || r.user_id === f.owner) &&
-			(!f.needs || r.reconcile || r.legacy_review || !['available', 'cancelled', 'rejected'].includes(r.stage))
+			(!f.needs ||
+				(r.origin === 'legacy' && ['available', 'cancelled', 'rejected'].includes(r.stage)
+					? false
+					: r.reconcile || r.legacy_review || !['available', 'cancelled', 'rejected'].includes(r.stage)))
 	);
 }
 export type PO = {
+	status?: string;
 	po_id: number;
 	line_id: number;
 	sku: string;
@@ -38,6 +42,7 @@ export type PO = {
 	polled_at: string;
 };
 export type PrintRun = {
+	po_line_ordered?: number | null;
 	id: number;
 	user_id: number;
 	user_name?: string;
@@ -100,6 +105,7 @@ export type PrintDetail = {
 	history: PrintEvent[];
 	notifications: Notice[];
 	stock: {
+		max_age_seconds: number;
 		synced_at: string | null;
 		warehouse_sellable: number | null;
 		held: number | null;
@@ -109,8 +115,16 @@ export type PrintDetail = {
 	};
 	shipment: SwagRequest | null;
 	po_automation: boolean;
+	po_linking_available: boolean;
 };
-export function nextOwner(r: Pick<PrintRun, 'stage' | 'legacy_review' | 'reconcile'>): string {
+export function nextOwner(
+	r: Pick<PrintRun, 'stage' | 'legacy_review' | 'reconcile'> & { origin?: string },
+	admin = true
+): string {
+	if (r.origin === 'legacy') {
+		if (['available', 'rejected', 'cancelled'].includes(r.stage)) return 'Closed';
+		return admin ? 'HQ: audit legacy run' : 'HQ review';
+	}
 	if (r.legacy_review || r.reconcile) return 'HQ: reconcile warehouse evidence';
 	return (
 		(
@@ -135,8 +149,51 @@ export function poState(p: PO, now = Date.now()): string {
 		now - new Date(p.synced_at).getTime() > 3600000
 	)
 		return 'Not yet confirmed in latest copy';
+	if (p.status) return p.status;
 	if (p.draft || p.deleted) return 'Needs HQ review: draft or deleted PO';
 	return p.completed ? 'PO complete (whole order)' : 'Received quantity unavailable';
+}
+export function approvedQuantityLabel(r: Pick<PrintRun, 'approved_quantity' | 'origin'>): number | string {
+	return r.approved_quantity || (r.origin === 'legacy' ? 'Unknown (legacy)' : 'Not yet approved');
+}
+export function stockStale(synced: string | null | undefined, maxAgeSeconds: number, now = Date.now()): boolean {
+	return !synced || !Number.isFinite(Date.parse(synced)) || now - Date.parse(synced) > maxAgeSeconds * 1000;
+}
+export function poLinkingMessage(available: boolean): string {
+	return available
+		? ''
+		: 'PO linking is waiting for its read-only connection. Requests stay saved while HQ finishes setup.';
+}
+export function actionLabel(action: string): string {
+	return (
+		(
+			{
+				submit: 'Print request submitted',
+				approve: 'Print run approved',
+				link: 'Purchase order linked',
+				replace_links: 'Purchase order links corrected',
+				observe: 'Warehouse evidence updated',
+				dispatch: 'Printer dispatch recorded',
+				release: 'Released in shop',
+				reject: 'Print request rejected',
+				cancel: 'Print request cancelled',
+				update: 'HQ update',
+				eta_update: 'Expected arrival updated',
+				review_order: 'Order discrepancy reviewed',
+				review_receipt: 'Corrected receipt reviewed',
+				audit_legacy: 'Legacy run audited',
+				legacy_import: 'Legacy run imported',
+				legacy_submission: 'Original print request submitted',
+				legacy_status_change: 'Historical stage recorded',
+				preferences: 'Notification preferences updated',
+				first_shipment: 'First shipment updated',
+				retry_notifications: 'Failed notifications scheduled for retry',
+				resolve_notification: 'Notification delivery reconciled',
+				reorder: 'Another print run requested',
+				refresh_po: 'Check latest PO copy'
+			} as Record<string, string>
+		)[action] || 'Print request updated'
+	);
 }
 export function printPOStatus(r: Pick<PrintRun, 'poll_error' | 'links'>, now = Date.now()): string {
 	if (r.poll_error) return 'Not yet confirmed in latest copy';

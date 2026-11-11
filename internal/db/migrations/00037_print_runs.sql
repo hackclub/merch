@@ -34,12 +34,14 @@ CREATE TABLE print_notifications (
  id bigserial PRIMARY KEY,
  run_id bigint NOT NULL REFERENCES print_runs(id),
  event_id bigint NOT NULL REFERENCES print_run_events(id),
- channel text NOT NULL CHECK(channel IN ('email','slack')),
+ channel text NOT NULL CHECK(channel IN ('email','slack','shipment_email')),
+ request_id bigint REFERENCES swag_requests(id),
  destination text NOT NULL,
  subject text NOT NULL,
+ preview text NOT NULL DEFAULT '',
  body text NOT NULL,
  idempotency_key text NOT NULL DEFAULT '',
- status text NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','sending','failed','sent','uncertain','cancelled')),
+ status text NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','sending','failed','sent','uncertain','cancelled','skipped')),
  attempts int NOT NULL DEFAULT 0,
  first_attempt_at timestamptz,
  next_attempt_at timestamptz NOT NULL DEFAULT now(),
@@ -76,7 +78,7 @@ INSERT INTO print_runs(user_id,source_print_id,origin,stage,request,data,shipmen
  SELECT user_id,id,'legacy',CASE status WHEN 'stocked' THEN 'received' ELSE status END,to_jsonb(p)||jsonb_build_object('needed_by',needed_by::timestamptz),
  jsonb_build_object('legacy_review',true,'legacy_status',status,'sku',sku,'public_note',admin_note),shipment_request_id,created_at FROM print_requests p;
 INSERT INTO print_runs(user_id,source_author_id,origin,stage,request,data,created_at)
- SELECT user_id,id,'legacy',CASE status WHEN 'stocked' THEN 'received' WHEN 'printing' THEN 'submitted' ELSE status END,
+ SELECT user_id,id,'legacy',CASE status WHEN 'stocked' THEN 'received' WHEN 'printing' THEN 'approved' ELSE status END,
  to_jsonb(a)||jsonb_build_object('product','custom','front_url',file_url,'note',description,'initial_quantity',0),
  jsonb_build_object('legacy_review',true,'legacy_status',status,'sku',sku,'public_note',admin_note),created_at FROM author_submissions a;
 INSERT INTO print_art_revisions(run_id,revision,front_url,back_url,created_at)
@@ -90,7 +92,7 @@ INSERT INTO print_run_events(run_id,stage,action,event_at,note,source,version)
 -- Recover only transitions whose event times were actually saved. Negative
 -- versions distinguish imported audit records from the new optimistic version.
 INSERT INTO print_run_events(run_id,stage,action,event_at,note,source,version)
- SELECT r.id,CASE e.props->>'to' WHEN 'stocked' THEN 'received' WHEN 'printing' THEN 'submitted' ELSE e.props->>'to' END,
+ SELECT r.id,CASE e.props->>'to' WHEN 'stocked' THEN 'received' WHEN 'printing' THEN 'approved' ELSE e.props->>'to' END,
  'legacy_status_change',e.at,'Original status: '||(e.props->>'to'),'usage_events',
  -row_number() over(partition by r.id order by e.at,e.id)
  FROM usage_events e JOIN print_runs r ON

@@ -254,6 +254,7 @@
 				{#each filtered.slice(0, shown) as r (r.id)}
 					<tr>
 						<td>{r.id}<div class="muted">{new Date(r.created_at).toLocaleDateString()}</div>
+							{#if r.print_run_id}<a href={`/print-requests/${r.print_run_id}`}>Print run #{r.print_run_id}</a>{/if}
 							{#if r.source !== 'app'}<span class="badge" title={r.airtable_record_id}>imported · {r.source}</span>{/if}</td>
 						<td>{r.user_email}{#if r.purpose}<div><span class="badge">{purposeLabel(r.purpose)}</span></div>{/if}
 							<InternalNote request={r} /></td>

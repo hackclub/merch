@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { api } from './api';
-	import { stageLabel, nextOwner, type PrintRun } from './print-run';
+	import { stageLabel, nextOwner, approvedQuantityLabel, stockStale, type PrintRun } from './print-run';
 	let runs = $state<PrintRun[]>([]),
 		error = $state('');
 	onMount(async () => {
@@ -18,15 +18,15 @@
 	{#each runs as r}<div class="card" data-track="my_print_run">
 			<strong><a href={`/print-requests/${r.id}`} data-private>{r.request.title} · Print #{r.id}</a></strong>
 			<span class="badge">{stageLabel[r.stage]}</span>
-			<p>{nextOwner(r)}</p>
+			<p>{nextOwner(r, false)}</p>
 			<p>
 				{r.stock?.available ?? 'Unknown'} available to request · {r.stock?.held ?? 'Unknown'} held · {r.stock
 					?.inbound ?? 'Unknown'} inbound
 			</p>
-			<p>Requested {r.request.quantity.toLocaleString()} · Approved {r.approved_quantity || 'Not yet approved'}</p>
+			<p>Requested {r.request.quantity.toLocaleString()} · Approved {approvedQuantityLabel(r)}</p>
 			<p class="muted">
 				Stock synced: {r.stock?.synced_at ? new Date(r.stock.synced_at).toLocaleString() : 'Unknown'}{r.stock
-					?.synced_at && Date.now() - Date.parse(r.stock.synced_at) > 60000
+					?.synced_at && stockStale(r.stock.synced_at, r.stock.max_age_seconds)
 					? ' (stale; availability is not promised)'
 					: ''}
 			</p>

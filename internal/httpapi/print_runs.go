@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/hackclub/merch/internal/loops"
 	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/swag"
@@ -112,7 +113,11 @@ func (s *server) printRuns(w http.ResponseWriter, r *http.Request, v viewer) {
 		}
 	}
 	s.attachPrintStock(r.Context(), runs)
-	writeJSON(w, 200, map[string]any{"runs": runs})
+	views := make([]any, 0, len(runs))
+	for _, p := range runs {
+		views = append(views, printRunView(p, uid == 0, s.Now()))
+	}
+	writeJSON(w, 200, map[string]any{"runs": views, "po_linking_available": s.PrintPOs != nil})
 }
 
 func (s *server) attachPrintStock(ctx context.Context, runs []*store.PrintRun) {
@@ -133,7 +138,7 @@ func (s *server) attachPrintStock(ctx context.Context, runs []*store.PrintRun) {
 		}
 	}
 	for _, r := range runs {
-		r.Stock = &store.PrintStock{Visible: visible[r.SKU]}
+		r.Stock = &store.PrintStock{Visible: visible[r.SKU], MaxAgeSeconds: skuCacheTTL.Seconds()}
 		if !r.Stock.Visible {
 			zero := 0
 			r.Stock.Available = &zero
@@ -201,8 +206,9 @@ func (s *server) printRunDetail(w http.ResponseWriter, r *http.Request, v viewer
 		for i := range notices {
 			notices[i].Error = ""
 		}
+		history = requesterPrintHistory(history)
 	}
-	stock := map[string]any{"synced_at": nil, "warehouse_sellable": nil, "held": nil, "available": nil, "inbound": nil, "visible": false}
+	stock := map[string]any{"max_age_seconds": skuCacheTTL.Seconds(), "synced_at": nil, "warehouse_sellable": nil, "held": nil, "available": nil, "inbound": nil, "visible": false}
 	stock["available"] = 0 // A hidden listing is never requestable, even with an unknown stock feed.
 	if p.SKU != "" {
 		skus, err := s.cachedSKUs(r.Context())
@@ -249,7 +255,7 @@ func (s *server) printRunDetail(w http.ResponseWriter, r *http.Request, v viewer
 			return
 		}
 	}
-	writeJSON(w, 200, map[string]any{"run": p, "history": history, "notifications": notices, "stock": stock, "shipment": shipment, "confirmations": confirmations, "po_automation": s.Config.PrintPOAutomatic})
+	writeJSON(w, 200, map[string]any{"run": printRunView(p, admin, s.Now()), "history": history, "notifications": notices, "stock": stock, "shipment": shipment, "confirmations": confirmations, "po_automation": s.Config.PrintPOAutomatic, "po_linking_available": s.PrintPOs != nil})
 }
 func (s *server) printPOSuggestions(w http.ResponseWriter, r *http.Request, v viewer) {
 	if s.PrintPOs == nil {
@@ -306,6 +312,10 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 		a.CancellationDisposition = ""
 	}
 	if a.Action == "preferences" {
+		if a.SlackOptIn && (s.PrintSlack == nil || v.user.SlackID == "") {
+			writeErr(w, 422, "Slack DMs are not configured for this account")
+			return
+		}
 		a.Note = ""
 		a.InternalNote = ""
 	}
@@ -376,7 +386,7 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 			return
 		}
 		s.track(r, v.user, "print_run_action", map[string]any{"print_run_id": id, "action": "reorder", "new_run_id": next.ID})
-		writeJSON(w, 201, next)
+		writeJSON(w, 201, printRunView(next, admin, s.Now()))
 		return
 	}
 	if a.Action == "link" || a.Action == "replace_links" {
@@ -473,7 +483,7 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 			updated = latest
 		}
 	}
-	writeJSON(w, 200, updated)
+	writeJSON(w, 200, printRunView(updated, admin, s.Now()))
 }
 
 func (s *server) pollPrintRun(ctx context.Context, p *store.PrintRun) {
@@ -529,18 +539,37 @@ func (s *server) printWorkers(ctx context.Context) {
 	}
 }
 func (s *server) processPrintJobs(ctx context.Context) {
+	if s.PrintSlack == nil {
+		if err := s.Store.SkipUnconfiguredPrintSlack(ctx); err != nil {
+			s.Log.Warn("skip unconfigured print DMs", "error", err)
+			return
+		}
+	}
 	if err := s.Store.PreparePrintNotificationLinks(ctx, s.Config.BaseURL); err != nil {
 		s.Log.Warn("print notification links", "error", err)
 		return
 	}
 	if s.Mailer != nil {
-		err := s.Store.DeliverPrintNotifications(ctx, "email", func(n store.PrintNotification) error {
-			err := s.Mailer.Send(ctx, loops.Email{To: n.Destination, Subject: n.Subject, Preview: n.Subject, Body: n.Body, IdempotencyKey: n.IdempotencyKey})
-			s.track(&http.Request{URL: &url.URL{Path: "/internal/print-notifications"}, Header: http.Header{}}, nil, "print_notification_attempted", map[string]any{"print_run_id": n.RunID, "event_id": n.EventID, "channel": "email", "failed": err != nil})
-			return err
-		})
-		if err != nil {
-			s.Log.Warn("print email worker failed", "error", err)
+		if err := s.Store.PreparePrintShipmentEmails(ctx, func(request *store.Request) (string, string, string, string) {
+			e := receivedEmail(request, s.Config.BaseURL)
+			return e.Subject, e.Preview, e.Body, fmt.Sprintf("%s-request-%d-received", s.Config.TheseusOrderTag, request.ID)
+		}); err != nil {
+			s.Log.Warn("prepare first parcel email", "error", err)
+			return
+		}
+		for _, channel := range []string{"email", "shipment_email"} {
+			err := s.Store.DeliverPrintNotifications(ctx, channel, func(n store.PrintNotification) error {
+				preview := n.Preview
+				if preview == "" {
+					preview = n.Subject
+				}
+				err := s.Mailer.Send(ctx, loops.Email{To: n.Destination, Subject: n.Subject, Preview: preview, Body: n.Body, IdempotencyKey: n.IdempotencyKey})
+				s.track(&http.Request{URL: &url.URL{Path: "/internal/print-notifications"}, Header: http.Header{}}, nil, "print_notification_attempted", map[string]any{"print_run_id": n.RunID, "event_id": n.EventID, "channel": "email", "failed": err != nil})
+				return err
+			})
+			if err != nil {
+				s.Log.Warn("print email worker failed", "error", err)
+			}
 		}
 	}
 	if s.PrintSlack != nil {

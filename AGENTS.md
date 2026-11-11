@@ -785,6 +785,12 @@ and where, so they see it in person once it arrives.
   quantity and all complete. Draft/deleted/wrong/old evidence never advances a run. Show source
   sync, poll and completion times separately. Missing or stale evidence says **Not yet confirmed
   in latest copy**. Carrier scans and stock changes never confirm receipt.
+  Create and verify the dedicated role and set its Orchard environment before pushing
+  this feature to main; deployment without the source stalls new runs at Approved.
+  HQ sees a setup notice while linking is unavailable. Requester APIs expose only PO
+  status and times, with ordered quantity summarized separately; identities, supplier
+  and source observation details are admin-only. Requester activity hides same-stage
+  polling and configuration events.
 - **Receipt and release:** completion is whole-PO evidence, so always say **Received quantity
   unavailable**. Reopened/corrected POs raise reconciliation without reversing receipt or release;
   HQ records a sourced receipt review to clear a correction. New listings remain hidden until
@@ -802,8 +808,12 @@ and where, so they see it in person once it arrives.
   stage actions. Optional `PRINT_SLACK_BOT_TOKEN` enables verified-account DMs only after the
   requester opts in; off by default. Slack sends stage facts and the request link, without
   addresses, invoice details or free-text notes. Opt-out cancels pending DMs.
+  Unconfigured Slack opt-ins are refused and pending DMs are marked skipped. Release
+  also queues the existing parcel `received` email exactly once when its first shipment
+  starts pending; international requests retain the existing acknowledgment after payment.
 - **Migration 00037:** source IDs, original artwork, known history and existing parcel links are
-  preserved. Unknown dates stay null. Printing without order evidence needs review; stocked is
+  preserved. Unknown dates stay null. Author printing without order evidence retains
+  Approved and needs audit; it cannot replay a fresh approval email. Stocked is
   legacy receipt pending listing/parcel audit. Migration queues no old emails and creates no
   parcels. Audit must verify an existing parcel belongs to the requester and contains the SKU.
   Renumber the migration if main has taken its number before landing.

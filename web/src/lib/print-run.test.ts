@@ -1,6 +1,40 @@
 import { it, expect } from 'vitest';
 import { nextOwner, poState, actionPreview, type PO, type PrintRun } from './print-run';
-import { filterPrintRuns, printPOStatus } from './print-run';
+import {
+	filterPrintRuns,
+	printPOStatus,
+	actionLabel,
+	approvedQuantityLabel,
+	stockStale,
+	poLinkingMessage
+} from './print-run';
+it('gives legacy runs a truthful owner, approval label and needs-action state', () => {
+	const base = {
+		origin: 'legacy',
+		stage: 'approved',
+		legacy_review: true,
+		reconcile: true,
+		approved_quantity: 0
+	} as PrintRun;
+	expect(nextOwner(base, true)).toBe('HQ: audit legacy run');
+	expect(nextOwner(base, false)).toBe('HQ review');
+	expect(approvedQuantityLabel(base)).toBe('Unknown (legacy)');
+	for (const stage of ['available', 'rejected', 'cancelled']) {
+		const r = { ...base, stage };
+		expect(nextOwner(r, true)).toBe('Closed');
+		expect(filterPrintRuns([r], { origin: '', stage: '', owner: 0, needs: true })).toHaveLength(0);
+	}
+});
+it('uses human action labels and the server stock lifetime', () => {
+	expect(actionLabel('observe')).toBe('Warehouse evidence updated');
+	expect(actionLabel('audit_legacy')).toBe('Legacy run audited');
+	const at = '2026-11-11T16:00:00Z',
+		now = Date.parse(at) + 90000;
+	expect(stockStale(at, 120, now)).toBe(false);
+	expect(stockStale(at, 60, now)).toBe(true);
+	expect(poLinkingMessage(false)).toContain('Requests stay saved');
+	expect(poLinkingMessage(true)).toBe('');
+});
 it('does not report a retained completed flag as confirmation when the latest poll failed', () => {
 	const r = { poll_error: 'Not yet confirmed in latest copy', links: [{ completed: true }] } as PrintRun;
 	expect(printPOStatus(r)).toBe('Not yet confirmed in latest copy');
@@ -23,6 +57,9 @@ it('states stale evidence and unavailable partial receipts carefully', () => {
 	const p = { completed: false, synced_at: '2026-11-11T14:00:00Z' } as PO;
 	expect(poState(p, Date.parse('2026-11-11T14:01:00Z'))).toBe('Received quantity unavailable');
 	expect(poState(p, Date.parse('2026-11-11T16:00:00Z'))).toBe('Not yet confirmed in latest copy');
+	expect(poState({ ...p, status: 'PO complete (whole order)' }, Date.parse('2026-11-11T16:00:00Z'))).toBe(
+		'Not yet confirmed in latest copy'
+	);
 });
 it('separates receipt, release and parcel dispatch', () => {
 	expect(nextOwner({ stage: 'received', legacy_review: false, reconcile: false })).toBe('HQ: release listing');

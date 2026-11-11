@@ -63,6 +63,7 @@ type PrintRun struct {
 	Links             []swag.PrintPOEvidence `json:"links"`
 }
 type PrintStock struct {
+	MaxAgeSeconds     float64    `json:"max_age_seconds"`
 	WarehouseSellable *int       `json:"warehouse_sellable"`
 	Held              *int       `json:"held"`
 	Available         *int       `json:"available"`
@@ -247,7 +248,7 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 	invalid := func(msg string) (*PrintRun, error) { return nil, fmt.Errorf("%w: %s", ErrPrintAction, msg) }
 	switch a.Action {
 	case "approve":
-		if r.Stage != swag.PrintSubmitted || a.ApprovedQuantity < 1 || strings.TrimSpace(a.Specifications) == "" {
+		if r.Stage != swag.PrintSubmitted || (r.Origin == "legacy" && r.LegacyStatus == "printing") || a.ApprovedQuantity < 1 || strings.TrimSpace(a.Specifications) == "" {
 			return invalid("review artwork, specifications, quantity and budget first")
 		}
 		r.Stage = swag.PrintApproved
@@ -375,6 +376,9 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 		notify = true
 		updateMessage = a.Note + " Source: " + a.ETASource + ". Received quantity unavailable."
 	case "link", "replace_links":
+		if r.LegacyReview {
+			return invalid("audit the legacy run before linking purchase orders")
+		}
 		if (r.Stage != swag.PrintApproved && !(r.Stage == swag.PrintOrdered && r.ReviewedExistingOrder)) || a.ConfirmationURL == "" || len(a.Evidence) == 0 {
 			return invalid("approve first and link printer confirmation plus exact PO lines")
 		}
@@ -455,7 +459,7 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 			}
 			date := ""
 			if latest != nil {
-				date = latest.Format(time.DateOnly)
+				date = latest.UTC().Format(time.DateOnly)
 			}
 			if date != r.ETA {
 				notify = true
@@ -604,6 +608,12 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 				return nil, err
 			}
 		}
+		if a.Action == "release" && !hadShipment && r.ShipmentRequestID != nil && r.ShipmentStatus == swag.StatusPending {
+			_, err = tx.Exec(ctx, `insert into print_notifications(run_id,event_id,channel,request_id,destination,subject,body) values($1,$2,'shipment_email',$3,$4,'','')`, r.ID, eid, *r.ShipmentRequestID, r.UserEmail)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return nil, err
@@ -707,7 +717,7 @@ func queuePrintNotice(ctx context.Context, tx pgx.Tx, r *PrintRun, eid int64, bo
 	if body == "" {
 		return nil
 	}
-	subject := fmt.Sprintf("Print #%d · %s", r.ID, r.Stage)
+	subject := fmt.Sprintf("Print #%d · %s", r.ID, printStageLabel(r.Stage))
 	_, err := tx.Exec(ctx, `INSERT INTO print_notifications(run_id,event_id,channel,destination,subject,body) VALUES($1,$2,'email',$3,$4,$5)`, r.ID, eid, r.UserEmail, subject, body)
 	if err != nil {
 		return err
@@ -715,7 +725,7 @@ func queuePrintNotice(ctx context.Context, tx pgx.Tx, r *PrintRun, eid int64, bo
 	if r.SlackOptIn {
 		// Free-text HQ updates can contain invoice or address details. Slack
 		// receives stage facts and a link; full private updates stay in email.
-		slackBody := fmt.Sprintf("Print request #%d: %s. Requested %d; approved %d. Printing status is separate from your first parcel.", r.ID, r.Stage, r.Request.Quantity, r.ApprovedQuantity)
+		slackBody := fmt.Sprintf("Print request #%d: %s. Requested %d; approved %d. Printing status is separate from your first parcel.", r.ID, printStageLabel(r.Stage), r.Request.Quantity, r.ApprovedQuantity)
 		if _, err := time.Parse(time.DateOnly, r.ETA); err == nil {
 			slackBody += " Expected warehouse date: " + r.ETA + " (estimate)."
 		}
@@ -728,6 +738,8 @@ func queuePrintNotice(ctx context.Context, tx pgx.Tx, r *PrintRun, eid int64, bo
 }
 
 type PrintNotification struct {
+	Preview        string `json:"preview"`
+	RequestID      *int64 `json:"request_id,omitempty"`
 	IdempotencyKey string `json:"-"`
 	ID             int64  `json:"id"`
 	RunID          int64  `json:"run_id"`
@@ -742,13 +754,13 @@ type PrintNotification struct {
 }
 
 func (s *Store) PrintNotifications(ctx context.Context, id int64) ([]PrintNotification, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id,run_id,event_id,channel,subject,body,status,attempts,error FROM print_notifications WHERE run_id=$1 ORDER BY id DESC`, id)
+	rows, err := s.pool.Query(ctx, `SELECT id,run_id,event_id,case when channel='shipment_email' then 'email' else channel end,subject,body,status,attempts,error,request_id FROM print_notifications WHERE run_id=$1 ORDER BY id DESC`, id)
 	if err != nil {
 		return nil, err
 	}
 	return collect(rows, func(row pgx.Rows) (PrintNotification, error) {
 		var n PrintNotification
-		err := row.Scan(&n.ID, &n.RunID, &n.EventID, &n.Channel, &n.Subject, &n.Body, &n.Status, &n.Attempts, &n.Error)
+		err := row.Scan(&n.ID, &n.RunID, &n.EventID, &n.Channel, &n.Subject, &n.Body, &n.Status, &n.Attempts, &n.Error, &n.RequestID)
 		return n, err
 	})
 }
@@ -779,7 +791,7 @@ func (s *Store) PreparePrintNotificationLinks(ctx context.Context, baseURL strin
 	_, err := s.pool.Exec(ctx, `UPDATE print_notifications SET
  body=CASE WHEN position('View print request: ' in body)=0 THEN body||E'\n\nView print request: '||$1||'/print-requests/'||run_id::text ELSE body END,
  idempotency_key=CASE WHEN idempotency_key='' THEN 'merch-print-'||md5($1||':'||event_id::text||':'||channel) ELSE idempotency_key END
-	 WHERE status='queued' AND first_attempt_at IS NULL AND (idempotency_key='' OR position('View print request: ' in body)=0)`, strings.TrimRight(baseURL, "/"))
+	 WHERE channel IN ('email','slack') AND status='queued' AND first_attempt_at IS NULL AND (idempotency_key='' OR position('View print request: ' in body)=0)`, strings.TrimRight(baseURL, "/"))
 	return err
 }
 func (s *Store) DeliverPrintNotifications(ctx context.Context, channel string, send func(PrintNotification) error) error {
@@ -790,7 +802,7 @@ func (s *Store) DeliverPrintNotifications(ctx context.Context, channel string, s
 		}
 		var n PrintNotification
 		var first *time.Time
-		err = tx.QueryRow(ctx, `SELECT id,run_id,event_id,channel,destination,subject,body,status,attempts,first_attempt_at,idempotency_key FROM print_notifications WHERE channel=$1 AND status IN ('queued','failed','sending') AND next_attempt_at<=now() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1`, channel).Scan(&n.ID, &n.RunID, &n.EventID, &n.Channel, &n.Destination, &n.Subject, &n.Body, &n.Status, &n.Attempts, &first, &n.IdempotencyKey)
+		err = tx.QueryRow(ctx, `SELECT id,run_id,event_id,channel,destination,subject,body,status,attempts,first_attempt_at,idempotency_key,request_id,preview FROM print_notifications WHERE channel=$1 AND body<>'' AND status IN ('queued','failed','sending') AND next_attempt_at<=now() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1`, channel).Scan(&n.ID, &n.RunID, &n.EventID, &n.Channel, &n.Destination, &n.Subject, &n.Body, &n.Status, &n.Attempts, &first, &n.IdempotencyKey, &n.RequestID, &n.Preview)
 		if errors.Is(err, pgx.ErrNoRows) {
 			tx.Rollback(ctx)
 			return nil
@@ -832,8 +844,8 @@ func (s *Store) DeliverPrintNotifications(ctx context.Context, channel string, s
 			return err
 		}
 		tag, err := tx.Exec(ctx, `UPDATE print_notifications SET status=$2,error=$3,next_attempt_at=now()+interval '1 minute'*least(60,power(2,least(attempts,6))) WHERE id=$1 AND attempts=$4 AND status='sending'`, n.ID, status, errText, n.Attempts)
-		if err == nil && channel == "email" && tag.RowsAffected() == 1 {
-			_, err = tx.Exec(ctx, `INSERT INTO sent_emails(kind,user_id,to_email,subject,preview,body,idempotency_key,status,error,release,print_run_id,print_event_id) SELECT 'print_'||e.stage,r.user_id,$2,$3,$3,$4,$5,$6,$7,'',r.id,$8 FROM print_runs r JOIN print_run_events e ON e.id=$8 WHERE r.id=$1`, n.RunID, n.Destination, n.Subject, n.Body, n.IdempotencyKey, status, errText, n.EventID)
+		if err == nil && (channel == "email" || channel == "shipment_email") && tag.RowsAffected() == 1 {
+			_, err = tx.Exec(ctx, `INSERT INTO sent_emails(kind,user_id,to_email,subject,preview,body,idempotency_key,status,error,release,print_run_id,print_event_id,request_id) SELECT CASE WHEN $9='shipment_email' THEN 'received' ELSE 'print_'||e.stage END,r.user_id,$2,$3,coalesce(nullif($11,''),$3),$4,$5,$6,$7,'',r.id,$8,$10 FROM print_runs r JOIN print_run_events e ON e.id=$8 WHERE r.id=$1`, n.RunID, n.Destination, n.Subject, n.Body, n.IdempotencyKey, status, errText, n.EventID, channel, n.RequestID, n.Preview)
 		}
 		if err != nil {
 			tx.Rollback(ctx)
