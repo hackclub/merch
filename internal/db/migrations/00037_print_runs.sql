@@ -75,7 +75,7 @@ CREATE TABLE print_po_observations (
 -- Preserve source IDs and snapshots. Unknown stage dates stay NULL. Importing
 -- history never queues mail or creates a parcel. Stocked needs a link audit.
 INSERT INTO print_runs(user_id,source_print_id,origin,stage,request,data,shipment_request_id,created_at)
- SELECT user_id,id,'legacy',CASE status WHEN 'stocked' THEN 'received' ELSE status END,to_jsonb(p)||jsonb_build_object('needed_by',needed_by::timestamptz),
+ SELECT user_id,id,'legacy',CASE status WHEN 'stocked' THEN 'received' ELSE status END,to_jsonb(p)||jsonb_build_object('needed_by',needed_by::timestamp AT TIME ZONE 'UTC'),
  jsonb_build_object('legacy_review',true,'legacy_status',status,'sku',sku,'public_note',admin_note),shipment_request_id,created_at FROM print_requests p;
 INSERT INTO print_runs(user_id,source_author_id,origin,stage,request,data,created_at)
  SELECT user_id,id,'legacy',CASE status WHEN 'stocked' THEN 'received' WHEN 'printing' THEN 'approved' ELSE status END,
@@ -113,7 +113,7 @@ BEGIN
  snapshot=to_jsonb(NEW);
  IF TG_TABLE_NAME='print_requests' THEN
   src='staff';
-  snapshot=snapshot||jsonb_build_object('needed_by',NEW.needed_by::timestamptz);
+  snapshot=snapshot||jsonb_build_object('needed_by',NEW.needed_by::timestamp AT TIME ZONE 'UTC');
   INSERT INTO print_runs(user_id,source_print_id,origin,stage,request,data) VALUES(NEW.user_id,NEW.id,src,'submitted',snapshot,jsonb_build_object('slack_opt_in',NEW.slack_opt_in)) RETURNING id INTO rid;
  ELSE
   src='author'; snapshot=snapshot||jsonb_build_object('product','custom','front_url',NEW.file_url,'note',NEW.description);
