@@ -2,30 +2,7 @@ package store
 
 import (
 	"context"
-	"github.com/hackclub/merch/internal/swag"
 )
-
-func printStageLabel(stage swag.PrintStage) string {
-	switch stage {
-	case swag.PrintSubmitted:
-		return "Submitted"
-	case swag.PrintApproved:
-		return "Approved"
-	case swag.PrintOrdered:
-		return "Ordered from printer"
-	case swag.PrintInTransit:
-		return "In transit"
-	case swag.PrintReceived:
-		return "Received at warehouse"
-	case swag.PrintAvailable:
-		return "Available"
-	case swag.PrintRejected:
-		return "Rejected"
-	case swag.PrintCancelled:
-		return "Cancelled"
-	}
-	return "Print request update"
-}
 
 // The job is inserted with the release transaction. Rendering uses the existing
 // parcel email, then saves its exact bytes and key before any transport attempt.
@@ -64,6 +41,6 @@ func (s *Store) PreparePrintShipmentEmails(ctx context.Context, render func(*Req
 }
 
 func (s *Store) SkipUnconfiguredPrintSlack(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx, `update print_notifications set status='skipped',error='Slack DMs are not configured' where channel='slack' and status in ('queued','failed')`)
+	_, err := s.pool.Exec(ctx, `update print_notifications set status='skipped',error=$1 where channel='slack' and status in ('queued','failed')`, "Slack DMs are not configured")
 	return err
 }

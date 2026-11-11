@@ -805,7 +805,7 @@ func (s *server) createSubmission(w http.ResponseWriter, r *http.Request, v view
 			return
 		}
 	}
-	sub, err := s.Store.CreateSubmission(r.Context(), body)
+	sub, err := s.Store.CreateSubmission(r.Context(), body, s.printMessages())
 	if err != nil {
 		s.serverErr(w, err)
 		return

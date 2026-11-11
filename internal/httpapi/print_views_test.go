@@ -26,7 +26,7 @@ func TestPrintRequesterEvidencePrivacyAndHistory(t *testing.T) {
 		t.Helper()
 		a.Version = run.Version
 		var err error
-		run, err = h.store.ActPrintRun(context.Background(), run.ID, a)
+		run, err = h.store.ActPrintRun(context.Background(), run.ID, a, store.PrintMessages{BaseURL: h.cfg.BaseURL, Render: renderPrintMessage})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -110,7 +110,7 @@ func TestUSPrintFirstShipmentReceivedEmailOnce(t *testing.T) {
 		t.Helper()
 		a.Version = run.Version
 		var err error
-		run, err = h.store.ActPrintRun(context.Background(), run.ID, a)
+		run, err = h.store.ActPrintRun(context.Background(), run.ID, a, store.PrintMessages{BaseURL: h.cfg.BaseURL, Render: renderPrintMessage})
 		if err != nil {
 			t.Fatal(err)
 		}

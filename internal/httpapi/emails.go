@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hackclub/merch/internal/loops"
 	"github.com/hackclub/merch/internal/store"
@@ -15,6 +16,102 @@ import (
 // Mailer sends transactional emails (Loops in production). Nil sends none.
 type Mailer interface {
 	Send(ctx context.Context, e loops.Email) error
+}
+
+func (s *server) printMessages() store.PrintMessages {
+	return store.PrintMessages{BaseURL: s.Config.BaseURL, Render: renderPrintMessage}
+}
+
+func printStageLabel(stage swag.PrintStage) string {
+	switch stage {
+	case swag.PrintSubmitted:
+		return "Submitted"
+	case swag.PrintApproved:
+		return "Approved"
+	case swag.PrintOrdered:
+		return "Ordered from printer"
+	case swag.PrintInTransit:
+		return "In transit"
+	case swag.PrintReceived:
+		return "Received at warehouse"
+	case swag.PrintAvailable:
+		return "Available"
+	case swag.PrintRejected:
+		return "Rejected"
+	case swag.PrintCancelled:
+		return "Cancelled"
+	}
+	return "Print request update"
+}
+
+func renderPrintMessage(f store.PrintMessageFacts, baseURL string) store.PrintMessage {
+	eta := f.ETA
+	if eta == "" {
+		eta = "not confirmed"
+	}
+	body := f.Note
+	switch f.Notice {
+	case swag.PrintNoticeStage:
+		switch f.Stage {
+		case swag.PrintSubmitted:
+			body = "We received your " + f.Title + " print request. HQ will review the artwork and quantity. No order has been placed."
+		case swag.PrintApproved:
+			body = fmt.Sprintf("Your %s request is approved for %d. HQ will place the printer order next.", f.Title, f.ApprovedQuantity)
+		case swag.PrintOrdered:
+			body = fmt.Sprintf("Your linked purchase order confirms %d %s ordered. Expected warehouse date: %s. We will tell you when the printer ships.", f.ApprovedQuantity, f.Title, eta)
+		case swag.PrintInTransit:
+			body = "Your print run has shipped from the printer to the warehouse. Estimated arrival: " + eta + ". This is not your first parcel."
+		case swag.PrintReceived:
+			body = "The warehouse marked your linked purchase order complete. Your print run is received at the warehouse. The shop listing awaits release. Your first parcel has not shipped."
+		case swag.PrintAvailable:
+			if f.ShipmentRequestID != nil {
+				state := "awaiting review"
+				if f.ReleaseStatus == swag.StatusAwaitingPayment {
+					state = "awaiting postage payment"
+				}
+				body = fmt.Sprintf("%s is available in the shop. Your first %d are in shipment request #%d, %s.", f.Title, f.FirstQuantity, *f.ShipmentRequestID, state)
+			} else {
+				body = f.Title + " is available in the shop. No first shipment was requested."
+			}
+		case swag.PrintRejected:
+			body = "Your " + f.Title + " request was rejected: " + f.Note + " No order was placed."
+		case swag.PrintCancelled:
+			detail := "No order was placed."
+			if f.PrinterCancelled {
+				detail = "Printer confirmed cancellation."
+			}
+			body = "Your " + f.Title + " print request was cancelled. " + f.Note + " " + detail
+		}
+	case swag.PrintNoticeReceiptReview:
+		body = f.Note + " Source: " + f.ETASource + ". Received quantity unavailable."
+	case swag.PrintNoticePOETA:
+		body = "Expected warehouse date for your print run is now " + eta + " (linked PO required-by). This is an estimate, not a delivery promise."
+	}
+	if f.AppendETA {
+		body += "\nExpected warehouse arrival: " + f.UpdateETA + " (" + f.ETASource + "). This is not a delivery promise."
+	}
+	subject := fmt.Sprintf("Print #%d · %s", f.RunID, printStageLabel(f.Stage))
+	if f.Stage == swag.PrintSubmitted {
+		subject = "Print request received"
+	}
+	// Slack excludes free-text updates, artwork and purchase-order information.
+	slack := fmt.Sprintf("Print request #%d: %s. Requested %d; approved %d. Printing status is separate from your first parcel.", f.RunID, printStageLabel(f.Stage), f.RequestedQuantity, f.ApprovedQuantity)
+	if f.Stage == swag.PrintSubmitted {
+		slack = "We received your print request. HQ will review the artwork and quantity. No order has been placed."
+	}
+	if _, err := time.Parse(time.DateOnly, f.ETA); err == nil {
+		slack += " Expected warehouse date: " + f.ETA + " (estimate)."
+	}
+	if f.ShipmentRequestID != nil {
+		slack += fmt.Sprintf(" First shipment request #%d: %s.", *f.ShipmentRequestID, f.ShipmentStatus)
+	}
+	footer := func(text string) string {
+		if text != "" && !strings.Contains(text, "View print request: ") {
+			text += fmt.Sprintf("\n\nView print request: %s/print-requests/%d", strings.TrimRight(baseURL, "/"), f.RunID)
+		}
+		return text
+	}
+	return store.PrintMessage{Subject: subject, Body: footer(body), SlackBody: footer(slack), ShipmentNote: fmt.Sprintf("First shipment from print run #%d", f.RunID), ReorderNote: fmt.Sprintf("New print run #%d", f.NewRunID)}
 }
 
 // emailRequest tells a requester what happened to their request: kind is

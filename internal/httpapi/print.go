@@ -290,7 +290,7 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 		InitialQuantity: body.InitialQuantity, Address: body.Address, FrontPreviewURL: body.FrontPreviewURL,
 		BackPreviewURL: body.BackPreviewURL, Landscape: body.Landscape,
 		SlackOptIn: body.SlackOptIn && s.PrintSlack != nil && v.user.SlackID != "",
-	})
+	}, s.printMessages())
 	if err != nil {
 		s.serverErr(w, err)
 		return

@@ -802,8 +802,11 @@ and where, so they see it in person once it arrives.
   international parcels await postage payment. Available to request is zero while hidden,
   otherwise max(0, warehouse sellable − open merch holds). Sellable already excludes
   warehouse allocations.
-- **Messages:** `printStageMessage` and `printReceivedMessage` hold the wording in Go.
-  `print_notifications` saves each message with its event. Failed sends retry separately
+- **Messages:** `renderPrintMessage` in `internal/httpapi/emails.go` holds the email, Slack
+  and first-shipment wording. Callers pass it and the base URL in `store.PrintMessages`.
+  The store passes public facts to it and saves its text in `print_notifications` with
+  the event and retry key created in Go. The request link is added while queuing, not by SQL
+  or the delivery worker. Failed sends retry separately
   and never undo a stage. Each retry uses the same provider key and saved text. After the
   provider's duplicate-send protection expires, HQ must check an uncertain delivery before
   retrying. `sent_emails` links the saved text to its run and event. `PRINT_SLACK_BOT_TOKEN`

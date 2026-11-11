@@ -12,6 +12,25 @@ import (
 
 var ErrPrintAction = errors.New("invalid print action")
 
+type PrintActionError struct {
+	Reason    string
+	Forbidden bool
+}
+
+func (e *PrintActionError) Error() string {
+	return e.Reason
+}
+func (e *PrintActionError) Unwrap() error { return ErrPrintAction }
+
+type PrintNoticeKind string
+
+const (
+	PrintNoticeStage         PrintNoticeKind = "stage"
+	PrintNoticeUpdate        PrintNoticeKind = "update"
+	PrintNoticeReceiptReview PrintNoticeKind = "receipt_review"
+	PrintNoticePOETA         PrintNoticeKind = "po_eta"
+)
+
 // PrintActor comes from trusted server identity, never request JSON.
 type PrintActor struct {
 	ID        int64
@@ -42,9 +61,12 @@ type PrintRunState struct {
 	LegacyListingVisible  bool
 }
 type PrintActionResult struct {
-	Run                 PrintRunState
-	Notify, RecordEvent bool
-	UpdateMessage       string
+	Run                                   PrintRunState
+	Notify, RecordEvent                   bool
+	Notice                                PrintNoticeKind
+	AppendETA                             bool
+	EventSource, EventAction              string
+	NotifyFirstShipment, SaveConfirmation bool
 }
 
 type PrintRunData struct {
@@ -146,41 +168,54 @@ func completePrintEvidence(r *PrintRunState, now time.Time) bool {
 	return true
 }
 
-// ApplyPrintAction validates one action and returns a new value. It performs no I/O.
-func ApplyPrintAction(state PrintRunState, a PrintAction, actor PrintActor, now time.Time) (PrintActionResult, error) {
-	state.Links = append([]PrintPOEvidence(nil), state.Links...)
-	a.ActorID = actor.ID
+// AuthorizePrintAction checks which actions this actor may request.
+func AuthorizePrintAction(state PrintRunState, a PrintAction, actor PrintActor) error {
 	r := &state
-	invalid := func(msg string) (PrintActionResult, error) {
-		return PrintActionResult{}, fmt.Errorf("%w: %s", ErrPrintAction, msg)
-	}
+	forbidden := func(reason string) error { return &PrintActionError{Reason: reason, Forbidden: true} }
 	if actor.Automatic {
 		if a.Action != "observe" {
-			return invalid("HQ review required")
+			return forbidden("HQ review required")
 		}
 	} else if a.Action == "observe" {
-		return invalid("only the configured PO adapter records observations")
+		return forbidden("PO observations are automatic")
 	} else if !actor.Admin {
 		if actor.ID != r.UserID {
-			return invalid("HQ review required")
+			return forbidden("HQ review required")
 		}
 		switch a.Action {
-		case "preferences", "first_shipment":
+		case "preferences", "first_shipment", "reorder":
 		case "cancel":
-			if (r.Stage != PrintSubmitted && r.Stage != PrintApproved) || r.HasPrinterOrder() {
-				return invalid("HQ must confirm printer cancellation")
+			if r.Stage != PrintSubmitted && r.Stage != PrintApproved {
+				return forbidden("HQ review required")
+			}
+			if r.HasPrinterOrder() {
+				return forbidden("HQ must confirm printer cancellation")
 			}
 		default:
-			return invalid("HQ review required")
+			return forbidden("HQ review required")
 		}
 	}
 	if a.Action == "preferences" && actor.ID != r.UserID {
-		return invalid("only the requester can opt in to Slack")
+		return forbidden("only the requester can opt in to Slack")
+	}
+	return nil
+}
+
+// ApplyPrintAction returns state and event/message decisions without doing I/O.
+func ApplyPrintAction(state PrintRunState, a PrintAction, actor PrintActor, now time.Time) (PrintActionResult, error) {
+	if err := AuthorizePrintAction(state, a, actor); err != nil {
+		return PrintActionResult{}, err
+	}
+	state.Links = append([]PrintPOEvidence(nil), state.Links...)
+	a.ActorID = actor.ID
+	r := &state
+	invalid := func(reason string) (PrintActionResult, error) {
+		return PrintActionResult{}, fmt.Errorf("%w: %s", ErrPrintAction, reason)
 	}
 	prev, previousReconcile := r.Stage, r.Reconcile
 	previousEvidence := printEvidenceDigest(r.Links)
 	notify := false
-	updateMessage := ""
+	notice := PrintNoticeUpdate
 	switch a.Action {
 	case "approve":
 		if r.Stage != PrintSubmitted || (r.Origin == "legacy" && r.LegacyStatus == "printing") || a.ApprovedQuantity < 1 || strings.TrimSpace(a.Specifications) == "" {
@@ -291,7 +326,7 @@ func ApplyPrintAction(state PrintRunState, a PrintAction, actor PrintActor, now 
 		r.ReceiptCorrection = false
 		r.Reconcile = false
 		notify = true
-		updateMessage = a.Note + " Source: " + a.ETASource + ". Received quantity unavailable."
+		notice = PrintNoticeReceiptReview
 	case "link", "replace_links":
 		if r.LegacyReview {
 			return invalid("audit the legacy run before linking purchase orders")
@@ -376,10 +411,7 @@ func ApplyPrintAction(state PrintRunState, a PrintAction, actor PrintActor, now 
 				notify = true
 				r.ETA = date
 				r.ETASource = "Zenventory PO required-by"
-				if date == "" {
-					date = "not confirmed"
-				}
-				updateMessage = "Expected warehouse date for your print run is now " + date + " (linked PO required-by). This is an estimate, not a delivery promise."
+				notice = PrintNoticePOETA
 			}
 		}
 	case "release":
@@ -444,5 +476,48 @@ func ApplyPrintAction(state PrintRunState, a PrintAction, actor PrintActor, now 
 		r.PublicNote = a.Note
 	}
 	record := a.Action != "observe" || prev != r.Stage || notify || previousReconcile != r.Reconcile || previousEvidence != printEvidenceDigest(r.Links)
-	return PrintActionResult{Run: *r, Notify: notify, RecordEvent: record, UpdateMessage: updateMessage}, nil
+	eventSource := "HQ"
+	if actor.Automatic {
+		eventSource = "warehouse PO copy"
+	} else if actor.ID == r.UserID {
+		eventSource = "requester"
+	}
+	eventAction := a.Action
+	if a.Action == "observe" && prev == r.Stage && notify {
+		eventAction = "eta_update"
+	}
+	if prev != r.Stage {
+		notice = PrintNoticeStage
+	}
+	send := (prev != r.Stage || notify) && a.Action != "audit_legacy" && !(a.Action == "release" && r.Origin == "legacy" && state.ShipmentRequestID != nil)
+	return PrintActionResult{Run: *r, Notify: send, RecordEvent: record, Notice: notice, AppendETA: prev == r.Stage && a.ETA != "", EventSource: eventSource, EventAction: eventAction,
+		NotifyFirstShipment: a.Action == "release" && state.ShipmentRequestID == nil && r.Request.InitialQuantity > 0 && a.ReleaseStatus == StatusPending,
+		SaveConfirmation:    a.ConfirmationURL != "" && (a.Action == "link" || a.Action == "replace_links" || a.Action == "cancel")}, nil
+}
+
+func CheckPrintReorder(stage PrintStage) error {
+	if stage == PrintAvailable || stage == PrintRejected || stage == PrintCancelled {
+		return nil
+	}
+	return &PrintActionError{Reason: "finish the current run first"}
+}
+
+func PrintRunNeedsPoll(r PrintRunState, now time.Time) bool {
+	if len(r.Links) == 0 {
+		return false
+	}
+	switch r.Stage {
+	case PrintApproved, PrintOrdered, PrintInTransit, PrintReceived:
+		return true
+	case PrintAvailable:
+		if r.Reconcile || r.SourceStale || r.PollError != "" || r.LastPollAt == nil || !r.LastPollAt.After(now.Add(-15*time.Minute)) {
+			return true
+		}
+		for _, p := range r.Links {
+			if !p.Completed || p.Draft || p.Deleted {
+				return true
+			}
+		}
+	}
+	return false
 }

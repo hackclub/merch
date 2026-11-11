@@ -1,7 +1,6 @@
 package store
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -22,9 +21,9 @@ func TestPrintCreationInGoIsAtomic(t *testing.T) {
 				}
 				var err error
 				if origin == "staff" {
-					_, err = s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/art.png"})
+					_, err = s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/art.png"}, testPrintMessages)
 				} else {
-					_, err = s.CreateSubmission(ctx, Submission{UserID: u.ID, Program: "Demo", Title: "Demo cards", Kind: "postcard", Quantity: 800, FileURL: "https://example.com/art.png"})
+					_, err = s.CreateSubmission(ctx, Submission{UserID: u.ID, Program: "Demo", Title: "Demo cards", Kind: "postcard", Quantity: 800, FileURL: "https://example.com/art.png"}, testPrintMessages)
 				}
 				if (err != nil) != (failTable != "") {
 					t.Fatalf("creation error: %v", err)
@@ -45,7 +44,7 @@ func TestPrintCreationInGoIsAtomic(t *testing.T) {
 				}
 				if failTable == "" {
 					var channel, subject, body, source string
-					if e := s.pool.QueryRow(ctx, `select n.channel,n.subject,n.body,r.origin from print_notifications n join print_runs r on r.id=n.run_id`).Scan(&channel, &subject, &body, &source); e != nil || channel != "email" || subject != "Print request received" || source != origin || !strings.Contains(body, "We received your Demo cards print request.") {
+					if e := s.pool.QueryRow(ctx, `select n.channel,n.subject,n.body,r.origin from print_notifications n join print_runs r on r.id=n.run_id`).Scan(&channel, &subject, &body, &source); e != nil || channel != "email" || subject != "stage=submitted" || source != origin || body == "" {
 						t.Fatalf("received notice %q %q %q %q: %v", channel, subject, body, source, e)
 					}
 				}

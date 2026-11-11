@@ -76,10 +76,10 @@ func TestLegacyPrintMigrationPreservesLinksAndUnknownDates(t *testing.T) {
 			if r.Stage != swag.PrintApproved {
 				t.Fatal("printing should retain approval and require audit, without inferring an order")
 			}
-			if _, err := s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "approve", ActorID: u.ID, ApprovedQuantity: 500, Specifications: "Checked"}); err == nil {
+			if _, err := s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "approve", ActorID: u.ID, ApprovedQuantity: 500, Specifications: "Checked"}, testPrintMessages); err == nil {
 				t.Fatal("replayed approval for a legacy printing run")
 			}
-			if _, err := s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "link", ActorID: u.ID, SKU: "Demo/Legacy", ConfirmationURL: "https://example.com/confirmation", Evidence: []swag.PrintPOEvidence{{PrintPOLink: swag.PrintPOLink{POID: 42, LineID: 10, SKU: "Demo/Legacy"}}}}); !errors.Is(err, ErrPrintAction) {
+			if _, err := s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "link", ActorID: u.ID, SKU: "Demo/Legacy", ConfirmationURL: "https://example.com/confirmation", Evidence: []swag.PrintPOEvidence{{PrintPOLink: swag.PrintPOLink{POID: 42, LineID: 10, SKU: "Demo/Legacy"}}}}, testPrintMessages); !errors.Is(err, ErrPrintAction) {
 				t.Fatalf("legacy link must require audit, got %v", err)
 			}
 		}
@@ -95,7 +95,7 @@ func TestLegacyPrintMigrationPreservesLinksAndUnknownDates(t *testing.T) {
 func TestPrintNotificationCrashWindow(t *testing.T) {
 	s := newStore(t)
 	u := mkUser(t, s, "notice", "notice@x.com")
-	s.CreateSubmission(ctx, Submission{UserID: u.ID, Program: "Demo", Title: "Demo", Kind: "sticker", Quantity: 50, FileURL: "https://example.com/art.png"})
+	s.CreateSubmission(ctx, Submission{UserID: u.ID, Program: "Demo", Title: "Demo", Kind: "sticker", Quantity: 50, FileURL: "https://example.com/art.png"}, testPrintMessages)
 	s.pool.Exec(ctx, `update print_notifications set status='sending',first_attempt_at=now()-interval '24 hours',next_attempt_at=now()-interval '1 minute',attempts=1`)
 	called := false
 	if err := s.DeliverPrintNotifications(ctx, "email", func(PrintNotification) error { called = true; return nil }); err != nil {
@@ -109,6 +109,10 @@ func TestPrintNotificationCrashWindow(t *testing.T) {
 	if status != "uncertain" {
 		t.Fatal(status)
 	}
+	var reason string
+	if err := s.pool.QueryRow(ctx, `select error from print_notifications limit 1`).Scan(&reason); err != nil || reason != "Transport deduplication window expired; reconcile delivery before retrying." {
+		t.Fatalf("uncertain reason %q: %v", reason, err)
+	}
 }
 
 func TestUnconfiguredPrintSlackIsSkipped(t *testing.T) {
@@ -117,7 +121,7 @@ func TestUnconfiguredPrintSlackIsSkipped(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `update users set slack_id='UDEMO' where id=$1`, u.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/art.png", SlackOptIn: true}); err != nil {
+	if _, err := s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/art.png", SlackOptIn: true}, testPrintMessages); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SkipUnconfiguredPrintSlack(ctx); err != nil {
@@ -139,7 +143,7 @@ func TestPrintSlackOptInAndPrivateNotes(t *testing.T) {
 	s := newStore(t)
 	u := mkUser(t, s, "slack-demo", "slack@x.com")
 	s.pool.Exec(ctx, `update users set slack_id='UDEMO' where id=$1`, u.ID)
-	_, err := s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/art.png", SlackOptIn: true})
+	_, err := s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/art.png", SlackOptIn: true}, testPrintMessages)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +152,7 @@ func TestPrintSlackOptInAndPrivateNotes(t *testing.T) {
 	if !r.SlackOptIn {
 		t.Fatal("lost initial opt-in")
 	}
-	r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, ActorID: u.ID, Action: "reject", Note: "Private delivery instructions; please revise"})
+	r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, ActorID: u.ID, Action: "reject", Note: "Private delivery instructions; please revise"}, testPrintMessages)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,17 +163,17 @@ func TestPrintSlackOptInAndPrivateNotes(t *testing.T) {
 	if strings.Contains(body, "Private delivery") {
 		t.Fatal("private notes copied into Slack")
 	}
-	if !strings.Contains(body, "Rejected") {
-		t.Fatal("Slack must use a human stage label")
+	if body != "stage=rejected" {
+		t.Fatal("Slack must use the caller's renderer")
 	}
 	var subject string
 	if err = s.pool.QueryRow(ctx, `select subject from print_notifications where channel='email' order by id desc limit 1`).Scan(&subject); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(subject, "Rejected") {
-		t.Fatalf("raw stage in subject: %s", subject)
+	if subject != "stage=rejected" {
+		t.Fatalf("caller subject was changed: %s", subject)
 	}
-	_, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, ActorID: u.ID, Action: "preferences", SlackOptIn: false})
+	_, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, ActorID: u.ID, Action: "preferences", SlackOptIn: false}, testPrintMessages)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +183,7 @@ func TestPrintSlackOptInAndPrivateNotes(t *testing.T) {
 func TestPrintNotificationLeaseAcrossWorkers(t *testing.T) {
 	s := newStore(t)
 	u := mkUser(t, s, "lease-demo", "lease@x.com")
-	s.CreateSubmission(ctx, Submission{UserID: u.ID, Program: "Demo", Title: "Demo", Kind: "sticker", Quantity: 50, FileURL: "https://example.com/art.png"})
+	s.CreateSubmission(ctx, Submission{UserID: u.ID, Program: "Demo", Title: "Demo", Kind: "sticker", Quantity: 50, FileURL: "https://example.com/art.png"}, testPrintMessages)
 	started, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
 	go func() {
 		done <- s.DeliverPrintNotifications(ctx, "email", func(PrintNotification) error { close(started); <-release; return nil })
@@ -202,14 +206,14 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			ad := addr
 			ad.Country = country
 			ad.Phone = "+12025550123"
-			_, err := s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/art.png", InitialQuantity: 25, Address: &ad})
+			_, err := s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/art.png", InitialQuantity: 25, Address: &ad}, testPrintMessages)
 			if err != nil {
 				t.Fatal(err)
 			}
 			runs, _ := s.PrintRuns(ctx, 0)
 			r := runs[0]
 			approved := time.Now().Add(-30 * time.Minute)
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "approve", ActorID: u.ID, ApprovedQuantity: 800, Specifications: "Linen, art and budget checked", Now: approved})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "approve", ActorID: u.ID, ApprovedQuantity: 800, Specifications: "Linen, art and budget checked", Now: approved}, testPrintMessages)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -222,17 +226,17 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			p := swag.PrintPOEvidence{PrintPOLink: swag.PrintPOLink{POID: 12, LineID: 34, SKU: it.SKU}, Quantity: 800, CreatedAt: &created, SyncedAt: time.Now(), PolledAt: time.Now()}
 			due := time.Date(2026, 12, 1, 0, 30, 0, 0, time.FixedZone("Demo east", 14*60*60))
 			p.RequiredBy = &due
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "link", ActorID: u.ID, SKU: it.SKU, ItemID: it.ID, ConfirmationURL: "https://example.com/confirmation", Evidence: []swag.PrintPOEvidence{p}})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "link", ActorID: u.ID, SKU: it.SKU, ItemID: it.ID, ConfirmationURL: "https://example.com/confirmation", Evidence: []swag.PrintPOEvidence{p}}, testPrintMessages)
 			if err != nil {
 				t.Fatal(err)
 			}
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}}, testPrintMessages)
 			if err != nil || r.Stage != swag.PrintOrdered {
 				t.Fatalf("ordered %+v %v", r, err)
 			}
 			formVersionBeforeStale := r.Version
 			staleAt := time.Now().Add(2 * time.Hour)
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}, Now: staleAt})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}, Now: staleAt}, testPrintMessages)
 			if err != nil || r.Version != formVersionBeforeStale || !r.SourceStale || r.Reconcile || r.Stage != swag.PrintOrdered {
 				t.Fatalf("stale feed must preserve version and avoid reconciliation: %+v %v", r, err)
 			}
@@ -243,24 +247,24 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			pollAt := time.Now().UTC()
 			p.SyncedAt = pollAt
 			p.PolledAt = pollAt
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}, Now: pollAt})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}, Now: pollAt}, testPrintMessages)
 			if err != nil || r.Version != formVersion || r.LastPollAt == nil || !r.LastPollAt.Equal(pollAt) {
 				t.Fatalf("no-change poll invalidated form or lost metadata: %+v %v", r, err)
 			}
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: formVersion, Action: "update", ActorID: u.ID, InternalNote: "Reviewed the current printer order"})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: formVersion, Action: "update", ActorID: u.ID, InternalNote: "Reviewed the current printer order"}, testPrintMessages)
 			if err != nil {
 				t.Fatalf("admin form must survive metadata-only poll: %v", err)
 			}
 			p.Completed = true
 			p.CompletedAt = nil // Unknown completion date remains unknown.
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}}, testPrintMessages)
 			if err != nil || r.Stage != swag.PrintReceived {
 				t.Fatalf("received %+v %v", r, err)
 			}
 			if got, _ := s.ItemsBySKU(ctx, []string{it.SKU}); got[0].Visible {
 				t.Fatal("receipt published listing")
 			}
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}}, testPrintMessages)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -280,14 +284,14 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 				fee = 1200
 			}
 			a := PrintAction{Version: r.Version, Action: "release", ActorID: u.ID, Sellable: 800, ReleaseStatus: state, ReleaseFee: fee}
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}, Now: staleAt})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}, Now: staleAt}, testPrintMessages)
 			if err != nil || !r.SourceStale || r.Reconcile || r.Version != a.Version {
 				t.Fatalf("stale receipt must remain separate from correction: %+v %v", r, err)
 			}
-			if _, err = s.ActPrintRun(ctx, r.ID, a); !errors.Is(err, ErrPrintAction) {
+			if _, err = s.ActPrintRun(ctx, r.ID, a, testPrintMessages); !errors.Is(err, ErrPrintAction) {
 				t.Fatalf("release must wait for a fresh source copy: %v", err)
 			}
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}}, testPrintMessages)
 			if err != nil || r.SourceStale || r.Reconcile || r.Version != a.Version {
 				t.Fatalf("refresh must clear staleness without invalidating forms: %+v %v", r, err)
 			}
@@ -296,7 +300,7 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			errs := make(chan error, 2)
 			for i := 0; i < 2; i++ {
 				wg.Add(1)
-				go func() { defer wg.Done(); p, e := s.ActPrintRun(ctx, r.ID, a); out <- p; errs <- e }()
+				go func() { defer wg.Done(); p, e := s.ActPrintRun(ctx, r.ID, a, testPrintMessages); out <- p; errs <- e }()
 			}
 			wg.Wait()
 			close(out)
@@ -338,7 +342,7 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			if _, err = s.pool.Exec(ctx, `update print_runs set data=jsonb_set(data,'{last_poll_at}',to_jsonb(now())) where id=$1`, r.ID); err != nil {
 				t.Fatal(err)
 			}
-			polls, err := s.PrintRunsToPoll(ctx)
+			polls, err := s.PrintRunsToPoll(ctx, time.Now())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -350,7 +354,7 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			if _, err = s.pool.Exec(ctx, `update print_runs set data=jsonb_set(data,'{last_poll_at}',to_jsonb(now()-interval '16 minutes')) where id=$1`, r.ID); err != nil {
 				t.Fatal(err)
 			}
-			polls, err = s.PrintRunsToPoll(ctx)
+			polls, err = s.PrintRunsToPoll(ctx, time.Now())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -363,33 +367,33 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			}
 			r, _ = s.PrintRun(ctx, r.ID)
 			p.Completed = false
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}}, testPrintMessages)
 			if err != nil || r.Stage != swag.PrintAvailable || !r.Reconcile {
 				t.Fatalf("reopened %+v %v", r, err)
 			}
 			p.Completed = true
 			corrected := time.Now().Add(-5 * time.Minute)
 			p.CompletedAt = &corrected
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}}, testPrintMessages)
 			if err != nil || !r.Reconcile {
 				t.Fatal("corrected completion must remain queued for HQ review")
 			}
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "review_receipt", ActorID: u.ID, Note: "Warehouse confirmed the corrected completion record; no partial quantity is claimed.", ETASource: "Demo warehouse confirmation"})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "review_receipt", ActorID: u.ID, Note: "Warehouse confirmed the corrected completion record; no partial quantity is claimed.", ETASource: "Demo warehouse confirmation"}, testPrintMessages)
 			if err != nil || r.Stage != swag.PrintAvailable || r.Reconcile {
 				t.Fatalf("receipt review %+v %v", r, err)
 			}
-			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "preferences", ActorID: u.ID, SlackOptIn: true})
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "preferences", ActorID: u.ID, SlackOptIn: true}, testPrintMessages)
 			if err != nil {
 				t.Fatal(err)
 			}
-			next, err := s.ReorderPrintRun(ctx, r.ID, r.Version)
+			next, err := s.ReorderPrintRun(ctx, r.ID, r.Version, testPrintMessages)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !next.SlackOptIn || !next.Request.SlackOptIn {
 				t.Fatal("reorder lost requester Slack preference")
 			}
-			again, err := s.ReorderPrintRun(ctx, r.ID, r.Version)
+			again, err := s.ReorderPrintRun(ctx, r.ID, r.Version, testPrintMessages)
 			if err != nil || next.ID != again.ID {
 				t.Fatalf("reorder retry %+v %v", again, err)
 			}
@@ -400,7 +404,7 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 func TestCanonicalPrintRunApprovalAndConcurrency(t *testing.T) {
 	s := newStore(t)
 	u := mkUser(t, s, "print-owner", "owner@x.com")
-	p, err := s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/front.png", InitialQuantity: 25, Address: &addr})
+	p, err := s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/front.png", InitialQuantity: 25, Address: &addr}, testPrintMessages)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +426,7 @@ func TestCanonicalPrintRunApprovalAndConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "approve", ActorID: u.ID, ApprovedQuantity: 700, Specifications: "Linen, 4x6, both sides; budget checked"})
+			_, err := s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "approve", ActorID: u.ID, ApprovedQuantity: 700, Specifications: "Linen, 4x6, both sides; budget checked"}, testPrintMessages)
 			errs <- err
 		}()
 	}
@@ -449,7 +453,7 @@ func TestCanonicalPrintRunApprovalAndConcurrency(t *testing.T) {
 	if len(ev) != 2 {
 		t.Fatalf("events %+v", ev)
 	}
-	if _, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "receive", ActorID: u.ID}); err == nil {
+	if _, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "receive", ActorID: u.ID}, testPrintMessages); err == nil {
 		t.Fatal("manual receipt accepted")
 	}
 	var count int
@@ -462,7 +466,7 @@ func TestCanonicalPrintRunApprovalAndConcurrency(t *testing.T) {
 func TestCanonicalAuthorAndRetry(t *testing.T) {
 	s := newStore(t)
 	u := mkUser(t, s, "author-run", "author@x.com")
-	_, err := s.CreateSubmission(ctx, Submission{UserID: u.ID, Program: "Demo", Title: "Demo stickers", Kind: "sticker", Quantity: 500, FileURL: "https://example.com/art.png"})
+	_, err := s.CreateSubmission(ctx, Submission{UserID: u.ID, Program: "Demo", Title: "Demo stickers", Kind: "sticker", Quantity: 500, FileURL: "https://example.com/art.png"}, testPrintMessages)
 	if err != nil {
 		t.Fatal(err)
 	}

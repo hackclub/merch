@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/hackclub/merch/internal/swag"
@@ -89,16 +88,26 @@ func (s *Store) PrintRunsForSources(ctx context.Context, prints, authors []int64
 
 // Poll fairly across all linked runs, including releases that may later need
 // reconciliation. Closed newer requests must not starve old active runs.
-func (s *Store) PrintRunsToPoll(ctx context.Context) ([]*PrintRun, error) {
-	rows, err := s.pool.Query(ctx, printRunSelect+` WHERE r.stage IN ('approved','ordered','in_transit','received','available') AND EXISTS(SELECT 1 FROM print_run_po_links l WHERE l.run_id=r.id)
- AND (r.stage<>'available' OR r.data->>'reconcile'='true' OR r.data->>'source_stale'='true' OR coalesce(r.data->>'poll_error','')<>''
- OR (r.data->>'last_poll_at') IS NULL OR (r.data->>'last_poll_at')::timestamptz<=now()-interval '15 minutes'
- OR EXISTS(SELECT 1 FROM print_run_po_links l WHERE l.run_id=r.id AND (l.evidence->>'completed' IS DISTINCT FROM 'true' OR l.evidence->>'draft'='true' OR l.evidence->>'deleted'='true')))
- ORDER BY r.data->>'last_poll_at' NULLS FIRST,r.id LIMIT 50`)
+func (s *Store) PrintRunsToPoll(ctx context.Context, now time.Time) ([]*PrintRun, error) {
+	rows, err := s.pool.Query(ctx, printRunSelect+` WHERE EXISTS(SELECT 1 FROM print_run_po_links l WHERE l.run_id=r.id) ORDER BY r.data->>'last_poll_at' NULLS FIRST,r.id`)
 	if err != nil {
 		return nil, err
 	}
-	return collect(rows, func(row pgx.Rows) (*PrintRun, error) { return scanPrintRun(row) })
+	defer rows.Close()
+	runs := []*PrintRun{}
+	for rows.Next() {
+		r, err := scanPrintRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		if swag.PrintRunNeedsPoll(r.actionState(), now) {
+			runs = append(runs, r)
+			if len(runs) == 50 {
+				break
+			}
+		}
+	}
+	return runs, rows.Err()
 }
 
 func (r *PrintRun) HasPrinterOrder() bool {
@@ -138,7 +147,7 @@ func (s *Store) PrintRunHistory(ctx context.Context, id int64) ([]PrintRunEvent,
 
 type PrintAction = swag.PrintAction
 
-func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*PrintRun, error) {
+func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction, messages PrintMessages) (*PrintRun, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -161,7 +170,6 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 	}
 	prev := r.Stage
 	previousETA := r.ETA
-	hadShipment := r.ShipmentRequestID != nil
 
 	state := r.actionState()
 	if a.Action == "release" {
@@ -185,7 +193,6 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 	}
 	r.PrintRunData = decision.Run.PrintRunData
 	r.Stage, r.Links, r.InternalNote = decision.Run.Stage, decision.Run.Links, decision.Run.InternalNote
-	notify, updateMessage := decision.Notify, decision.UpdateMessage
 	invalid := func(msg string) (*PrintRun, error) { return nil, fmt.Errorf("%w: %s", ErrPrintAction, msg) }
 	switch a.Action {
 	case "preferences":
@@ -251,7 +258,7 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 		if r.ShipmentRequestID == nil && r.Request.InitialQuantity > 0 {
 			ad := r.Request.Address
 			var rid int64
-			err = tx.QueryRow(ctx, `INSERT INTO swag_requests(user_id,status,purpose,first_name,last_name,line_1,line_2,city,state,postal_code,country,phone_number,shipping_fee_cents,note) VALUES($1,$2,'staff',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`, r.UserID, a.ReleaseStatus, ad.FirstName, ad.LastName, ad.Line1, ad.Line2, ad.City, ad.State, ad.PostalCode, ad.Country, ad.Phone, a.ReleaseFee, fmt.Sprintf("First shipment from print run #%d", id)).Scan(&rid)
+			err = tx.QueryRow(ctx, `INSERT INTO swag_requests(user_id,status,purpose,first_name,last_name,line_1,line_2,city,state,postal_code,country,phone_number,shipping_fee_cents,note) VALUES($1,$2,'staff',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`, r.UserID, a.ReleaseStatus, ad.FirstName, ad.LastName, ad.Line1, ad.Line2, ad.City, ad.State, ad.PostalCode, ad.Country, ad.Phone, a.ReleaseFee, messages.Render(printMessageFacts(r, a, swag.PrintNoticeStage, false), messages.BaseURL).ShipmentNote).Scan(&rid)
 			if err != nil {
 				return nil, err
 			}
@@ -266,7 +273,7 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 	if err != nil {
 		return nil, err
 	}
-	if a.ConfirmationURL != "" && (a.Action == "link" || a.Action == "replace_links" || a.Action == "cancel") {
+	if decision.SaveConfirmation {
 		_, err = tx.Exec(ctx, `insert into print_printer_confirmations(run_id,version,url,actor_id) values($1,$2,$3,$4)`, id, r.Version+1, a.ConfirmationURL, a.ActorID)
 		if err != nil {
 			return nil, err
@@ -287,38 +294,17 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 		if a.ActorID != 0 {
 			actor = &a.ActorID
 		}
-		source := "HQ"
-		if a.Auto {
-			source = "warehouse PO copy"
-		} else if a.ActorID == r.UserID {
-			source = "requester"
-		}
 		details := map[string]any{"from_stage": prev, "stage_changed": prev != r.Stage, "eta": r.ETA, "eta_changed": previousETA != r.ETA, "approved_quantity": r.ApprovedQuantity, "specifications": r.Specifications, "art_revision": r.Revision, "sku": r.SKU, "item_id": r.ItemID, "update_source": a.ETASource, "po_links": r.Links}
-		eventAction := a.Action
-		if a.Action == "observe" && prev == r.Stage && notify {
-			eventAction = "eta_update"
-		}
-		err = tx.QueryRow(ctx, `INSERT INTO print_run_events(run_id,stage,action,actor_id,event_at,note,source,version,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, id, r.Stage, eventAction, actor, now, a.Note, source, r.Version, details).Scan(&eid)
+		err = tx.QueryRow(ctx, `INSERT INTO print_run_events(run_id,stage,action,actor_id,event_at,note,source,version,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, id, r.Stage, decision.EventAction, actor, now, a.Note, decision.EventSource, r.Version, details).Scan(&eid)
 		if err != nil {
 			return nil, err
 		}
-		if (prev != r.Stage || notify) && a.Action != "audit_legacy" && !(a.Action == "release" && r.Origin == "legacy" && hadShipment) {
-			body := printStageMessage(r, a)
-			if prev == r.Stage {
-				body = a.Note
-				if updateMessage != "" {
-					body = updateMessage
-				}
-				if a.ETA != "" {
-					body += "\nExpected warehouse arrival: " + a.ETA + " (" + a.ETASource + "). This is not a delivery promise."
-				}
-			}
-			err = queuePrintNotice(ctx, tx, r, eid, body)
-			if err != nil {
+		if decision.Notify {
+			if err = queuePrintNotice(ctx, tx, r, eid, printMessageFacts(r, a, decision.Notice, decision.AppendETA), messages); err != nil {
 				return nil, err
 			}
 		}
-		if a.Action == "release" && !hadShipment && r.ShipmentRequestID != nil && r.ShipmentStatus == swag.StatusPending {
+		if decision.NotifyFirstShipment && r.ShipmentRequestID != nil {
 			_, err = tx.Exec(ctx, `insert into print_notifications(run_id,event_id,channel,request_id,destination,subject,body) values($1,$2,'shipment_email',$3,$4,'','')`, r.ID, eid, *r.ShipmentRequestID, r.UserEmail)
 			if err != nil {
 				return nil, err
@@ -369,7 +355,7 @@ func preparePrintItem(ctx context.Context, tx pgx.Tx, request PrintRequest, sku 
 
 // createPrintRun is shared by the staff and author entry paths. The caller
 // commits the source row, artwork, event and received messages together.
-func createPrintRun(ctx context.Context, tx pgx.Tx, printID, authorID *int64, origin string, request PrintRequest) (int64, error) {
+func createPrintRun(ctx context.Context, tx pgx.Tx, printID, authorID *int64, origin string, request PrintRequest, messages PrintMessages) (int64, error) {
 	request.UserEmail, request.UserName = "", ""
 	r := &PrintRun{UserID: request.UserID, Origin: origin, Stage: swag.PrintSubmitted, Version: 1, Request: request,
 		PrintRunData: PrintRunData{SlackOptIn: request.SlackOptIn}}
@@ -389,12 +375,12 @@ func createPrintRun(ctx context.Context, tx pgx.Tx, printID, authorID *int64, or
 	if err = tx.QueryRow(ctx, `select email from users where id=$1`, r.UserID).Scan(&r.UserEmail); err != nil {
 		return 0, err
 	}
-	return r.ID, queuePrintNotice(ctx, tx, r, eventID, printStageMessage(r, PrintAction{}))
+	return r.ID, queuePrintNotice(ctx, tx, r, eventID, printMessageFacts(r, PrintAction{}, swag.PrintNoticeStage, false), messages)
 }
 
 // ReorderPrintRun uses the parent's submitted version as a retry key. A fresh
 // intentional reorder reloads the new parent version, giving a distinct run.
-func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64) (*PrintRun, error) {
+func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64, messages PrintMessages) (*PrintRun, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -415,12 +401,12 @@ func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64) (*PrintR
 	if p.Version != version {
 		return nil, ErrPrintConflict
 	}
-	if p.Stage != swag.PrintAvailable && p.Stage != swag.PrintRejected && p.Stage != swag.PrintCancelled {
-		return nil, ErrPrintAction
+	if err = swag.CheckPrintReorder(p.Stage); err != nil {
+		return nil, err
 	}
 	r := p.Request
 	r.UserID, r.SlackOptIn = p.UserID, p.SlackOptIn
-	created, err := insertPrintRequest(ctx, tx, r)
+	created, err := insertPrintRequest(ctx, tx, r, messages)
 	if err != nil {
 		return nil, err
 	}
@@ -441,7 +427,7 @@ func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64) (*PrintR
 	if err != nil {
 		return nil, err
 	}
-	_, err = tx.Exec(ctx, `insert into print_run_events(run_id,stage,action,event_at,note,source,version) values($1,$2,'reorder',now(),$3,'requester',$4)`, id, p.Stage, fmt.Sprintf("New print run #%d", idNew), version+1)
+	_, err = tx.Exec(ctx, `insert into print_run_events(run_id,stage,action,event_at,note,source,version) values($1,$2,'reorder',now(),$3,'requester',$4)`, id, p.Stage, messages.Render(PrintMessageFacts{NewRunID: idNew}, messages.BaseURL).ReorderNote, version+1)
 	if err != nil {
 		return nil, err
 	}
@@ -449,77 +435,6 @@ func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64) (*PrintR
 		return nil, err
 	}
 	return s.PrintRun(ctx, idNew)
-}
-
-func printReceivedMessage(title string) string {
-	return "We received your " + title + " print request. HQ will review the artwork and quantity. No order has been placed."
-}
-
-func printStageMessage(r *PrintRun, a PrintAction) string {
-	item := r.Request.Title
-	eta := r.ETA
-	if eta == "" {
-		eta = "not confirmed"
-	}
-	switch r.Stage {
-	case swag.PrintSubmitted:
-		return printReceivedMessage(item)
-	case swag.PrintApproved:
-		return fmt.Sprintf("Your %s request is approved for %d. HQ will place the printer order next.", item, r.ApprovedQuantity)
-	case swag.PrintOrdered:
-		return fmt.Sprintf("Your linked purchase order confirms %d %s ordered. Expected warehouse date: %s. We will tell you when the printer ships.", r.ApprovedQuantity, item, eta)
-	case swag.PrintInTransit:
-		return "Your print run has shipped from the printer to the warehouse. Estimated arrival: " + eta + ". This is not your first parcel."
-	case swag.PrintReceived:
-		return "The warehouse marked your linked purchase order complete. Your print run is received at the warehouse. The shop listing awaits release. Your first parcel has not shipped."
-	case swag.PrintAvailable:
-		if r.ShipmentRequestID != nil {
-			state := "awaiting review"
-			if a.ReleaseStatus == swag.StatusAwaitingPayment {
-				state = "awaiting postage payment"
-			}
-			return fmt.Sprintf("%s is available in the shop. Your first %d are in shipment request #%d, %s.", item, r.Request.InitialQuantity, *r.ShipmentRequestID, state)
-		}
-		return item + " is available in the shop. No first shipment was requested."
-	case swag.PrintRejected:
-		return "Your " + item + " request was rejected: " + a.Note + " No order was placed."
-	case swag.PrintCancelled:
-		detail := "No order was placed."
-		if a.ConfirmationURL != "" {
-			detail = "Printer confirmed cancellation."
-		}
-		return "Your " + item + " print request was cancelled. " + a.Note + " " + detail
-	}
-	return a.Note
-}
-func queuePrintNotice(ctx context.Context, tx pgx.Tx, r *PrintRun, eid int64, body string) error {
-	if body == "" {
-		return nil
-	}
-	subject := fmt.Sprintf("Print #%d · %s", r.ID, printStageLabel(r.Stage))
-	if r.Stage == swag.PrintSubmitted {
-		subject = "Print request received"
-	}
-	_, err := tx.Exec(ctx, `INSERT INTO print_notifications(run_id,event_id,channel,destination,subject,body) VALUES($1,$2,'email',$3,$4,$5)`, r.ID, eid, r.UserEmail, subject, body)
-	if err != nil {
-		return err
-	}
-	if r.SlackOptIn {
-		// Free-text HQ updates can contain invoice or address details. Slack
-		// receives stage facts and a link; full private updates stay in email.
-		slackBody := fmt.Sprintf("Print request #%d: %s. Requested %d; approved %d. Printing status is separate from your first parcel.", r.ID, printStageLabel(r.Stage), r.Request.Quantity, r.ApprovedQuantity)
-		if r.Stage == swag.PrintSubmitted {
-			slackBody = "We received your print request. HQ will review the artwork and quantity. No order has been placed."
-		}
-		if _, err := time.Parse(time.DateOnly, r.ETA); err == nil {
-			slackBody += " Expected warehouse date: " + r.ETA + " (estimate)."
-		}
-		if r.ShipmentRequestID != nil {
-			slackBody += fmt.Sprintf(" First shipment request #%d: %s.", *r.ShipmentRequestID, r.ShipmentStatus)
-		}
-		_, err = tx.Exec(ctx, `INSERT INTO print_notifications(run_id,event_id,channel,destination,subject,body) SELECT $1,$2,'slack',slack_id,$3,$4 FROM users WHERE id=$5 AND slack_id<>''`, r.ID, eid, subject, slackBody, r.UserID)
-	}
-	return err
 }
 
 type PrintNotification struct {
@@ -536,6 +451,8 @@ type PrintNotification struct {
 	Status         string `json:"status"`
 	Attempts       int    `json:"attempts"`
 	Error          string `json:"error,omitempty"`
+
+	Stage swag.PrintStage `json:"-"`
 }
 
 func (s *Store) PrintNotifications(ctx context.Context, id int64) ([]PrintNotification, error) {
@@ -572,13 +489,6 @@ func (s *Store) PrintConfirmations(ctx context.Context, id int64) ([]PrintConfir
 // A transaction lease serializes workers. Transport retries use the same key.
 // After 23h an ambiguous failure needs human reconciliation because Loops' key
 // expires at 24h; we never blindly resend outside its deduplication window.
-func (s *Store) PreparePrintNotificationLinks(ctx context.Context, baseURL string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE print_notifications SET
- body=CASE WHEN position('View print request: ' in body)=0 THEN body||E'\n\nView print request: '||$1||'/print-requests/'||run_id::text ELSE body END,
- idempotency_key=CASE WHEN idempotency_key='' THEN 'merch-print-'||md5($1||':'||event_id::text||':'||channel) ELSE idempotency_key END
-	 WHERE channel IN ('email','slack') AND status='queued' AND first_attempt_at IS NULL AND (idempotency_key='' OR position('View print request: ' in body)=0)`, strings.TrimRight(baseURL, "/"))
-	return err
-}
 func (s *Store) DeliverPrintNotifications(ctx context.Context, channel string, send func(PrintNotification) error) error {
 	for i := 0; i < 20; i++ {
 		tx, err := s.pool.Begin(ctx)
@@ -587,7 +497,7 @@ func (s *Store) DeliverPrintNotifications(ctx context.Context, channel string, s
 		}
 		var n PrintNotification
 		var first *time.Time
-		err = tx.QueryRow(ctx, `SELECT id,run_id,event_id,channel,destination,subject,body,status,attempts,first_attempt_at,idempotency_key,request_id,preview FROM print_notifications WHERE channel=$1 AND body<>'' AND status IN ('queued','failed','sending') AND next_attempt_at<=now() ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1`, channel).Scan(&n.ID, &n.RunID, &n.EventID, &n.Channel, &n.Destination, &n.Subject, &n.Body, &n.Status, &n.Attempts, &first, &n.IdempotencyKey, &n.RequestID, &n.Preview)
+		err = tx.QueryRow(ctx, `SELECT n.id,n.run_id,n.event_id,n.channel,n.destination,n.subject,n.body,n.status,n.attempts,n.first_attempt_at,n.idempotency_key,n.request_id,n.preview,e.stage FROM print_notifications n JOIN print_run_events e ON e.id=n.event_id WHERE n.channel=$1 AND n.body<>'' AND n.status IN ('queued','failed','sending') AND n.next_attempt_at<=now() ORDER BY n.id FOR UPDATE OF n SKIP LOCKED LIMIT 1`, channel).Scan(&n.ID, &n.RunID, &n.EventID, &n.Channel, &n.Destination, &n.Subject, &n.Body, &n.Status, &n.Attempts, &first, &n.IdempotencyKey, &n.RequestID, &n.Preview, &n.Stage)
 		if errors.Is(err, pgx.ErrNoRows) {
 			tx.Rollback(ctx)
 			return nil
@@ -597,7 +507,7 @@ func (s *Store) DeliverPrintNotifications(ctx context.Context, channel string, s
 			return err
 		}
 		if first != nil && time.Since(*first) > 23*time.Hour {
-			_, err = tx.Exec(ctx, `UPDATE print_notifications SET status='uncertain',error='Transport deduplication window expired; reconcile delivery before retrying.' WHERE id=$1`, n.ID)
+			_, err = tx.Exec(ctx, `UPDATE print_notifications SET status='uncertain',error=$2 WHERE id=$1`, n.ID, "Transport deduplication window expired; reconcile delivery before retrying.")
 			if err != nil {
 				tx.Rollback(ctx)
 				return err
@@ -630,7 +540,15 @@ func (s *Store) DeliverPrintNotifications(ctx context.Context, channel string, s
 		}
 		tag, err := tx.Exec(ctx, `UPDATE print_notifications SET status=$2,error=$3,next_attempt_at=now()+interval '1 minute'*least(60,power(2,least(attempts,6))) WHERE id=$1 AND attempts=$4 AND status='sending'`, n.ID, status, errText, n.Attempts)
 		if err == nil && (channel == "email" || channel == "shipment_email") && tag.RowsAffected() == 1 {
-			_, err = tx.Exec(ctx, `INSERT INTO sent_emails(kind,user_id,to_email,subject,preview,body,idempotency_key,status,error,release,print_run_id,print_event_id,request_id) SELECT CASE WHEN $9='shipment_email' THEN 'received' ELSE 'print_'||e.stage END,r.user_id,$2,$3,coalesce(nullif($11,''),$3),$4,$5,$6,$7,'',r.id,$8,$10 FROM print_runs r JOIN print_run_events e ON e.id=$8 WHERE r.id=$1`, n.RunID, n.Destination, n.Subject, n.Body, n.IdempotencyKey, status, errText, n.EventID, channel, n.RequestID, n.Preview)
+			kind := "print_" + string(n.Stage)
+			if channel == "shipment_email" {
+				kind = "received"
+			}
+			preview := n.Preview
+			if preview == "" {
+				preview = n.Subject
+			}
+			_, err = tx.Exec(ctx, `INSERT INTO sent_emails(kind,user_id,to_email,subject,preview,body,idempotency_key,status,error,release,print_run_id,print_event_id,request_id) SELECT $9,r.user_id,$2,$3,$11,$4,$5,$6,$7,'',r.id,$8,$10 FROM print_runs r WHERE r.id=$1`, n.RunID, n.Destination, n.Subject, n.Body, n.IdempotencyKey, status, errText, n.EventID, kind, n.RequestID, preview)
 		}
 		if err != nil {
 			tx.Rollback(ctx)

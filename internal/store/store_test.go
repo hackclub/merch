@@ -368,7 +368,7 @@ func TestSubmissions(t *testing.T) {
 	s := newStore(t)
 	a := mkUser(t, s, "ident!1", "author@x.com")
 	b := mkUser(t, s, "ident!2", "other@x.com")
-	sub, err := s.CreateSubmission(ctx, Submission{UserID: a.ID, Program: "Sprig", Title: "Sprig sticker", Kind: "sticker", FileURL: "https://cdn.hackclub.com/x.png", Quantity: 500})
+	sub, err := s.CreateSubmission(ctx, Submission{UserID: a.ID, Program: "Sprig", Title: "Sprig sticker", Kind: "sticker", FileURL: "https://cdn.hackclub.com/x.png", Quantity: 500}, testPrintMessages)
 	if err != nil || sub.Status != "submitted" {
 		t.Fatalf("CreateSubmission = %+v, %v", sub, err)
 	}

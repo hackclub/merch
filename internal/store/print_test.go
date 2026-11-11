@@ -14,7 +14,7 @@ func TestPrintRequests(t *testing.T) {
 		FrontURL: "https://cdn.hackclub.com/front.png", BackURL: "https://cdn.hackclub.com/back.png",
 		Note: "For Haven events", NeededBy: &due, EstimateCents: 11958,
 		InitialQuantity: 25, Address: &addr, FrontPreviewURL: "https://cdn.hackclub.com/front.jpg",
-	})
+	}, testPrintMessages)
 	if err != nil || pr.ID == 0 || pr.Status != "submitted" || pr.UserEmail != "a@x.com" || pr.NeededBy == nil || !pr.NeededBy.Equal(due) {
 		t.Fatalf("CreatePrintRequest = %+v, %v", pr, err)
 	}

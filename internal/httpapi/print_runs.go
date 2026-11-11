@@ -303,12 +303,12 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 		return
 	}
 	a := body.PrintAction
-	if a.Action == "preferences" && p.UserID != v.user.ID {
-		writeErr(w, 403, "only the requester can opt in to Slack")
-		return
-	}
 	a.ActorID = v.user.ID
 	a.Requester = !admin
+	if err := swag.AuthorizePrintAction(swag.PrintRunState{UserID: p.UserID, Stage: p.Stage, Links: p.Links}, a, swag.PrintActor{ID: v.user.ID, Admin: admin}); err != nil {
+		writePrintActionError(w, err)
+		return
+	}
 	if a.Address != nil {
 		a.Address.Country = strings.ToUpper(strings.TrimSpace(a.Address.Country))
 	}
@@ -328,18 +328,6 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 	a.Now = s.Now()
 	if a.DispatchedAt != nil && a.DispatchedAt.After(a.Now) {
 		writeErr(w, 422, "printer dispatch time cannot be in the future")
-		return
-	}
-	if !admin && a.Action != "preferences" && a.Action != "first_shipment" && a.Action != "reorder" && !(a.Action == "cancel" && (p.Stage == swag.PrintSubmitted || p.Stage == swag.PrintApproved)) {
-		writeErr(w, 403, "HQ review required")
-		return
-	}
-	if !admin && a.Action == "cancel" && p.HasPrinterOrder() {
-		writeErr(w, 403, "HQ must confirm printer cancellation")
-		return
-	}
-	if a.Action == "observe" {
-		writeErr(w, 403, "PO observations are automatic")
 		return
 	}
 	if a.Action == "refresh_po" {
@@ -378,13 +366,13 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 		}
 	}
 	if a.Action == "reorder" {
-		if p.Stage != swag.PrintAvailable && p.Stage != swag.PrintRejected && p.Stage != swag.PrintCancelled {
-			writeErr(w, 422, "finish the current run first")
-			return
-		}
-		next, err := s.Store.ReorderPrintRun(r.Context(), p.ID, a.Version)
+		next, err := s.Store.ReorderPrintRun(r.Context(), p.ID, a.Version, s.printMessages())
 		if errors.Is(err, store.ErrPrintConflict) {
 			writeErr(w, 409, err.Error())
+			return
+		}
+		if errors.Is(err, store.ErrPrintAction) {
+			writePrintActionError(w, err)
 			return
 		}
 		if err != nil {
@@ -454,7 +442,7 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 			a.ReleaseStatus, a.ReleaseFee = swag.InitialStatus(st, p.Request.Address.Country, est)
 		}
 	}
-	updated, err := s.Store.ActPrintRun(r.Context(), id, a)
+	updated, err := s.Store.ActPrintRun(r.Context(), id, a, s.printMessages())
 	if errors.Is(err, store.ErrPrintConflict) {
 		writeErr(w, 409, err.Error())
 		return
@@ -464,7 +452,7 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 		return
 	}
 	if errors.Is(err, store.ErrPrintAction) {
-		writeErr(w, 422, err.Error())
+		writePrintActionError(w, err)
 		return
 	}
 	if err != nil {
@@ -495,7 +483,7 @@ func (s *server) pollPrintRun(ctx context.Context, p *store.PrintRun) {
 		}
 		a.Evidence = append(a.Evidence, proof)
 	}
-	updated, err := s.Store.ActPrintRun(ctx, p.ID, a)
+	updated, err := s.Store.ActPrintRun(ctx, p.ID, a, s.printMessages())
 	if err != nil {
 		return
 	}
@@ -511,7 +499,7 @@ func (s *server) printWorkers(ctx context.Context) {
 		for {
 			if s.Config.PrintPOAutomatic && s.PrintPOs != nil {
 				pollCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-				runs, err := s.Store.PrintRunsToPoll(pollCtx)
+				runs, err := s.Store.PrintRunsToPoll(pollCtx, s.Now())
 				if err == nil {
 					for _, p := range runs {
 						s.pollPrintRun(pollCtx, p)
@@ -543,10 +531,6 @@ func (s *server) processPrintJobs(ctx context.Context) {
 			s.Log.Warn("skip unconfigured print DMs", "error", err)
 			return
 		}
-	}
-	if err := s.Store.PreparePrintNotificationLinks(ctx, s.Config.BaseURL); err != nil {
-		s.Log.Warn("print notification links", "error", err)
-		return
 	}
 	if s.Mailer != nil {
 		if err := s.Store.PreparePrintShipmentEmails(ctx, func(request *store.Request) (string, string, string, string) {
@@ -581,4 +565,13 @@ func (s *server) processPrintJobs(ctx context.Context) {
 			s.Log.Warn("print Slack worker failed", "error", err)
 		}
 	}
+}
+
+func writePrintActionError(w http.ResponseWriter, err error) {
+	status := http.StatusUnprocessableEntity
+	var actionErr *swag.PrintActionError
+	if errors.As(err, &actionErr) && actionErr.Forbidden {
+		status = http.StatusForbidden
+	}
+	writeErr(w, status, err.Error())
 }

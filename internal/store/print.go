@@ -68,13 +68,13 @@ func scanPrintRequest(row pgx.Row) (*PrintRequest, error) {
 	return &p, mapErr(err)
 }
 
-func (s *Store) CreatePrintRequest(ctx context.Context, p PrintRequest) (*PrintRequest, error) {
+func (s *Store) CreatePrintRequest(ctx context.Context, p PrintRequest, messages PrintMessages) (*PrintRequest, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	created, err := insertPrintRequest(ctx, tx, p)
+	created, err := insertPrintRequest(ctx, tx, p, messages)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func (s *Store) CreatePrintRequest(ctx context.Context, p PrintRequest) (*PrintR
 }
 
 // insertPrintRequest also creates its run and received notification in this transaction.
-func insertPrintRequest(ctx context.Context, tx pgx.Tx, p PrintRequest) (*PrintRequest, error) {
+func insertPrintRequest(ctx context.Context, tx pgx.Tx, p PrintRequest, messages PrintMessages) (*PrintRequest, error) {
 	var id int64
 	err := tx.QueryRow(ctx, `
 		INSERT INTO print_requests (user_id, product, title, quantity, front_url, back_url, note, needed_by, estimate_cents,
@@ -97,7 +97,7 @@ func insertPrintRequest(ctx context.Context, tx pgx.Tx, p PrintRequest) (*PrintR
 	if err != nil {
 		return nil, err
 	}
-	_, err = createPrintRun(ctx, tx, &id, nil, "staff", *created)
+	_, err = createPrintRun(ctx, tx, &id, nil, "staff", *created, messages)
 	return created, err
 }
 

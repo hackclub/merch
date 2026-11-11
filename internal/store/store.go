@@ -767,7 +767,7 @@ func scanSubmission(row pgx.Row) (*Submission, error) {
 	return &s, mapErr(err)
 }
 
-func (s *Store) CreateSubmission(ctx context.Context, sub Submission) (*Submission, error) {
+func (s *Store) CreateSubmission(ctx context.Context, sub Submission, messages PrintMessages) (*Submission, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -788,7 +788,7 @@ func (s *Store) CreateSubmission(ctx context.Context, sub Submission) (*Submissi
 	request := PrintRequest{ID: id, UserID: sub.UserID, Product: "custom", Program: sub.Program, Title: sub.Title,
 		Note: sub.Description, Quantity: sub.Quantity, FrontURL: sub.FileURL, InitialQuantity: sub.InitialQuantity,
 		Address: sub.Address, Deadline: sub.Deadline, SlackOptIn: sub.SlackOptIn, Status: created.Status, CreatedAt: created.CreatedAt}
-	if _, err = createPrintRun(ctx, tx, nil, &id, "author", request); err != nil {
+	if _, err = createPrintRun(ctx, tx, nil, &id, "author", request, messages); err != nil {
 		return nil, err
 	}
 	return created, tx.Commit(ctx)
