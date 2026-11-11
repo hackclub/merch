@@ -35,7 +35,37 @@ func Connect(ctx context.Context, url string) (*Warehouse, error) {
 	if err != nil {
 		return nil, errors.New("cannot initialize print PO connection")
 	}
+	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err = verifyScope(checkCtx, p); err != nil {
+		p.Close()
+		return nil, err
+	}
 	return New(p), nil
+}
+
+// Check effective privileges, including inherited and PUBLIC grants. A scoped
+// URL's name is not proof of isolation. Only PO columns needed by this adapter
+// are allowed; a failed check never falls back to an agent credential.
+func verifyScope(ctx context.Context, p *pgxpool.Pool) error {
+	var ok bool
+	err := p.QueryRow(ctx, `SELECT
+ NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname=current_user AND (rolsuper OR rolcreatedb OR rolcreaterole))
+ AND NOT EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+ WHERE c.relkind IN ('r','v','m','p','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%'
+ AND NOT(n.nspname='agh_fulfillment_zenventory' AND c.relname='purchase_orders')
+ AND has_any_column_privilege(current_user,c.oid,'SELECT,INSERT,UPDATE,REFERENCES'))
+ AND NOT EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid='agh_fulfillment_zenventory.purchase_orders'::regclass AND a.attnum>0 AND NOT a.attisdropped
+ AND a.attname NOT IN ('id','order_number','supplier_name','draft','deleted','completed','created_date','required_by_date','completed_date','_synced_at','items')
+ AND has_column_privilege(current_user,a.attrelid,a.attname,'SELECT'))
+ AND NOT has_table_privilege(current_user,'agh_fulfillment_zenventory.purchase_orders','INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER')
+ AND NOT has_any_column_privilege(current_user,'agh_fulfillment_zenventory.purchase_orders','INSERT,UPDATE,REFERENCES')
+ AND (SELECT bool_and(has_column_privilege(current_user,'agh_fulfillment_zenventory.purchase_orders',col,'SELECT')) FROM unnest(ARRAY['id','order_number','supplier_name','draft','deleted','completed','created_date','required_by_date','completed_date','_synced_at','items']) col)
+ AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='S' AND n.nspname NOT IN ('pg_catalog','information_schema') AND has_sequence_privilege(current_user,c.oid,'SELECT,UPDATE,USAGE'))`).Scan(&ok)
+	if err != nil || !ok {
+		return errors.New("print PO login must have only scoped read access to the required PO columns")
+	}
+	return nil
 }
 
 func (w *Warehouse) Close() { w.pool.Close() }
@@ -86,7 +116,8 @@ func (w *Warehouse) Exact(ctx context.Context, link swag.PrintPOLink) (swag.Prin
 		return swag.PrintPOEvidence{}, err
 	}
 	defer tx.Rollback(ctx)
-	p, raw, err := scanPO(tx.QueryRow(ctx, `SELECT `+poColumns+` FROM agh_fulfillment_zenventory.purchase_orders WHERE id=$1`, link.POID))
+	// Omitted rows can survive a source upsert. Only its latest snapshot confirms.
+	p, raw, err := scanPO(tx.QueryRow(ctx, `SELECT `+poColumns+` FROM agh_fulfillment_zenventory.purchase_orders WHERE id=$1 AND _synced_at=(SELECT max(_synced_at) FROM agh_fulfillment_zenventory.purchase_orders)`, link.POID))
 	if err != nil {
 		return p, err
 	}
@@ -111,7 +142,8 @@ func (w *Warehouse) Suggest(ctx context.Context, sku string) ([]swag.PrintPOEvid
 	}
 	defer tx.Rollback(ctx)
 	rows, err := tx.Query(ctx, `SELECT `+poColumns+` FROM agh_fulfillment_zenventory.purchase_orders
-		WHERE items @> jsonb_build_array(jsonb_build_object('sku',$1::text)) ORDER BY created_date DESC NULLS LAST, id DESC LIMIT 50`, sku)
+		WHERE _synced_at=(SELECT max(_synced_at) FROM agh_fulfillment_zenventory.purchase_orders)
+		AND items @> jsonb_build_array(jsonb_build_object('sku',$1::text)) ORDER BY created_date DESC NULLS LAST, id DESC LIMIT 50`, sku)
 	if err != nil {
 		return nil, err
 	}

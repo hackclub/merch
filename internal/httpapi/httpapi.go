@@ -56,7 +56,10 @@ type ImageStore interface {
 }
 
 type Deps struct {
-	PrintPOs      PrintPOReader
+	PrintPOs   PrintPOReader
+	PrintSlack interface {
+		Send(context.Context, string, string, string) error
+	}
 	WorkerContext context.Context // production lifecycle; nil in tests
 	Config        *config.Config
 	Store         *store.Store
@@ -114,6 +117,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET /api/print-runs/{id}", s.requireUser(s.printRunDetail))
 	mux.Handle("POST /api/print-runs/{id}/actions", s.requireUser(s.printRunAction))
 	mux.Handle("GET /api/admin/print-runs", s.requireAdmin(s.printRuns))
+	mux.Handle("GET /api/agent/print-runs", s.requireAgent(s.printRuns))
 	mux.Handle("GET /api/admin/print-po-suggestions", s.requireAdmin(s.printPOSuggestions))
 
 	mux.HandleFunc("GET /healthz", s.healthz)
@@ -388,13 +392,14 @@ func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 type meResponse struct {
-	User  *store.User `json:"user"`
-	Roles roles       `json:"roles"`
+	PrintSlackAvailable bool        `json:"print_slack_available"`
+	User                *store.User `json:"user"`
+	Roles               roles       `json:"roles"`
 }
 
 func (s *server) me(w http.ResponseWriter, r *http.Request) {
 	u := s.currentUser(r)
-	writeJSON(w, http.StatusOK, meResponse{User: u, Roles: s.rolesFor(r.Context(), u)})
+	writeJSON(w, http.StatusOK, meResponse{User: u, Roles: s.rolesFor(r.Context(), u), PrintSlackAvailable: s.PrintSlack != nil && u != nil && u.SlackID != ""})
 }
 
 // ---- hack clubber flow ----
@@ -751,6 +756,9 @@ func (s *server) cancelRequest(w http.ResponseWriter, r *http.Request, v viewer)
 
 func (s *server) mySubmissions(w http.ResponseWriter, r *http.Request, v viewer) {
 	subs, err := s.Store.ListSubmissionsByUser(r.Context(), v.user.ID)
+	if err == nil {
+		err = s.overlayLegacyAuthors(r.Context(), subs)
+	}
 	if err != nil {
 		s.serverErr(w, err)
 		return
@@ -782,12 +790,27 @@ func (s *server) createSubmission(w http.ResponseWriter, r *http.Request, v view
 		return
 	}
 	body.UserID = v.user.ID
+	if body.InitialQuantity < 0 || body.InitialQuantity > body.Quantity || len(body.Deadline) > 2000 {
+		writeErr(w, 422, "invalid first quantity or deadline")
+		return
+	}
+	if body.InitialQuantity > 0 {
+		if body.Address == nil {
+			writeErr(w, 422, "first shipment address required")
+			return
+		}
+		body.Address.Country = strings.ToUpper(strings.TrimSpace(body.Address.Country))
+		if err := body.Address.Validate(); err != nil {
+			writeErr(w, 422, err.Error())
+			return
+		}
+	}
 	sub, err := s.Store.CreateSubmission(r.Context(), body)
 	if err != nil {
 		s.serverErr(w, err)
 		return
 	}
-	s.track(r, v.user, "submission_created", map[string]any{"submission_id": sub.ID, "kind": sub.Kind, "program": sub.Program, "quantity": sub.Quantity})
+	s.track(r, v.user, "submission_created", map[string]any{"submission_id": sub.ID, "kind": sub.Kind, "quantity": sub.Quantity, "slack_opt_in": sub.SlackOptIn, "initial_quantity": sub.InitialQuantity})
 	writeJSON(w, http.StatusCreated, sub)
 }
 
@@ -1431,14 +1454,15 @@ func (s *server) adminUpdateSettings(w http.ResponseWriter, r *http.Request, v v
 
 func (s *server) adminSubmissions(w http.ResponseWriter, r *http.Request, v viewer) {
 	subs, err := s.Store.ListSubmissions(r.Context())
+	if err == nil {
+		err = s.overlayLegacyAuthors(r.Context(), subs)
+	}
 	if err != nil {
 		s.serverErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"submissions": subs})
 }
-
-var submissionStatuses = map[string]bool{"submitted": true, "approved": true, "printing": true, "stocked": true, "rejected": true}
 
 func (s *server) adminUpdateSubmission(w http.ResponseWriter, r *http.Request, v viewer) {
 	s.trackAdmin(r, v, "submission_updated", map[string]any{"refused": true})

@@ -37,6 +37,7 @@
 	let deadline = $state('');
 	let quantity = $state(1000);
 	let note = $state('');
+	let slackOptIn=$state(false);
 	// The first ones sent to them once the run reaches the warehouse, and where.
 	let initial = $state(25);
 	let address = $state(prefillAddress(blankAddress(), session.me?.user?.address));
@@ -242,7 +243,7 @@
 			await api.post<PrintRequest>('/api/print-requests', {
 				product: key, finish, title, program, deadline, quantity, front_url: f.url, back_url: b.url, front_preview_url: f.preview_url, back_preview_url: b.preview_url,
 				landscape: front.width > front.height, note,
-				initial_quantity: initial, address: { ...address, country: address.country.trim().toUpperCase() }
+				slack_opt_in:slackOptIn,initial_quantity: initial, address: { ...address, country: address.country.trim().toUpperCase() }
 			});
 			goto('/requests?printed=1');
 		} catch (err) {
@@ -295,6 +296,8 @@
 		</p>
 
 		<form bind:this={formEl} onsubmit={submit}>
+			<p>Email at every stage. No printer order is placed on submission.</p>
+			{#if session.me?.print_slack_available}<label class="inline"><input type="checkbox" name="print_slack_opt_in" bind:checked={slackOptIn}/>Also send me Slack DMs (optional; off by default)</label>{/if}
 			<h3>Your art</h3>
 			<fieldset class="inline-choices">
 				<legend>Back</legend>

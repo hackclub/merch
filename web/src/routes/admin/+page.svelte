@@ -12,7 +12,7 @@
 	import { arrivalText, costBreakdown, ozText } from '$lib/shipping';
 	import { lineText, shipBody } from '$lib/ship';
 	import PrintRequestsAdmin from '$lib/PrintRequestsAdmin.svelte';
-	import type { APIKey, Item, SentEmail, Settings, Submission, SwagRequest, WarehouseSKU } from '$lib/types';
+	import type { APIKey, Item, SentEmail, Settings, SwagRequest, WarehouseSKU } from '$lib/types';
 	import { thumb } from '$lib/thumb';
 
 	type Tab = 'requests' | 'items' | 'settings' | 'submissions' | 'emails' | 'api keys';
@@ -32,7 +32,6 @@
 	let items = $state<Item[]>([]);
 	let skus = $state<WarehouseSKU[]>([]);
 	let settings = $state<Settings | null>(null);
-	let submissions = $state<Submission[]>([]);
 	let apiKeys = $state<APIKey[]>([]);
 	let emails = $state<SentEmail[]>([]);
 	let emailStatus = $state('');
@@ -82,10 +81,6 @@
 		guard(async () => {
 			settings = await api.get<Settings>('/api/admin/settings');
 		});
-	const loadSubmissions = () =>
-		guard(async () => {
-			submissions = (await api.get<{ submissions: Submission[] }>('/api/admin/submissions')).submissions;
-		});
 
 	const loadEmails = () =>
 		guard(async () => {
@@ -117,7 +112,6 @@
 		loadRequests();
 		loadItems();
 		loadSettings();
-		loadSubmissions();
 		loadEmails();
 		loadKeys();
 	});
@@ -214,11 +208,6 @@
 			settings = await api.put<Settings>('/api/admin/settings', settings);
 		}, 'Settings saved');
 
-	const saveSubmission = (s: Submission) =>
-		guard(async () => {
-			await api.put(`/api/admin/submissions/${s.id}`, { status: s.status, admin_note: s.admin_note, sku: s.sku });
-			await loadSubmissions();
-		}, `Saved submission #${s.id}`);
 </script>
 
 <svelte:head><title>Admin · Hack Club Merch Request</title></svelte:head>
@@ -525,7 +514,7 @@
 				{#each emails as e (e.id)}
 					<tr>
 						<td>{new Date(e.at).toLocaleString()}</td>
-						<td>{e.request_id ? `#${e.request_id}` : ''} <span class="muted">{e.kind}</span></td>
+						<td>{#if e.print_run_id}<a href={'/print-requests/'+e.print_run_id}>Print #{e.print_run_id}</a> · event #{e.print_event_id}{/if}{e.request_id ? `#${e.request_id}` : ''} <span class="muted">{e.kind}</span></td>
 						<td data-private>{e.to}</td>
 						<td data-private>
 							<details>

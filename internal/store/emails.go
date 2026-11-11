@@ -11,6 +11,8 @@ import (
 
 // SentEmail is one email the app sent or tried to send (see sent_emails).
 type SentEmail struct {
+	PrintRunID     *int64    `json:"print_run_id,omitempty"`
+	PrintEventID   *int64    `json:"print_event_id,omitempty"`
 	ID             int64     `json:"id"`
 	At             time.Time `json:"at"`
 	Kind           string    `json:"kind"` // received, dispatched or rejected
@@ -37,26 +39,28 @@ func (s *Store) LogEmail(ctx context.Context, e SentEmail) (SentEmail, error) {
 
 // EmailFilter narrows ListEmails; zero values match everything.
 type EmailFilter struct {
-	RequestID int64
-	Kind      string
-	Status    string
-	Before    int64 // only emails with a smaller id (paging)
-	Limit     int
+	PrintRunID int64
+	RequestID  int64
+	Kind       string
+	Status     string
+	Before     int64 // only emails with a smaller id (paging)
+	Limit      int
 }
 
 // ListEmails lists logged emails, newest first.
 func (s *Store) ListEmails(ctx context.Context, f EmailFilter) ([]SentEmail, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, at, kind, request_id, user_id, to_email, subject, preview, body, idempotency_key, status, error, release
+		SELECT id, at, kind, request_id, user_id, to_email, subject, preview, body, idempotency_key, status, error, release,print_run_id,print_event_id
 		FROM sent_emails
 		WHERE ($1 = 0 OR request_id = $1) AND ($2 = '' OR kind = $2) AND ($3 = '' OR status = $3) AND ($4 = 0 OR id < $4)
-		ORDER BY id DESC LIMIT $5`, f.RequestID, f.Kind, f.Status, f.Before, f.Limit)
+		AND ($6=0 OR print_run_id=$6)
+		ORDER BY id DESC LIMIT $5`, f.RequestID, f.Kind, f.Status, f.Before, f.Limit, f.PrintRunID)
 	if err != nil {
 		return nil, err
 	}
 	return collect(rows, func(r pgx.Rows) (SentEmail, error) {
 		var e SentEmail
-		err := r.Scan(&e.ID, &e.At, &e.Kind, &e.RequestID, &e.UserID, &e.To, &e.Subject, &e.Preview, &e.Body, &e.IdempotencyKey, &e.Status, &e.Error, &e.Release)
+		err := r.Scan(&e.ID, &e.At, &e.Kind, &e.RequestID, &e.UserID, &e.To, &e.Subject, &e.Preview, &e.Body, &e.IdempotencyKey, &e.Status, &e.Error, &e.Release, &e.PrintRunID, &e.PrintEventID)
 		return e, err
 	})
 }

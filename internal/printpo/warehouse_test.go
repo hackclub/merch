@@ -8,6 +8,7 @@ import (
 
 	"github.com/hackclub/merch/internal/db/dbtest"
 	"github.com/hackclub/merch/internal/swag"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestWarehouseExactLinkAndSuggestions(t *testing.T) {
@@ -29,6 +30,9 @@ func TestWarehouseExactLinkAndSuggestions(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := New(pool)
+	if err := verifyScope(ctx, pool); err == nil {
+		t.Fatal("accepted broad database owner as production PO login")
+	}
 	links := []swag.PrintPOLink{{POID: 12, LineID: 34, SKU: "Demo/Card"}, {POID: 12, LineID: 99, SKU: "Demo/Card"}, {POID: 12, LineID: 34, SKU: "Demo/Card/Other"}}
 	for i, link := range links {
 		p, err := w.Exact(ctx, link)
@@ -46,6 +50,14 @@ func TestWarehouseExactLinkAndSuggestions(t *testing.T) {
 	}
 	if _, err = w.Suggest(ctx, ""); err == nil {
 		t.Fatal("empty SKU accepted")
+	}
+	// Upserts can retain a row omitted from a newer copy. Its previous flag is
+	// historical evidence, not confirmation in the latest completed snapshot.
+	if _, err = pool.Exec(ctx, `update agh_fulfillment_zenventory.purchase_orders set _synced_at=now()-interval '10 minutes' where id=12`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = w.Exact(ctx, links[0]); err == nil {
+		t.Fatal("accepted a PO absent from the latest copy")
 	}
 }
 
@@ -69,10 +81,19 @@ func TestWarehouseLiveReadOnly(t *testing.T) {
 	if dsn == "" || sku == "" {
 		t.Skip("live read-only verification not requested")
 	}
-	w, err := Connect(context.Background(), dsn)
+	// Verification may use the operator's read-only login. This is explicitly
+	// test-only; application Connect additionally enforces scoped privileges.
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal("invalid verification configuration")
+	}
+	cfg.ConnConfig.RuntimeParams["default_transaction_read_only"] = "on"
+	cfg.ConnConfig.RuntimeParams["statement_timeout"] = "10000"
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
 	if err != nil {
 		t.Fatal("cannot connect for live verification")
 	}
+	w := New(pool)
 	defer w.Close()
 	rows, err := w.Suggest(context.Background(), sku)
 	if err != nil {

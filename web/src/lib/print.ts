@@ -3,6 +3,7 @@
 // the estimate's wording. The server checks uploads again (swag.CheckArt).
 
 import { dateRange, spanText } from './shipping';
+import type {Address} from './types';
 
 export type PrintProduct = {
 	key: string;
@@ -49,6 +50,7 @@ export type PrintEstimate = {
 };
 
 export type PrintRequest = {
+	address?: Address|null;
 	id: number;
 	user_email?: string;
 	user_name?: string;

@@ -49,6 +49,8 @@ export type APIKey = {
 
 // One email the site sent (or tried to), word for word.
 export type SentEmail = {
+	print_run_id?:number;
+	print_event_id?:number;
 	id: number;
 	at: string;
 	kind: 'received' | 'dispatched' | 'rejected';
@@ -96,6 +98,7 @@ export type Line = { item_id: number; quantity: number; sku?: string };
 export type RequestStatus = 'awaiting_payment' | 'pending' | 'dispatched' | 'rejected' | 'cancelled';
 
 export type SwagRequest = {
+	print_run_id?: number;
 	id: number;
 	user_id: number;
 	user_email?: string;
@@ -144,7 +147,7 @@ export type Submission = {
 };
 
 export type User = { id: number; email: string; name: string; slack_id: string; address?: Address };
-export type Me = { user: User | null; roles: { author: boolean; admin: boolean } };
+export type Me = { user: User | null; roles: { author: boolean; admin: boolean };print_slack_available?:boolean };
 
 export type WarehouseSKU = {
 	sku: string;

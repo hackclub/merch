@@ -76,7 +76,8 @@
 	<MyPrintRequests />
 	{#each requests ?? [] as r (r.id)}
 		{@const haul = requestHaul(r.lines, items)}
-		<div class="card request" class:with-3d={haul.length}>
+		<div class="card request" id={`request-${r.id}`} class:with-3d={haul.length}>
+			{#if r.print_run_id}<p><a href={`/print-requests/${r.print_run_id}`}>First shipment from print run #{r.print_run_id}</a></p>{/if}
 			{#if haul.length}<div class="haul-3d" data-track="request-3d"><Haul3D lines={haul} includes={items} compact /></div>{/if}
 			<div class="details">
 				<div class="row">

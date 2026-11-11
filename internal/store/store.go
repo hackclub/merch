@@ -318,6 +318,7 @@ type RequestLine struct {
 }
 
 type Request struct {
+	PrintRunID       *int64        `json:"print_run_id,omitempty"`
 	ID               int64         `json:"id"`
 	UserID           int64         `json:"user_id"`
 	UserEmail        string        `json:"user_email,omitempty"`
@@ -455,7 +456,8 @@ const requestSelect = `
 		r.postal_code, r.country, r.phone_number, r.shipping_fee_cents, r.paid_at, r.note, r.admin_note, r.internal_note,
 		coalesce(r.theseus_order_id, ''), r.tracking_number, r.carrier, r.mailed_at, r.source, r.airtable_record_id,
 		r.stripe_payment_intent, r.refunded_at, r.refunded_cents, r.created_at,
-		r.dispatched_at, r.warehouse_contents_cents, r.warehouse_labor_cents, r.warehouse_postage_cents
+		r.dispatched_at, r.warehouse_contents_cents, r.warehouse_labor_cents, r.warehouse_postage_cents,
+		(SELECT id FROM print_runs p WHERE p.shipment_request_id=r.id)
 	FROM swag_requests r JOIN users u ON u.id = r.user_id`
 
 func scanRequest(row pgx.Row) (*Request, error) {
@@ -465,7 +467,7 @@ func scanRequest(row pgx.Row) (*Request, error) {
 		&a.PostalCode, &a.Country, &a.Phone, &r.ShippingFeeCents, &r.PaidAt, &r.Note, &r.AdminNote, &r.InternalNote,
 		&r.TheseusOrderID, &r.TrackingNumber, &r.Carrier, &r.MailedAt, &r.Source, &r.AirtableRecordID,
 		&r.StripePaymentIntent, &r.RefundedAt, &r.RefundedCents, &r.CreatedAt,
-		&r.DispatchedAt, &r.WarehouseCosts.ContentsCents, &r.WarehouseCosts.LaborCents, &r.WarehouseCosts.PostageCents)
+		&r.DispatchedAt, &r.WarehouseCosts.ContentsCents, &r.WarehouseCosts.LaborCents, &r.WarehouseCosts.PostageCents, &r.PrintRunID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -727,30 +729,36 @@ func (s *Store) SetTracking(ctx context.Context, id int64, tracking, carrier str
 // ---- author submissions ----
 
 type Submission struct {
-	ID          int64     `json:"id"`
-	UserID      int64     `json:"user_id"`
-	UserEmail   string    `json:"user_email,omitempty"`
-	Program     string    `json:"program"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	Kind        string    `json:"kind"`
-	FileURL     string    `json:"file_url"`
-	Quantity    int       `json:"quantity"`
-	Status      string    `json:"status"`
-	AdminNote   string    `json:"admin_note"`
-	SKU         string    `json:"sku"`
-	CreatedAt   time.Time `json:"created_at"`
+	PrintRunID      *int64          `json:"print_run_id,omitempty"`
+	PrintStage      swag.PrintStage `json:"print_stage,omitempty"`
+	SlackOptIn      bool            `json:"slack_opt_in"`
+	InitialQuantity int             `json:"initial_quantity"`
+	Address         *swag.Address   `json:"address"`
+	Deadline        string          `json:"deadline"`
+	ID              int64           `json:"id"`
+	UserID          int64           `json:"user_id"`
+	UserEmail       string          `json:"user_email,omitempty"`
+	Program         string          `json:"program"`
+	Title           string          `json:"title"`
+	Description     string          `json:"description"`
+	Kind            string          `json:"kind"`
+	FileURL         string          `json:"file_url"`
+	Quantity        int             `json:"quantity"`
+	Status          string          `json:"status"`
+	AdminNote       string          `json:"admin_note"`
+	SKU             string          `json:"sku"`
+	CreatedAt       time.Time       `json:"created_at"`
 }
 
 const submissionSelect = `
 	SELECT s.id, s.user_id, u.email, s.program, s.title, s.description, s.kind, s.file_url, s.quantity,
-		s.status, s.admin_note, s.sku, s.created_at
+		s.status, s.admin_note, s.sku, s.created_at,s.slack_opt_in,s.initial_quantity,s.address,s.deadline
 	FROM author_submissions s JOIN users u ON u.id = s.user_id`
 
 func scanSubmission(row pgx.Row) (*Submission, error) {
 	var s Submission
 	err := row.Scan(&s.ID, &s.UserID, &s.UserEmail, &s.Program, &s.Title, &s.Description, &s.Kind, &s.FileURL, &s.Quantity,
-		&s.Status, &s.AdminNote, &s.SKU, &s.CreatedAt)
+		&s.Status, &s.AdminNote, &s.SKU, &s.CreatedAt, &s.SlackOptIn, &s.InitialQuantity, &s.Address, &s.Deadline)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -760,9 +768,9 @@ func scanSubmission(row pgx.Row) (*Submission, error) {
 func (s *Store) CreateSubmission(ctx context.Context, sub Submission) (*Submission, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO author_submissions (user_id, program, title, description, kind, file_url, quantity)
-		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-		sub.UserID, sub.Program, sub.Title, sub.Description, sub.Kind, sub.FileURL, sub.Quantity).Scan(&id)
+		INSERT INTO author_submissions (user_id, program, title, description, kind, file_url, quantity,slack_opt_in,initial_quantity,address,deadline)
+		VALUES ($1, $2, $3, $4, $5, $6, $7,$8,$9,$10,$11) RETURNING id`,
+		sub.UserID, sub.Program, sub.Title, sub.Description, sub.Kind, sub.FileURL, sub.Quantity, sub.SlackOptIn, sub.InitialQuantity, sub.Address, sub.Deadline).Scan(&id)
 	if err != nil {
 		return nil, mapErr(err)
 	}

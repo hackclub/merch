@@ -3,10 +3,144 @@ package store
 import (
 	"errors"
 	"github.com/hackclub/merch/internal/swag"
+	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
+
+func TestLegacyPrintMigrationPreservesLinksAndUnknownDates(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "legacy-demo", "legacy@x.com")
+	migration, err := os.ReadFile("../db/migrations/00037_print_runs.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(string(migration), "-- +goose Down")
+	if _, err = s.pool.Exec(ctx, parts[1]); err != nil {
+		t.Fatal(err)
+	}
+	due := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	p := &PrintRequest{}
+	err = s.pool.QueryRow(ctx, `insert into print_requests(user_id,product,title,quantity,front_url,needed_by,initial_quantity,address) values($1,'postcard_4x6','Legacy demo',800,'https://example.com/art.png',$2,25,$3) returning id`, u.ID, due, addr).Scan(&p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	it := mkItem(t, s, "Demo/Legacy", true)
+	parcel := &Request{}
+	err = s.pool.QueryRow(ctx, `insert into swag_requests(user_id,status,purpose,first_name,last_name,line_1,city,state,postal_code,country) values($1,'pending','staff','Demo','Person','123 Example Lane','Exampleville','VT','05401','US') returning id`, u.ID).Scan(&parcel.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.pool.Exec(ctx, `update print_requests set shipment_request_id=$2,status='stocked',admin_note='Original requester update',sku=$3 where id=$1`, p.ID, parcel.ID, it.SKU)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.pool.Exec(ctx, `insert into author_submissions(user_id,program,title,kind,quantity,file_url,status,admin_note) values($1,'Demo','Custom demo','sticker',500,'https://example.com/sticker.png','printing','Printer order not documented')`, u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.pool.Exec(ctx, parts[0]); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := s.PrintRuns(ctx, u.ID)
+	if err != nil || len(runs) != 2 {
+		t.Fatalf("runs %+v %v", runs, err)
+	}
+	for _, r := range runs {
+		if r.Origin != "legacy" || !r.LegacyReview {
+			t.Fatalf("provenance %+v", r)
+		}
+		if r.SourcePrintID != nil {
+			if r.Stage != swag.PrintReceived || r.ShipmentRequestID == nil || *r.ShipmentRequestID != parcel.ID || r.Request.NeededBy == nil || !r.Request.NeededBy.Equal(due) || r.PublicNote != "Original requester update" {
+				t.Fatalf("legacy print %+v", r)
+			}
+			events, _ := s.PrintRunHistory(ctx, r.ID)
+			for _, e := range events {
+				if e.Action == "legacy_import" && e.At != nil {
+					t.Fatal("invented stocked date")
+				}
+			}
+		} else if r.Stage != swag.PrintSubmitted {
+			t.Fatal("inferred order from printing")
+		}
+	}
+	var jobs, parcels int
+	s.pool.QueryRow(ctx, `select count(*) from print_notifications`).Scan(&jobs)
+	s.pool.QueryRow(ctx, `select count(*) from swag_requests`).Scan(&parcels)
+	if jobs != 0 || parcels != 1 {
+		t.Fatalf("replayed jobs=%d parcels=%d", jobs, parcels)
+	}
+}
+
+func TestPrintNotificationCrashWindow(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "notice", "notice@x.com")
+	s.CreateSubmission(ctx, Submission{UserID: u.ID, Program: "Demo", Title: "Demo", Kind: "sticker", Quantity: 50, FileURL: "https://example.com/art.png"})
+	s.pool.Exec(ctx, `update print_notifications set status='sending',first_attempt_at=now()-interval '24 hours',next_attempt_at=now()-interval '1 minute',attempts=1`)
+	called := false
+	if err := s.DeliverPrintNotifications(ctx, "email", func(PrintNotification) error { called = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("blind resend after transport deduplication expired")
+	}
+	var status string
+	s.pool.QueryRow(ctx, `select status from print_notifications limit 1`).Scan(&status)
+	if status != "uncertain" {
+		t.Fatal(status)
+	}
+}
+
+func TestPrintSlackOptInAndPrivateNotes(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "slack-demo", "slack@x.com")
+	s.pool.Exec(ctx, `update users set slack_id='UDEMO' where id=$1`, u.ID)
+	_, err := s.CreatePrintRequest(ctx, PrintRequest{UserID: u.ID, Product: "postcard_4x6", Title: "Demo cards", Quantity: 800, FrontURL: "https://example.com/art.png", SlackOptIn: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, _ := s.PrintRuns(ctx, u.ID)
+	r := runs[0]
+	if !r.SlackOptIn {
+		t.Fatal("lost initial opt-in")
+	}
+	r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, ActorID: u.ID, Action: "reject", Note: "Private delivery instructions; please revise"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body string
+	if err = s.pool.QueryRow(ctx, `select body from print_notifications where channel='slack' order by id desc limit 1`).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body, "Private delivery") {
+		t.Fatal("private notes copied into Slack")
+	}
+	_, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, ActorID: u.ID, Action: "preferences", SlackOptIn: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.DeliverPrintNotifications(ctx, "slack", func(PrintNotification) error { t.Fatal("opted-out Slack job delivered"); return nil })
+}
+
+func TestPrintNotificationLeaseAcrossWorkers(t *testing.T) {
+	s := newStore(t)
+	u := mkUser(t, s, "lease-demo", "lease@x.com")
+	s.CreateSubmission(ctx, Submission{UserID: u.ID, Program: "Demo", Title: "Demo", Kind: "sticker", Quantity: 50, FileURL: "https://example.com/art.png"})
+	started, release, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	go func() {
+		done <- s.DeliverPrintNotifications(ctx, "email", func(PrintNotification) error { close(started); <-release; return nil })
+	}()
+	<-started
+	if err := s.DeliverPrintNotifications(ctx, "email", func(PrintNotification) error { t.Error("second worker delivered a leased message"); return nil }); err != nil {
+		t.Error(err)
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 	for _, country := range []string{"US", "DE"} {
@@ -109,6 +243,17 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}})
 			if err != nil || r.Stage != swag.PrintAvailable || !r.Reconcile {
 				t.Fatalf("reopened %+v %v", r, err)
+			}
+			p.Completed = true
+			corrected := time.Now().Add(-5 * time.Minute)
+			p.CompletedAt = &corrected
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}})
+			if err != nil || !r.Reconcile {
+				t.Fatal("corrected completion must remain queued for HQ review")
+			}
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "review_receipt", ActorID: u.ID, Note: "Warehouse confirmed the corrected completion record; no partial quantity is claimed.", ETASource: "Demo warehouse confirmation"})
+			if err != nil || r.Stage != swag.PrintAvailable || r.Reconcile {
+				t.Fatalf("receipt review %+v %v", r, err)
 			}
 			next, err := s.ReorderPrintRun(ctx, r.ID, r.Version)
 			if err != nil {

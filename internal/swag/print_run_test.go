@@ -75,6 +75,11 @@ func TestPrintPOEvidence(t *testing.T) {
 		t.Fatalf("split complete: %+v", got)
 	}
 	mismatch := approval
+	older := b
+	older.SyncedAt = b.SyncedAt.Add(-time.Minute)
+	if got := ObservePrintPOs(PrintOrdered, approval, links, []PrintPOEvidence{base, older}, now, time.Hour); got.Stage != "" || !got.Reconcile {
+		t.Fatalf("mixed source snapshots: %+v", got)
+	}
 	mismatch.Quantity = 700
 	if got := ObservePrintPOs(PrintApproved, mismatch, links, []PrintPOEvidence{base, b}, now, time.Hour); got.Stage != "" || !got.Reconcile {
 		t.Fatalf("quantity mismatch: %+v", got)

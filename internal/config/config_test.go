@@ -31,6 +31,9 @@ func TestLoadDefaults(t *testing.T) {
 	if c.Port != "8080" {
 		t.Errorf("Port = %q, want 8080", c.Port)
 	}
+	if c.PrintPOAutomatic || c.PrintPODatabaseURL != "" || c.PrintSlackToken != "" {
+		t.Fatal("print integrations must default off")
+	}
 	if c.HCABaseURL != "https://auth.hackclub.com" {
 		t.Errorf("HCABaseURL = %q", c.HCABaseURL)
 	}
@@ -67,6 +70,19 @@ func TestLoadRejectsShortSessionSecret(t *testing.T) {
 	e["SESSION_SECRET"] = "short"
 	if _, err := Load(env(e)); err == nil {
 		t.Fatal("expected error for short SESSION_SECRET")
+	}
+}
+
+func TestPrintPORequiresDedicatedURL(t *testing.T) {
+	e := validEnv()
+	e["PRINT_PO_AUTOMATIC"] = "true"
+	if _, err := Load(env(e)); err == nil {
+		t.Fatal("enabled without dedicated source URL")
+	}
+	e["PRINT_PO_DATABASE_URL"] = "postgres://dedicated-reader@localhost/warehouse"
+	c, err := Load(env(e))
+	if err != nil || !c.PrintPOAutomatic {
+		t.Fatalf("explicit integration config %v", err)
 	}
 }
 

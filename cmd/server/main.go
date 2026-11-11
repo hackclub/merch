@@ -24,6 +24,7 @@ import (
 	"github.com/hackclub/merch/internal/loops"
 	"github.com/hackclub/merch/internal/places"
 	"github.com/hackclub/merch/internal/printpo"
+	"github.com/hackclub/merch/internal/slackdm"
 	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/stripe"
 	"github.com/hackclub/merch/internal/theseus"
@@ -125,8 +126,14 @@ func run(log *slog.Logger) error {
 		poReader = reader
 	}
 	warehouse.BillingProfileID = cfg.TheseusBillingProfileID
+	var slackSender interface {
+		Send(context.Context, string, string, string) error
+	}
+	if cfg.PrintSlackToken != "" {
+		slackSender = slackdm.New("https://slack.com/api", cfg.PrintSlackToken, nil)
+	}
 	h := httpapi.New(httpapi.Deps{
-		PrintPOs: poReader, WorkerContext: ctx,
+		PrintPOs: poReader, PrintSlack: slackSender, WorkerContext: ctx,
 		Config: cfg,
 		Store:  store.New(pool),
 		Provider: auth.NewHCA(auth.HCAConfig{

@@ -12,6 +12,7 @@ import (
 type Config struct {
 	PrintPODatabaseURL string
 	PrintPOAutomatic   bool
+	PrintSlackToken    string
 	Port               string
 	BaseURL            string // public origin, e.g. https://swag.hackclub.com
 	// Other origins the app is reachable at (e.g. http://porygon:5173 over
@@ -75,6 +76,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		return def
 	}
 	c := &Config{
+		PrintSlackToken:         get("PRINT_SLACK_BOT_TOKEN", ""),
 		PrintPODatabaseURL:      get("PRINT_PO_DATABASE_URL", ""),
 		PrintPOAutomatic:        get("PRINT_PO_AUTOMATIC", "false") == "true",
 		Port:                    get("PORT", "8080"),

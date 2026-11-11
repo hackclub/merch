@@ -72,9 +72,10 @@ type PrintObservationResult struct {
 }
 
 type PrintApproval struct {
-	Quantity int
-	SKU      string
-	At       time.Time
+	ReviewedExistingOrder bool
+	Quantity              int
+	SKU                   string
+	At                    time.Time
 }
 
 // ObservePrintPOs is a decision on a complete set of required links, not a
@@ -86,6 +87,7 @@ func ObservePrintPOs(stage PrintStage, approval PrintApproval, links []PrintPOLi
 	}
 	seen := map[PrintPOLink]bool{}
 	total, allComplete := 0, true
+	var snapshot time.Time
 	for _, link := range links {
 		if link.SKU != approval.SKU {
 			return PrintObservationResult{Reconcile: true}
@@ -106,7 +108,11 @@ func ObservePrintPOs(stage PrintStage, approval PrintApproval, links []PrintPOLi
 		if found == nil || !found.Confirms(link, now, maxAge) {
 			return PrintObservationResult{Reconcile: true}
 		}
-		if found.CreatedAt.Before(approval.At) {
+		if !snapshot.IsZero() && !snapshot.Equal(found.SyncedAt) {
+			return PrintObservationResult{Reconcile: true}
+		}
+		snapshot = found.SyncedAt
+		if found.CreatedAt.Before(approval.At) && !approval.ReviewedExistingOrder {
 			return PrintObservationResult{Reconcile: true}
 		}
 		// Prevent overflow and require explicit reapproval for quantity changes.

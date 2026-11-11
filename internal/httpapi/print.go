@@ -198,16 +198,17 @@ func (c *counted) Read(p []byte) (int, error) {
 
 func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 	var body struct {
-		Product  string `json:"product"`
-		Title    string `json:"title"`
-		Finish   string `json:"finish"` // one of the product's finishes; its default when empty
-		Program  string `json:"program"`
-		Deadline string `json:"deadline"`
-		Quantity int    `json:"quantity"`
-		FrontURL string `json:"front_url"`
-		BackURL  string `json:"back_url"`
-		Note     string `json:"note"`
-		NeededBy string `json:"needed_by"` // YYYY-MM-DD, optional; the form now asks for Deadline
+		SlackOptIn bool   `json:"slack_opt_in"`
+		Product    string `json:"product"`
+		Title      string `json:"title"`
+		Finish     string `json:"finish"` // one of the product's finishes; its default when empty
+		Program    string `json:"program"`
+		Deadline   string `json:"deadline"`
+		Quantity   int    `json:"quantity"`
+		FrontURL   string `json:"front_url"`
+		BackURL    string `json:"back_url"`
+		Note       string `json:"note"`
+		NeededBy   string `json:"needed_by"` // YYYY-MM-DD, optional; the form now asks for Deadline
 		// How many to send them once it's stocked, and where (at least one: everyone sees their run in person).
 		InitialQuantity int           `json:"initial_quantity"`
 		Address         *swag.Address `json:"address"`
@@ -284,7 +285,8 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 		return
 	}
 	pr, err := s.Store.CreatePrintRequest(r.Context(), store.PrintRequest{
-		UserID: v.user.ID, Product: p.Key, Title: title, Finish: finish, Program: program, Deadline: deadline, Quantity: body.Quantity, FrontURL: strings.TrimSpace(body.FrontURL),
+		SlackOptIn: body.SlackOptIn,
+		UserID:     v.user.ID, Product: p.Key, Title: title, Finish: finish, Program: program, Deadline: deadline, Quantity: body.Quantity, FrontURL: strings.TrimSpace(body.FrontURL),
 		BackURL: strings.TrimSpace(body.BackURL), Note: note, NeededBy: due, EstimateCents: e.TotalCents,
 		InitialQuantity: body.InitialQuantity, Address: body.Address, FrontPreviewURL: body.FrontPreviewURL,
 		BackPreviewURL: body.BackPreviewURL, Landscape: body.Landscape,
@@ -294,7 +296,7 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 		return
 	}
 	props := map[string]any{"print_request_id": pr.ID, "product": p.Key, "finish": pr.Finish, "quantity": pr.Quantity, "estimate_cents": pr.EstimateCents,
-		"has_back": pr.BackURL != "", "same_back": pr.BackURL == pr.FrontURL, "has_needed_by": due != nil, "initial_quantity": pr.InitialQuantity}
+		"slack_opt_in": pr.SlackOptIn, "has_back": pr.BackURL != "", "same_back": pr.BackURL == pr.FrontURL, "has_needed_by": due != nil, "initial_quantity": pr.InitialQuantity}
 	if pr.Address != nil {
 		props["country"] = pr.Address.Country
 	}
@@ -308,6 +310,9 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 
 func (s *server) myPrintRequests(w http.ResponseWriter, r *http.Request, v viewer) {
 	prs, err := s.Store.ListPrintRequestsByUser(r.Context(), v.user.ID)
+	if err == nil {
+		err = s.overlayLegacyPrints(r.Context(), prs)
+	}
 	if err != nil {
 		s.serverErr(w, err)
 		return
@@ -317,14 +322,15 @@ func (s *server) myPrintRequests(w http.ResponseWriter, r *http.Request, v viewe
 
 func (s *server) adminPrintRequests(w http.ResponseWriter, r *http.Request, v viewer) {
 	prs, err := s.Store.ListPrintRequests(r.Context())
+	if err == nil {
+		err = s.overlayLegacyPrints(r.Context(), prs)
+	}
 	if err != nil {
 		s.serverErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"print_requests": prs})
 }
-
-var printRequestStatuses = map[string]bool{"submitted": true, "ordered": true, "stocked": true, "rejected": true}
 
 func (s *server) adminUpdatePrintRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 	s.trackAdmin(r, v, "print_request_updated", map[string]any{"refused": true})
@@ -351,7 +357,14 @@ func (s *server) printItem(ctx context.Context, pr *store.PrintRequest) (swag.It
 		images = []string{pr.FrontURL}
 	}
 	it.Images = images
-	return s.Store.CreateItem(ctx, it)
+	created, err := s.Store.CreateItem(ctx, it)
+	if errors.Is(err, store.ErrConflict) {
+		items, err := s.Store.ItemsBySKU(ctx, []string{pr.SKU})
+		if err == nil && len(items) == 1 {
+			return items[0], nil
+		}
+	}
+	return created, err
 }
 
 func firstItem(items []swag.Item) swag.Item {
@@ -359,36 +372,4 @@ func firstItem(items []swag.Item) swag.Item {
 		return swag.Item{}
 	}
 	return items[0]
-}
-
-// sendFirstShipment makes the swag request for a stocked run's first
-// shipment to the person who asked for it. It's reviewed and shipped like
-// any request; abroad, it waits for them to pay the postage.
-func (s *server) sendFirstShipment(r *http.Request, pr *store.PrintRequest) (*store.PrintRequest, error) {
-	ctx := r.Context()
-	it, err := s.printItem(ctx, pr)
-	if err != nil {
-		return nil, err
-	}
-	st, err := s.Store.GetSettings(ctx)
-	if err != nil {
-		return nil, err
-	}
-	lines := []swag.Line{{ItemID: it.ID, Quantity: pr.InitialQuantity}}
-	_, est, err := s.quote(ctx, st, pr.Address.Country, lines, map[int64]swag.Item{it.ID: it})
-	if err != nil && !isRuleErr(err) {
-		return nil, err
-	}
-	status, fee := swag.InitialStatus(st, pr.Address.Country, est)
-	note := fmt.Sprintf("The first %d of your print run, %s (print request #%d), now that it's in our warehouse.", pr.InitialQuantity, pr.Title, pr.ID)
-	// Their own run: the shop's per-person limits and stock holds don't apply.
-	req, err := s.Store.CreateRequest(ctx, store.NewRequest{UserID: pr.UserID, Address: *pr.Address, Purpose: swag.PurposeStaff,
-		Lines: lines, Status: status, ShippingFeeCents: fee, Note: note}, func(map[int64]int) error { return nil })
-	if err != nil {
-		return nil, err
-	}
-	if req.Status == swag.StatusPending {
-		s.emailRequest(r, req, "received")
-	}
-	return s.Store.SetPrintShipment(ctx, pr.ID, req.ID)
 }

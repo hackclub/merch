@@ -79,7 +79,7 @@ func (s *server) logEmail(r *http.Request, req *store.Request, kind string, e lo
 func (s *server) adminEmails(w http.ResponseWriter, r *http.Request, v viewer) {
 	q := r.URL.Query()
 	f := store.EmailFilter{Kind: q.Get("kind"), Status: q.Get("status"), Limit: 100}
-	for name, dst := range map[string]*int64{"request_id": &f.RequestID, "before": &f.Before} {
+	for name, dst := range map[string]*int64{"request_id": &f.RequestID, "print_run_id": &f.PrintRunID, "before": &f.Before} {
 		if raw := q.Get(name); raw != "" {
 			n, err := strconv.ParseInt(raw, 10, 64)
 			if err != nil {
