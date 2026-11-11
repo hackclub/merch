@@ -765,63 +765,51 @@ and where, so they see it in person once it arrives.
   transit from shipping history for that package and country, `to_you_days`, `arrive_from`/`arrive_by`),
   and the form lists each leg and the arrival dates. When Vistaprint prices change, add the new orders to
   `prices` and keep `TestEstimatePrintPrices` in step.
-- **Canonical print runs** (`print_runs`): both entry paths insert a shared run atomically,
-  with origin `staff` or `author`; migrated rows use `legacy`. The Admin **Print requests**
-  queue replaces Submissions; `/admin?tab=submissions` and the old read APIs still work.
-  `/print-requests/{id}` and My requests show the same timeline and real first-parcel state.
-  Author material outside standard products uses custom specification review.
-- **Actions and history:** Submitted → Approved → Ordered from printer → In transit →
-  Received at warehouse → Available, plus Rejected and Cancelled. PO completion may skip
-  unrecorded dispatch. HQ approves quantity/specifications/budget and selects exact PO/line/SKU
-  links plus printer confirmation. SKU matches only suggest candidates. A row lock and required
-  version prevent lost updates (409 asks the reviewer to reload). Request, approval, immutable
-  artwork revision, PO evidence, public updates and private HQ notes stay separate. Reorders
-  create a fresh run for the same item/SKU; they do not reuse a PO.
-- **PO copy:** `internal/printpo` reads only the needed purchase-order columns through
-  `PRINT_PO_DATABASE_URL`, a dedicated column-scoped login; startup rejects broad effective
-  table privileges. Never configure an agent warehouse login in merch. `PRINT_PO_AUTOMATIC`
-  defaults false and requires that URL when enabled. The bounded poller uses exact identities,
-  current source snapshot and a one-hour freshness limit; split links must cover the approved
-  quantity and all complete. Draft/deleted/wrong/old evidence never advances a run. Show source
-  sync, poll and completion times separately. Missing or stale evidence says **Not yet confirmed
-  in latest copy**. Carrier scans and stock changes never confirm receipt.
-  Poll timestamps, stale source copies and transport errors do not bump the action version.
-  Staleness is saved separately from reconciliation; old copies cannot correct
-  business evidence or confirm receipt/release, and show as stale, not as a corrected PO.
-  Material evidence or workflow changes write an event and bump it; completed Available
-  runs poll every 15 minutes while other linked active runs remain on the minute
-  loop. Failure or reconciliation returns a released run to the faster cadence.
-  Create and verify the dedicated role and set its Orchard environment before pushing
-  this feature to main; deployment without the source stalls new runs at Approved.
-  HQ sees a setup notice while linking is unavailable. Requester APIs expose only PO
-  status and times, with ordered quantity summarized separately; identities, supplier
-  and source observation details are admin-only. Requester activity hides same-stage
-  polling and configuration events.
-- **Receipt and release:** completion is whole-PO evidence, so always say **Received quantity
-  unavailable**. Reopened/corrected POs raise reconciliation without reversing receipt or release;
-  HQ records a sourced receipt review to clear a correction. New listings remain hidden until
-  explicit release with complete images/SKU and fresh positive sellable stock. Existing visible
-  restocks keep their listing. Release atomically publishes and creates/links one first shipment,
-  returning that same parcel on retries. US parcels are pending review; international parcels
-  await their own postage payment. Existing shipment review, payment and dispatch own fulfillment.
-  Available to request is zero while hidden, otherwise max(0, warehouse sellable − open merch
-  holds). Dispatched warehouse allocations are already excluded from sellable stock.
-- **Notifications:** each transition and its durable outbox job commit together; failures never
-  undo a stage. The worker persists a sending lease before transport, uses a stable per-event
-  idempotency key, retries with backoff, and logs the saved wording in sent-emails with run/event
-  references. A delivery left unresolved beyond the provider deduplication window becomes
-  uncertain; HQ must audit the provider before retrying. Notification retry is independent of
-  stage actions. Optional `PRINT_SLACK_BOT_TOKEN` enables verified-account DMs only after the
-  requester opts in; off by default. Slack sends stage facts and the request link, without
-  addresses, invoice details or free-text notes. Opt-out cancels pending DMs.
-  Unconfigured Slack opt-ins are refused and pending DMs are marked skipped. Release
-  also queues the existing parcel `received` email exactly once when its first shipment
-  starts pending; international requests retain the existing acknowledgment after payment.
-- **Migration 00037:** source IDs, original artwork, known history and existing parcel links are
-  preserved. Unknown dates stay null. Author printing without order evidence retains
-  Approved and needs audit; it cannot replay a fresh approval email. Stocked is
-  legacy receipt pending listing/parcel audit. Migration queues no old emails and creates no
-  parcels. Audit must verify an existing parcel belongs to the requester and contains the SKU.
+- **Print requests queue:** replaces Submissions. `/admin?tab=submissions` and the old read
+  APIs still work. `/print-requests/{id}` and My requests show the run's history and first
+  shipment. `Store.CreatePrintRequest` and `CreateSubmission` call `createPrintRun` in the
+  source transaction. They insert `print_runs`, `print_art_revisions`, `print_run_events`
+  and the received email together. There is no creation trigger. Origin is `staff`, `author`
+  or `legacy`; author material outside the standard products gets a custom review.
+- **Actions:** Submitted → Approved → Ordered from printer → In transit → Received at warehouse
+  → Available, plus Rejected and Cancelled. `swag.ApplyPrintAction` checks the actor, stage
+  and required fields. `Store.ActPrintRun` locks the row, checks the version and saves the
+  result. A 409 asks the reviewer to reload. HQ approves art, quantity, specifications and
+  budget, then selects exact PO/line/SKU links and a printer confirmation. SKU matches only
+  suggest orders. Reorders keep the item and Slack preference but need new PO links.
+- **PO reads:** `internal/printpo` uses only `PRINT_PO_DATABASE_URL`, a dedicated login for
+  the needed PO columns. Startup rejects broader table access. Never use an agent login.
+  Create and verify this login and set the Orchard variables **before pushing to main**;
+  without it, new runs stop at Approved. `PRINT_PO_AUTOMATIC` defaults false. When enabled,
+  `printWorkers` polls linked runs each minute, at most 50 per pass. Completed Available
+  runs poll every 15 minutes unless stale, failed or needing HQ review. All split PO links
+  must cover the approved quantity, match one source copy and complete. Draft, deleted,
+  wrong or hour-old copies cannot advance a run. Source sync, poll and completion times
+  are separate. Stale copies say **Not yet confirmed in latest copy** and show their age.
+  Quiet polls, stale copies and transport errors leave the action version alone.
+  Requesters see status and times; PO IDs, supplier and exact links are admin-only.
+- **Receipt and release:** PO completion covers the whole order; say **Received quantity
+  unavailable**. Carrier scans and stock increases never confirm receipt. A reopened or
+  corrected PO asks HQ to review it, keeping the saved stage. HQ releases new listings
+  after receipt, with images, a SKU and fresh positive sellable stock. Restocks keep an
+  existing visible listing. Release saves the listing and first shipment together, once.
+  The usual shipment review, payment and dispatch send it. US parcels start pending;
+  international parcels await postage payment. Available to request is zero while hidden,
+  otherwise max(0, warehouse sellable − open merch holds). Sellable already excludes
+  warehouse allocations.
+- **Messages:** `printStageMessage` and `printReceivedMessage` hold the wording in Go.
+  `print_notifications` saves each message with its event. Failed sends retry separately
+  and never undo a stage. Each retry uses the same provider key and saved text. After the
+  provider's duplicate-send protection expires, HQ must check an uncertain delivery before
+  retrying. `sent_emails` links the saved text to its run and event. `PRINT_SLACK_BOT_TOKEN`
+  is optional; DMs are off until the requester opts in. Slack gets stage facts and a link,
+  without addresses, invoice details or free-text notes. Opt-out cancels queued DMs;
+  missing configuration skips them. Release queues the usual parcel `received` email once
+  for pending shipments. International requests get that email after payment.
+- **Migration 00037:** backfills source IDs, artwork, saved history and existing parcels.
+  Unknown dates stay null. It sends no old emails and creates no parcels. Legacy author
+  `printing` stays Approved until HQ audits the order. Legacy `stocked` needs its listing
+  and parcel checked. A linked parcel must belong to the requester and contain the SKU.
 
 ## Agent API
 

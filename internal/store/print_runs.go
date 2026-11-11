@@ -2,48 +2,21 @@ package store
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/hackclub/merch/internal/swag"
-	"github.com/jackc/pgx/v5"
-	"sort"
 	"strings"
 	"time"
+
+	"github.com/hackclub/merch/internal/swag"
+	"github.com/jackc/pgx/v5"
 )
 
 var ErrPrintConflict = errors.New("print run changed; reload before acting")
-var ErrPrintAction = errors.New("invalid print action")
+var ErrPrintAction = swag.ErrPrintAction
 
-type PrintRunData struct {
-	DeliveryQuantity      int           `json:"delivery_quantity"`
-	DeliveryAddress       *swag.Address `json:"delivery_address,omitempty"`
-	ReviewedExistingOrder bool          `json:"reviewed_existing_order"`
-	ApprovedQuantity      int           `json:"approved_quantity"`
-	ApprovedAt            *time.Time    `json:"approved_at"`
-	ApprovedBy            int64         `json:"approved_by,omitempty"` // admin user id; hidden from requesters
-	Specifications        string        `json:"specifications"`
-	Revision              int           `json:"revision"`
-	SKU                   string        `json:"sku"`
-	ItemID                int64         `json:"item_id"`
-	PublicNote            string        `json:"public_note"`
-	Tracking              string        `json:"tracking"`
-	ETA                   string        `json:"eta"`
-	ETASource             string        `json:"eta_source"`
-	DispatchedAt          *time.Time    `json:"dispatched_at"`
-	Reconcile             bool          `json:"reconcile"`
-	ReceiptCorrection     bool          `json:"receipt_correction"`
-	ReceiptReviewDigest   string        `json:"receipt_review_digest,omitempty"`
-	LegacyReview          bool          `json:"legacy_review"`
-	LegacyStatus          string        `json:"legacy_status"`
-	SlackOptIn            bool          `json:"slack_opt_in"`
-	ParentID              int64         `json:"parent_id"`
-	ParentVersion         int64         `json:"parent_version"`
-	LastPollAt            *time.Time    `json:"last_poll_at"`
-	PollError             string        `json:"poll_error"`
-	SourceStale           bool          `json:"source_stale"`
-}
+type PrintRunData = swag.PrintRunData
+
 type PrintRun struct {
 	ShipmentStatus swag.Status `json:"shipment_status"`
 	Stock          *PrintStock `json:"stock,omitempty"`
@@ -129,42 +102,13 @@ func (s *Store) PrintRunsToPoll(ctx context.Context) ([]*PrintRun, error) {
 }
 
 func (r *PrintRun) HasPrinterOrder() bool {
-	for _, p := range r.Links {
-		if !p.Draft && !p.Deleted && p.CreatedAt != nil {
-			return true
-		}
-	}
-	return false
+	state := r.actionState()
+	return state.HasPrinterOrder()
 }
-
-// Poll timestamps change every observation; only business evidence needs HQ
-// review after receipt. Sort a copy so link order cannot change its identity.
-func printEvidenceDigest(proofs []swag.PrintPOEvidence) string {
-	copy := append([]swag.PrintPOEvidence(nil), proofs...)
-	for i := range copy {
-		copy[i].SyncedAt = time.Time{}
-		copy[i].PolledAt = time.Time{}
-	}
-	sort.Slice(copy, func(i, j int) bool {
-		if copy[i].POID == copy[j].POID {
-			return copy[i].LineID < copy[j].LineID
-		}
-		return copy[i].POID < copy[j].POID
-	})
-	b, _ := json.Marshal(copy)
-	return fmt.Sprintf("%x", sha256.Sum256(b))
-}
-
-func completePrintEvidence(r *PrintRun, now time.Time) bool {
-	if len(r.Links) == 0 {
-		return false
-	}
-	for _, p := range r.Links {
-		if p.SKU != r.SKU || !p.Completed || !p.Confirms(p.PrintPOLink, now, time.Hour) || !p.SyncedAt.Equal(r.Links[0].SyncedAt) {
-			return false
-		}
-	}
-	return true
+func (r *PrintRun) actionState() swag.PrintRunState {
+	return swag.PrintRunState{PrintRunData: r.PrintRunData, UserID: r.UserID, Stage: r.Stage, Origin: r.Origin,
+		Request: swag.PrintRunRequest{Product: r.Request.Product, Quantity: r.Request.Quantity, InitialQuantity: r.Request.InitialQuantity, Address: r.Request.Address},
+		Links:   r.Links, InternalNote: r.InternalNote, ShipmentRequestID: r.ShipmentRequestID, ShipmentStatus: r.ShipmentStatus}
 }
 
 type PrintRunEvent struct {
@@ -192,36 +136,7 @@ func (s *Store) PrintRunHistory(ctx context.Context, id int64) ([]PrintRunEvent,
 	})
 }
 
-type PrintAction struct {
-	DispatchedAt            *time.Time             `json:"dispatched_at"`
-	InitialQuantity         int                    `json:"initial_quantity"`
-	Address                 *swag.Address          `json:"address"`
-	NotificationID          int64                  `json:"notification_id"`
-	DeliveryOutcome         string                 `json:"delivery_outcome"`
-	Version                 int64                  `json:"version"`
-	Action                  string                 `json:"action"`
-	ActorID                 int64                  `json:"-"`
-	ApprovedQuantity        int                    `json:"approved_quantity"`
-	Specifications          string                 `json:"specifications"`
-	SKU                     string                 `json:"sku"`
-	ItemID                  int64                  `json:"item_id"`
-	Note                    string                 `json:"note"`
-	InternalNote            string                 `json:"internal_note"`
-	Tracking                string                 `json:"tracking"`
-	ETA                     string                 `json:"eta"`
-	ETASource               string                 `json:"eta_source"`
-	ConfirmationURL         string                 `json:"confirmation_url"`
-	CancellationDisposition string                 `json:"cancellation_disposition"`
-	Evidence                []swag.PrintPOEvidence `json:"-"`
-	PollError               string                 `json:"-"`
-	Auto                    bool                   `json:"-"`
-	Now                     time.Time              `json:"-"`
-	SlackOptIn              bool                   `json:"slack_opt_in"`
-	ParentID                int64                  `json:"parent_id"`
-	ReleaseStatus           swag.Status            `json:"-"`
-	ReleaseFee              int                    `json:"-"`
-	Sellable                int                    `json:"-"`
-}
+type PrintAction = swag.PrintAction
 
 func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*PrintRun, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -245,279 +160,87 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 		now = time.Now().UTC()
 	}
 	prev := r.Stage
-	previousReconcile := r.Reconcile
 	previousETA := r.ETA
-	previousEvidence := printEvidenceDigest(r.Links)
 	hadShipment := r.ShipmentRequestID != nil
-	notify := false
-	updateMessage := ""
+
+	state := r.actionState()
+	if a.Action == "release" {
+		err = tx.QueryRow(ctx, `select exists(select 1 from items where id=$1 and sku=$2 and name<>'' and cardinality(images)>0)`, r.ItemID, r.SKU).Scan(&state.ListingReady)
+	}
+	if a.Action == "resolve_notification" {
+		err = tx.QueryRow(ctx, `select exists(select 1 from print_notifications where id=$1 and run_id=$2 and status='uncertain')`, a.NotificationID, id).Scan(&state.NotificationUncertain)
+	}
+	if a.Action == "audit_legacy" && r.LegacyReview && a.Note != "" && r.Stage == swag.PrintReceived && r.ShipmentRequestID != nil {
+		err = tx.QueryRow(ctx, `select exists(select 1 from swag_requests s join swag_request_items i on i.request_id=s.id where s.id=$1 and s.user_id=$2 and i.sku=$3 and i.quantity>0)`, *r.ShipmentRequestID, r.UserID, a.SKU).Scan(&state.LegacyShipmentMatches)
+		if err == nil && state.LegacyShipmentMatches {
+			err = tx.QueryRow(ctx, `select visible AND name<>'' AND cardinality(images)>0 from items where id=$1 and sku=$2`, a.ItemID, a.SKU).Scan(&state.LegacyListingVisible)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	decision, err := swag.ApplyPrintAction(state, a, swag.PrintActor{ID: a.ActorID, Admin: !a.Requester && !a.Auto, Automatic: a.Auto}, now)
+	if err != nil {
+		return nil, err
+	}
+	r.PrintRunData = decision.Run.PrintRunData
+	r.Stage, r.Links, r.InternalNote = decision.Run.Stage, decision.Run.Links, decision.Run.InternalNote
+	notify, updateMessage := decision.Notify, decision.UpdateMessage
 	invalid := func(msg string) (*PrintRun, error) { return nil, fmt.Errorf("%w: %s", ErrPrintAction, msg) }
 	switch a.Action {
-	case "approve":
-		if r.Stage != swag.PrintSubmitted || (r.Origin == "legacy" && r.LegacyStatus == "printing") || a.ApprovedQuantity < 1 || strings.TrimSpace(a.Specifications) == "" {
-			return invalid("review artwork, specifications, quantity and budget first")
-		}
-		r.Stage = swag.PrintApproved
-		r.ApprovedQuantity = a.ApprovedQuantity
-		r.Specifications = a.Specifications
-		r.ApprovedAt = &now
-		r.ApprovedBy = a.ActorID
-		r.Revision = 1
-		if a.SKU != "" {
-			r.SKU = strings.TrimSpace(a.SKU)
-		}
-	case "reject":
-		if r.HasPrinterOrder() {
-			return invalid("linked printer order exists; use confirmed cancellation")
-		}
-		if (r.Stage != swag.PrintSubmitted && r.Stage != swag.PrintApproved) || strings.TrimSpace(a.Note) == "" {
-			return invalid("a reason and revision instructions are required before ordering")
-		}
-		r.Stage = swag.PrintRejected
-	case "cancel":
-		if !swag.CanTransitionPrint(r.Stage, swag.PrintCancelled) || strings.TrimSpace(a.Note) == "" {
-			return invalid("a cancellation reason is required")
-		}
-		if (r.Stage == swag.PrintOrdered || r.Stage == swag.PrintInTransit || r.HasPrinterOrder()) && (a.ConfirmationURL == "" || a.CancellationDisposition == "") {
-			return invalid("printer confirmation and goods/payment disposition required")
-		}
-		r.Stage = swag.PrintCancelled
-		if a.ConfirmationURL != "" {
-			r.InternalNote += "\nPrinter cancellation: " + a.ConfirmationURL + "\nDisposition: " + a.CancellationDisposition
-		}
-	case "dispatch":
-		if r.Stage != swag.PrintOrdered {
-			return invalid("only an ordered run can be dispatched")
-		}
-		r.Stage = swag.PrintInTransit
-		r.Tracking = a.Tracking
-		r.DispatchedAt = a.DispatchedAt // Recording the update is not proof of the printer's dispatch time.
-		if a.ETA != "" {
-			r.ETA = a.ETA
-			r.ETASource = "HQ printer dispatch"
-		}
-	case "update":
-		if r.Stage == swag.PrintCancelled || r.Stage == swag.PrintRejected {
-			return invalid("closed run")
-		}
-		if a.Note == "" && a.ETA == "" && a.InternalNote == "" {
-			return invalid("add an update")
-		}
-		notify = a.Note != "" || a.ETA != "" && a.ETA != r.ETA
-		if a.Note != "" && strings.TrimSpace(a.ETASource) == "" {
-			return invalid("name the source or who confirmed this manual update")
-		}
-		if a.ETA != "" {
-			r.ETA = a.ETA
-			r.ETASource = a.ETASource
-		}
 	case "preferences":
-		r.SlackOptIn = a.SlackOptIn
 		if !a.SlackOptIn {
 			_, err = tx.Exec(ctx, `update print_notifications set status='cancelled' where run_id=$1 and channel='slack' and status in ('queued','failed')`, id)
-			if err != nil {
-				return nil, err
-			}
 		}
-	case "first_shipment":
-		if r.Stage == swag.PrintAvailable || r.Stage == swag.PrintRejected || r.Stage == swag.PrintCancelled {
-			return invalid("this run is closed to first shipment changes")
-		}
-		limit := r.Request.Quantity
-		if r.ApprovedQuantity > 0 {
-			limit = r.ApprovedQuantity
-		}
-		if r.ShipmentRequestID != nil || a.InitialQuantity < 1 || a.InitialQuantity > limit || a.Address == nil || a.Address.Validate() != nil {
-			return invalid("valid first quantity and destination required before release")
-		}
-		if r.Request.Product == "postcard_4x6" && !swag.PackQuantity("postcard", a.InitialQuantity) {
-			return invalid("choose a postcard pack quantity")
-		}
-		r.DeliveryQuantity = a.InitialQuantity
-		r.DeliveryAddress = a.Address
 	case "retry_notifications":
 		_, err = tx.Exec(ctx, `update print_notifications set next_attempt_at=now() where run_id=$1 and status='failed'`, id)
-		if err != nil {
-			return nil, err
-		}
 	case "resolve_notification":
-		if strings.TrimSpace(a.Note) == "" || (a.DeliveryOutcome != "sent" && a.DeliveryOutcome != "not_sent") {
-			return invalid("document provider delivery evidence and outcome")
-		}
 		status := "sent"
 		if a.DeliveryOutcome == "not_sent" {
 			status = "queued"
 		}
-		tag, e := tx.Exec(ctx, `update print_notifications set status=$3,first_attempt_at=null,next_attempt_at=now(),error='' where id=$1 and run_id=$2 and status='uncertain'`, a.NotificationID, id, status)
+		rows, e := tx.Exec(ctx, `update print_notifications set status=$3,first_attempt_at=null,next_attempt_at=now(),error='' where id=$1 and run_id=$2 and status='uncertain'`, a.NotificationID, id, status)
 		if e != nil {
 			return nil, e
 		}
-		if tag.RowsAffected() != 1 {
+		if rows.RowsAffected() != 1 {
 			return invalid("only an uncertain notification can be reconciled")
 		}
-	case "review_order":
-		if r.Stage != swag.PrintApproved && r.Stage != swag.PrintOrdered && r.Stage != swag.PrintInTransit {
-			return invalid("review order evidence before receipt")
-		}
-		if a.Note == "" || a.Specifications == "" || a.ApprovedQuantity < 1 {
-			return invalid("document quantity, specifications and the order discrepancy")
-		}
-		r.ApprovedQuantity = a.ApprovedQuantity
-		r.Specifications = a.Specifications
-		r.ReviewedExistingOrder = true
-		r.Reconcile = false
-		notify = true
-		if r.ApprovedAt == nil {
-			r.ApprovedAt = &now
-			r.ApprovedBy = a.ActorID
-			r.Revision = 1
-		}
-	case "review_receipt":
-		if (r.Stage != swag.PrintReceived && r.Stage != swag.PrintAvailable) || strings.TrimSpace(a.Note) == "" || strings.TrimSpace(a.ETASource) == "" || !completePrintEvidence(r, now) {
-			return invalid("document warehouse confirmation of complete, fresh receipt evidence")
-		}
-		r.ReceiptReviewDigest = printEvidenceDigest(r.Links)
-		r.ReceiptCorrection = false
-		r.Reconcile = false
-		notify = true
-		updateMessage = a.Note + " Source: " + a.ETASource + ". Received quantity unavailable."
 	case "link", "replace_links":
-		if r.LegacyReview {
-			return invalid("audit the legacy run before linking purchase orders")
-		}
-		if (r.Stage != swag.PrintApproved && !(r.Stage == swag.PrintOrdered && r.ReviewedExistingOrder)) || a.ConfirmationURL == "" || len(a.Evidence) == 0 {
-			return invalid("approve first and link printer confirmation plus exact PO lines")
-		}
-		if len(r.Links) > 0 && a.Action != "replace_links" {
-			return invalid("links already locked; reconcile with HQ")
-		}
 		if a.Action == "replace_links" {
-			if a.Note == "" {
-				return invalid("document why the selected PO lines are being corrected")
-			}
-			if r.Stage == swag.PrintOrdered && !r.ReviewedExistingOrder {
-				return invalid("review existing order evidence before correcting links")
-			}
 			if _, err = tx.Exec(ctx, `delete from print_run_po_links where run_id=$1`, id); err != nil {
 				return nil, err
 			}
 		}
-		r.SKU = strings.TrimSpace(a.SKU)
-		r.ItemID = a.ItemID
 		for _, p := range a.Evidence {
-			if p.SKU != r.SKU || p.POID <= 0 || p.LineID <= 0 {
-				return invalid("exact PO/line/SKU required")
-			}
-			_, err = tx.Exec(ctx, `INSERT INTO print_run_po_links(run_id,po_id,line_id,sku,evidence,confirmation_url,revision) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, p.POID, p.LineID, p.SKU, p, a.ConfirmationURL, r.Revision)
-			if err != nil {
+			if _, err = tx.Exec(ctx, `INSERT INTO print_run_po_links(run_id,po_id,line_id,sku,evidence,confirmation_url,revision) VALUES($1,$2,$3,$4,$5,$6,$7)`, id, p.POID, p.LineID, p.SKU, p, a.ConfirmationURL, r.Revision); err != nil {
 				return nil, mapErr(err)
 			}
 		}
-		r.Links = a.Evidence
 		if r.Request.Product != "custom" {
 			r.ItemID, err = preparePrintItem(ctx, tx, r.Request, r.SKU)
-			if err != nil {
-				return nil, err
-			}
 		}
 	case "observe":
-		if !a.Auto {
-			return invalid("only the configured PO adapter records observations")
-		}
-		r.LastPollAt = &now
-		r.PollError = a.PollError
 		if a.PollError != "" {
 			break
 		}
-		links := []swag.PrintPOLink{}
-		for _, p := range r.Links {
-			links = append(links, p.PrintPOLink)
-		}
-		approval := swag.PrintApproval{Quantity: r.ApprovedQuantity, SKU: r.SKU, ReviewedExistingOrder: r.ReviewedExistingOrder}
-		if r.ApprovedAt != nil {
-			approval.At = *r.ApprovedAt
-		}
-		result := swag.ObservePrintPOs(r.Stage, approval, links, a.Evidence, now, time.Hour)
-		r.SourceStale = result.Stale
-		if result.Stale {
-			// Report the actual copy age without letting an old copy correct
-			// the last confirmed business evidence or invalidate an open form.
-			for i := range r.Links {
-				for _, observed := range a.Evidence {
-					if observed.PrintPOLink == r.Links[i].PrintPOLink {
-						r.Links[i].SyncedAt, r.Links[i].PolledAt = observed.SyncedAt, observed.PolledAt
-						if _, err = tx.Exec(ctx, `update print_run_po_links set evidence=$4 where run_id=$1 and po_id=$2 and line_id=$3`, id, observed.POID, observed.LineID, r.Links[i]); err != nil {
-							return nil, err
-						}
-					}
+		if r.SourceStale {
+			for _, p := range r.Links {
+				if _, err = tx.Exec(ctx, `update print_run_po_links set evidence=$4 where run_id=$1 and po_id=$2 and line_id=$3`, id, p.POID, p.LineID, p); err != nil {
+					return nil, err
 				}
 			}
 			break
 		}
 		for _, p := range a.Evidence {
-			_, err = tx.Exec(ctx, `INSERT INTO print_po_observations(run_id,po_id,line_id,synced_at,polled_at,evidence) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, id, p.POID, p.LineID, p.SyncedAt, p.PolledAt, p)
-			if err != nil {
+			if _, err = tx.Exec(ctx, `INSERT INTO print_po_observations(run_id,po_id,line_id,synced_at,polled_at,evidence) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, id, p.POID, p.LineID, p.SyncedAt, p.PolledAt, p); err != nil {
 				return nil, err
 			}
-			_, err = tx.Exec(ctx, `UPDATE print_run_po_links SET evidence=$4 WHERE run_id=$1 AND po_id=$2 AND line_id=$3 AND sku=$5`, id, p.POID, p.LineID, p, p.SKU)
-			if err != nil {
+			if _, err = tx.Exec(ctx, `UPDATE print_run_po_links SET evidence=$4 WHERE run_id=$1 AND po_id=$2 AND line_id=$3 AND sku=$5`, id, p.POID, p.LineID, p, p.SKU); err != nil {
 				return nil, err
-			}
-		}
-		if (prev == swag.PrintReceived || prev == swag.PrintAvailable) && printEvidenceDigest(r.Links) != printEvidenceDigest(a.Evidence) {
-			r.ReceiptCorrection = true
-			r.ReceiptReviewDigest = ""
-		}
-		r.Reconcile = result.Reconcile || r.ReceiptCorrection
-		r.Links = a.Evidence
-		if (prev == swag.PrintReceived || prev == swag.PrintAvailable) && r.ReceiptReviewDigest == printEvidenceDigest(r.Links) && completePrintEvidence(r, now) {
-			r.Reconcile = false
-		}
-		if result.Stage != "" {
-			r.Stage = result.Stage
-		}
-		if !result.Reconcile && (r.ETASource == "" || r.ETASource == "Zenventory PO required-by") && (prev == swag.PrintApproved || prev == swag.PrintOrdered || prev == swag.PrintInTransit) {
-			var latest *time.Time
-			for _, p := range a.Evidence {
-				if p.RequiredBy != nil && (latest == nil || p.RequiredBy.After(*latest)) {
-					latest = p.RequiredBy
-				}
-			}
-			date := ""
-			if latest != nil {
-				date = latest.UTC().Format(time.DateOnly)
-			}
-			if date != r.ETA {
-				notify = true
-				r.ETA = date
-				r.ETASource = "Zenventory PO required-by"
-				if date == "" {
-					date = "not confirmed"
-				}
-				updateMessage = "Expected warehouse date for your print run is now " + date + " (linked PO required-by). This is an estimate, not a delivery promise."
 			}
 		}
 	case "release":
-		if r.Stage != swag.PrintReceived || r.LegacyReview || r.Reconcile || r.SourceStale || r.PollError != "" || r.ItemID == 0 || r.SKU == "" || a.Sellable < 1 {
-			return invalid("receipt, reconciled complete listing and confirmed sellable stock required")
-		}
-		if r.Request.InitialQuantity < 1 && r.Origin != "legacy" {
-			return invalid("requester must choose the first shipment before release")
-		}
-		if r.ApprovedQuantity > 0 && r.Request.InitialQuantity > r.ApprovedQuantity {
-			return invalid("first quantity exceeds the approved run")
-		}
-		if r.Request.InitialQuantity > 0 {
-			if r.Request.Address == nil || r.Request.Address.Validate() != nil {
-				return invalid("first shipment address is required")
-			}
-			if a.ReleaseStatus != swag.StatusPending && a.ReleaseStatus != swag.StatusAwaitingPayment {
-				return invalid("invalid shipment state")
-			}
-			if swag.IsInternational(r.Request.Address.Country) && (a.ReleaseStatus != swag.StatusAwaitingPayment || a.ReleaseFee <= 0) {
-				return invalid("international postage payment required")
-			}
-		}
 		tag, err := tx.Exec(ctx, `UPDATE items SET visible=true,updated_at=now() WHERE id=$1 AND sku=$2 AND name<>'' AND cardinality(images)>0`, r.ItemID, r.SKU)
 		if err != nil {
 			return nil, err
@@ -539,48 +262,9 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 			r.ShipmentRequestID = &rid
 			r.ShipmentStatus = a.ReleaseStatus
 		}
-		r.Stage = swag.PrintAvailable
-	case "audit_legacy":
-		if !r.LegacyReview || a.Note == "" {
-			return invalid("document original order/warehouse confirmation and link audit")
-		}
-		r.SKU = a.SKU
-		r.ItemID = a.ItemID
-		if r.Stage == swag.PrintReceived && r.ShipmentRequestID != nil {
-			var matching bool
-			err = tx.QueryRow(ctx, `select exists(select 1 from swag_requests s join swag_request_items i on i.request_id=s.id where s.id=$1 and s.user_id=$2 and i.sku=$3 and i.quantity>0)`, *r.ShipmentRequestID, r.UserID, r.SKU).Scan(&matching)
-			if err != nil {
-				return nil, err
-			}
-			if !matching {
-				return invalid("existing first shipment must belong to this requester and contain the exact SKU")
-			}
-			var visible bool
-			err = tx.QueryRow(ctx, `select visible AND name<>'' AND cardinality(images)>0 from items where id=$1 and sku=$2`, r.ItemID, r.SKU).Scan(&visible)
-			if err != nil {
-				return nil, err
-			}
-			if visible {
-				r.Stage = swag.PrintAvailable
-			}
-		}
-		r.LegacyReview = false
-		if r.Stage == swag.PrintApproved || r.Stage == swag.PrintOrdered {
-			if a.ApprovedQuantity < 1 || a.Specifications == "" {
-				return invalid("review original quantity, artwork and specifications")
-			}
-			r.ApprovedQuantity = a.ApprovedQuantity
-			r.Specifications = a.Specifications
-			r.ApprovedAt = &now
-			r.ApprovedBy = a.ActorID
-			r.ReviewedExistingOrder = true
-			r.Revision = 1
-		}
-	default:
-		return invalid("unknown action")
 	}
-	if a.InternalNote != "" {
-		r.InternalNote += "\n" + a.InternalNote
+	if err != nil {
+		return nil, err
 	}
 	if a.ConfirmationURL != "" && (a.Action == "link" || a.Action == "replace_links" || a.Action == "cancel") {
 		_, err = tx.Exec(ctx, `insert into print_printer_confirmations(run_id,version,url,actor_id) values($1,$2,$3,$4)`, id, r.Version+1, a.ConfirmationURL, a.ActorID)
@@ -588,10 +272,7 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 			return nil, err
 		}
 	}
-	if a.Note != "" {
-		r.PublicNote = a.Note
-	}
-	recordEvent := a.Action != "observe" || prev != r.Stage || notify || previousReconcile != r.Reconcile || previousEvidence != printEvidenceDigest(r.Links)
+	recordEvent := decision.RecordEvent
 	if recordEvent {
 		r.Version++
 	}

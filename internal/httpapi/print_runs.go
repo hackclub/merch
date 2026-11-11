@@ -308,6 +308,7 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 		return
 	}
 	a.ActorID = v.user.ID
+	a.Requester = !admin
 	if a.Address != nil {
 		a.Address.Country = strings.ToUpper(strings.TrimSpace(a.Address.Country))
 	}
