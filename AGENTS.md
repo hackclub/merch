@@ -765,6 +765,11 @@ and where, so they see it in person once it arrives.
   transit from shipping history for that package and country, `to_you_days`, `arrive_from`/`arrive_by`),
   and the form lists each leg and the arrival dates. When Vistaprint prices change, add the new orders to
   `prices` and keep `TestEstimatePrintPrices` in step.
+- **The form** (`print_requests`, `POST /api/print-requests`) saves the product, the item's
+  warehouse name (`title`), the `program`, the quantity, the front and back art (the same on both
+  sides by default), how they'll use it, the program's `deadline` in their words, the first
+  shipment (`initial_quantity`, at least 1, and `address`) and the estimate. Anyone signed in can
+  send one, like the staff purpose, so reviewers check the email.
 - **Print requests queue:** replaces Submissions. `/admin?tab=submissions` and the old read
   APIs still work. `/print-requests/{id}` and My requests show the run's history and first
   shipment. `Store.CreatePrintRequest` and `CreateSubmission` call `createPrintRun` in the
