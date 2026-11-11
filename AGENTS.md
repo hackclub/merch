@@ -393,8 +393,10 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   isn't proof it's short of anything. `swag.Validate` refuses the rest ("out of stock: only 2 Hack Club
   enamel pin left", logged as `request_refused`), and the shop says "Out of stock." / "Only 2
   left." and hides Add. A SKU the warehouse doesn't list counts as out of stock; if the warehouse
-  can't be reached, stock isn't checked. Since 2026-10-20 only the Haven postcard and the
-  Haven poster can be backordered (Zach: not the pins). Admin shipping doesn't check stock.
+  can't be reached, stock isn't checked. Since 2026-11-10 only the Haven poster can be
+  backordered (Zach decided against the pins on 2026-10-20 and the Haven postcard on
+  2026-11-10). The flag is data, set on the admin Items tab; migration 00030 only
+  set its starting values. Admin shipping doesn't check stock.
   **Never edit or combine an order the warehouse has** (mail.hackclub.com's back office,
   Zenventory's web or API): AGH places, allocates and picks it in Zenventory, which never sees
   the edit. On 2026-10-26 those back-office cuts shipped 10 orders with the old contents and put 5
