@@ -326,7 +326,7 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 			return
 		}
 		s.track(r, v.user, "print_run_action", map[string]any{"print_run_id": p.ID, "action": "refresh_po", "from": p.Stage, "to": updated.Stage})
-		writeJSON(w, 200, updated)
+		writeJSON(w, 200, printRunView(updated, admin, s.Now()))
 		return
 	}
 	if len(a.Note) > 5000 || len(a.InternalNote) > 10000 || len(a.Specifications) > 5000 || len(a.Tracking) > 500 || len(a.ETA) > 500 {

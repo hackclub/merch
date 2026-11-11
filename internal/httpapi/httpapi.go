@@ -112,12 +112,6 @@ func New(d Deps) http.Handler {
 		go s.warm(context.Background())
 	}
 	mux := http.NewServeMux()
-	mux.Handle("GET /api/print-runs", s.requireUser(s.printRuns))
-	mux.Handle("GET /api/print-runs/{id}", s.requireUser(s.printRunDetail))
-	mux.Handle("POST /api/print-runs/{id}/actions", s.requireUser(s.printRunAction))
-	mux.Handle("GET /api/admin/print-runs", s.requireAdmin(s.printRuns))
-	mux.Handle("GET /api/agent/print-runs", s.requireAgent(s.printRuns))
-	mux.Handle("GET /api/admin/print-po-suggestions", s.requireAdmin(s.printPOSuggestions))
 
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /auth/login", s.login)
@@ -146,6 +140,9 @@ func New(d Deps) http.Handler {
 	mux.Handle("POST /api/print/files", s.requireUser(s.uploadPrintFile))
 	mux.Handle("GET /api/print-requests", s.requireUser(s.myPrintRequests))
 	mux.Handle("POST /api/print-requests", s.requireUser(s.createPrintRequest))
+	mux.Handle("GET /api/print-runs", s.requireUser(s.printRuns))
+	mux.Handle("GET /api/print-runs/{id}", s.requireUser(s.printRunDetail))
+	mux.Handle("POST /api/print-runs/{id}/actions", s.requireUser(s.printRunAction))
 
 	// YSWS authors
 	mux.Handle("GET /api/author/submissions", s.requireAuthor(s.mySubmissions))
@@ -174,6 +171,8 @@ func New(d Deps) http.Handler {
 	mux.Handle("PUT /api/admin/submissions/{id}", s.requireAdmin(s.adminUpdateSubmission))
 	mux.Handle("GET /api/admin/print-requests", s.requireAdmin(s.adminPrintRequests))
 	mux.Handle("PUT /api/admin/print-requests/{id}", s.requireAdmin(s.adminUpdatePrintRequest))
+	mux.Handle("GET /api/admin/print-runs", s.requireAdmin(s.printRuns))
+	mux.Handle("GET /api/admin/print-po-suggestions", s.requireAdmin(s.printPOSuggestions))
 	mux.Handle("GET /api/admin/api-keys", s.requireAdmin(s.adminAPIKeys))
 	mux.Handle("POST /api/admin/api-keys", s.requireAdmin(s.adminCreateAPIKey))
 	mux.Handle("POST /api/admin/api-keys/{id}/revoke", s.requireAdmin(s.adminRevokeAPIKey))
@@ -192,6 +191,7 @@ func New(d Deps) http.Handler {
 	mux.Handle("GET /api/agent/items", s.requireAgent(s.adminItems))
 	mux.Handle("GET /api/agent/emails", s.requireAgent(s.adminEmails))
 	mux.Handle("GET /api/agent/print-requests", s.requireAgent(s.adminPrintRequests))
+	mux.Handle("GET /api/agent/print-runs", s.requireAgent(s.printRuns))
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { writeErr(w, http.StatusNotFound, "not found") })
 	mux.HandleFunc("/", s.static)
