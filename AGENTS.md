@@ -532,14 +532,6 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
 
 ## Usage analytics
 
-Print-run events: `print_run_action` (`print_run_id`, `action`, `from`, `to`,
-`version`, `has_note`; reorder adds `new_run_id`), `print_po_polled`
-(`print_run_id`, `from`, `to`, `reconcile`, `failed`, `changed`; only material
-evidence/workflow changes, source freshness/error-state changes or failed attempts, never successful
-metadata-only polling), and
-`print_notification_attempted` (`print_run_id`, `event_id`, `channel`, `failed`).
-No artwork URLs, notes, specifications, addresses or PO details go in these events.
-
 Everything people do on the site goes to the `usage_events` table, so agents can see how the shop is
 used and improve it. **Use it as evidence, and keep it complete:**
 
@@ -657,7 +649,13 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   `item_media_added` (`kind` = `image`, `page`, `photo` or `print_file`), `settings_updated` (`changed`),
   `submission_updated` (`from`, `to`, `kind`, `has_sku`),
   `print_request_updated` (`print_request_id`, `from`, `to`, `product`, `quantity`, `has_note`, `has_sku`,
-  `wait_h`, `shipment_request_id` once stocked made their first shipment), `api_key_created` and `api_key_revoked`
+  `wait_h`, `shipment_request_id` once stocked made their first shipment; since print runs, both only
+  log `refused`: the old status writes answer 409), print runs (see "Print requests"; no artwork URLs,
+  notes, specifications, addresses or PO details): `print_run_action` (`print_run_id`, `action`, `from`,
+  `to`, `version`, `has_note`; reorder adds `new_run_id`; by requesters too), `print_po_polled`
+  (`print_run_id`, `from`, `to`, `reconcile`, `failed`, `changed`; only when evidence, stage, freshness
+  or errors change, never a quiet poll), `print_notification_attempted` (`print_run_id`, `event_id`,
+  `channel`, `failed`), `api_key_created` and `api_key_revoked`
   (`api_key_id`), `requests_refreshed` (the dashboard or agent pulled tracking and charges from
   mail.hackclub.com: `checked`, `updated`, `mailed`, `failed`, `left`). Notes are never logged, only `has_note`. What an agent does with an API key
   (see "Agent API") logs the same events with `api_key_id` added; its notes are
@@ -789,8 +787,7 @@ and where, so they see it in person once it arrives.
   in latest copy**. Carrier scans and stock changes never confirm receipt.
   Poll timestamps, stale source copies and transport errors do not bump the action version.
   Staleness is saved separately from reconciliation; old copies cannot correct
-  business evidence or confirm receipt/release. Show the copy's sync age and
-  **Not yet confirmed in latest copy**, not a reopened/corrected-PO warning.
+  business evidence or confirm receipt/release, and show as stale, not as a corrected PO.
   Material evidence or workflow changes write an event and bump it; completed Available
   runs poll every 15 minutes while other linked active runs remain on the minute
   loop. Failure or reconciliation returns a released run to the faster cadence.
@@ -825,7 +822,6 @@ and where, so they see it in person once it arrives.
   Approved and needs audit; it cannot replay a fresh approval email. Stocked is
   legacy receipt pending listing/parcel audit. Migration queues no old emails and creates no
   parcels. Audit must verify an existing parcel belongs to the requester and contains the SKU.
-  Renumber the migration if main has taken its number before landing.
 
 ## Agent API
 
