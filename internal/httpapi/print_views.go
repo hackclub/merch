@@ -29,6 +29,7 @@ func printRunView(p *store.PrintRun, admin bool, now time.Time) any {
 	copy := *p
 	copy.InternalNote = ""
 	copy.UserEmail = ""
+	copy.ApprovedBy = 0 // an admin's user id
 	out := publicPrintRun{PrintRun: &copy, Links: []publicPrintPO{}}
 	for _, proof := range p.Links {
 		status := "Received quantity unavailable"

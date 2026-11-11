@@ -22,7 +22,7 @@ type PrintRunData struct {
 	ReviewedExistingOrder bool          `json:"reviewed_existing_order"`
 	ApprovedQuantity      int           `json:"approved_quantity"`
 	ApprovedAt            *time.Time    `json:"approved_at"`
-	ApprovedBy            int64         `json:"approved_by"`
+	ApprovedBy            int64         `json:"approved_by,omitempty"` // admin user id; hidden from requesters
 	Specifications        string        `json:"specifications"`
 	Revision              int           `json:"revision"`
 	SKU                   string        `json:"sku"`
@@ -664,7 +664,7 @@ func preparePrintItem(ctx context.Context, tx pgx.Tx, request PrintRequest, sku 
 		return 0, err
 	}
 	if sizeSKU {
-		return 0, fmt.Errorf("%w: SKU is a size of another item", ErrConflict)
+		return 0, fmt.Errorf("%w: the SKU is a size of another item; link the PO line under its own SKU", ErrPrintAction)
 	}
 	product, ok := swag.PrintProductByKey(request.Product)
 	if !ok {

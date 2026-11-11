@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/hackclub/merch/internal/store"
 	"github.com/hackclub/merch/internal/swag"
+	"strings"
 	"testing"
 	"time"
 )
@@ -125,6 +126,32 @@ func TestRequesterPrintHistoryHidesPrivateOnlyUpdates(t *testing.T) {
 	got := requesterPrintHistory(history)
 	if len(got) != 4 || got[0].ID != 5 || got[1].ID != 4 || got[2].ID != 2 || got[3].ID != 1 {
 		t.Fatalf("private-only update leaked into requester activity: %+v", got)
+	}
+}
+
+// A size's SKU belongs to its sized item: linking it isn't a duplicate PO line.
+func TestPrintLinkRefusesSizeSKU(t *testing.T) {
+	po := &fakePrintPO{}
+	h := newHarness(t, func(d *Deps) { d.PrintPOs = po })
+	owner, admin := h.client("owner@x.com"), h.client(adminEmail)
+	if _, err := h.store.CreateItem(context.Background(), swag.Item{SKU: "Swa/Hood", Name: "Hoodie", MaxPerRequest: 1,
+		Variants: []swag.Variant{{Label: "S", SKU: "Swa/Hood/Small"}}}); err != nil {
+		t.Fatal(err)
+	}
+	h.do(owner, "POST", "/api/print-requests", map[string]any{"product": "postcard_4x6", "title": "Demo cards", "program": "Demo", "deadline": "Next month", "note": "Welcome kits", "quantity": 1000, "front_url": "https://example.com/art.png", "initial_quantity": 25, "address": usAddr}, nil)
+	runs, _ := h.store.PrintRuns(context.Background(), 0)
+	p := runs[0]
+	path := fmt.Sprintf("/api/print-runs/%d/actions", p.ID)
+	if c := h.do(admin, "POST", path, map[string]any{"action": "approve", "version": p.Version, "approved_quantity": 1000, "specifications": "Linen; checked"}, &p); c != 200 {
+		t.Fatal(c)
+	}
+	at := time.Now()
+	po.p = swag.PrintPOEvidence{PrintPOLink: swag.PrintPOLink{POID: 7, LineID: 1, SKU: "Swa/Hood/Small"}, Quantity: 1000, CreatedAt: &at, SyncedAt: at, PolledAt: at}
+	var got struct {
+		Error string `json:"error"`
+	}
+	if c := h.do(admin, "POST", path, map[string]any{"action": "link", "version": p.Version, "sku": "Swa/Hood/Small", "confirmation_url": "https://example.com/confirmation", "links": []swag.PrintPOLink{po.p.PrintPOLink}}, &got); c != 422 || !strings.Contains(got.Error, "size of another item") {
+		t.Fatalf("size SKU link = %d %q", c, got.Error)
 	}
 }
 

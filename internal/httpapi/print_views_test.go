@@ -44,7 +44,7 @@ func TestPrintRequesterEvidencePrivacyAndHistory(t *testing.T) {
 			t.Fatal(c)
 		}
 		raw, _ := json.Marshal(got)
-		for _, private := range []string{`"po_id"`, `"line_id"`, `"order_number"`, `"supplier"`, `"po_links"`, "DEMO-PRIVATE", "private-confirmation"} {
+		for _, private := range []string{`"po_id"`, `"line_id"`, `"order_number"`, `"supplier"`, `"po_links"`, "DEMO-PRIVATE", "private-confirmation", `"approved_by"`} {
 			if strings.Contains(string(raw), private) {
 				t.Errorf("%s leaked %s", endpoint, private)
 			}
