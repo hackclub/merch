@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+// SlackDM sends a print-run update to an opted-in requester (internal/slackdm).
+type SlackDM interface {
+	Send(ctx context.Context, channel, text, idempotencyKey string) error
+}
+
 type PrintPOReader interface {
 	Exact(context.Context, swag.PrintPOLink) (swag.PrintPOEvidence, error)
 	Suggest(context.Context, string) ([]swag.PrintPOEvidence, error)

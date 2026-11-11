@@ -11,8 +11,6 @@ import (
 
 // SentEmail is one email the app sent or tried to send (see sent_emails).
 type SentEmail struct {
-	PrintRunID     *int64    `json:"print_run_id,omitempty"`
-	PrintEventID   *int64    `json:"print_event_id,omitempty"`
 	ID             int64     `json:"id"`
 	At             time.Time `json:"at"`
 	Kind           string    `json:"kind"` // received, dispatched or rejected
@@ -26,6 +24,8 @@ type SentEmail struct {
 	Status         string    `json:"status"` // sent, failed, or unsent (no mailer configured)
 	Error          string    `json:"error"`
 	Release        string    `json:"release"` // the server build that wrote it
+	PrintRunID     *int64    `json:"print_run_id,omitempty"`
+	PrintEventID   *int64    `json:"print_event_id,omitempty"`
 }
 
 // LogEmail saves one email and returns it with its id and time.
@@ -39,12 +39,13 @@ func (s *Store) LogEmail(ctx context.Context, e SentEmail) (SentEmail, error) {
 
 // EmailFilter narrows ListEmails; zero values match everything.
 type EmailFilter struct {
-	PrintRunID int64
-	RequestID  int64
-	Kind       string
-	Status     string
-	Before     int64 // only emails with a smaller id (paging)
-	Limit      int
+	RequestID int64
+	Kind      string
+	Status    string
+	Before    int64 // only emails with a smaller id (paging)
+	Limit     int
+
+	PrintRunID int64 // a print run's notifications
 }
 
 // ListEmails lists logged emails, newest first.

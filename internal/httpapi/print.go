@@ -198,23 +198,23 @@ func (c *counted) Read(p []byte) (int, error) {
 
 func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 	var body struct {
-		SlackOptIn bool   `json:"slack_opt_in"`
-		Product    string `json:"product"`
-		Title      string `json:"title"`
-		Finish     string `json:"finish"` // one of the product's finishes; its default when empty
-		Program    string `json:"program"`
-		Deadline   string `json:"deadline"`
-		Quantity   int    `json:"quantity"`
-		FrontURL   string `json:"front_url"`
-		BackURL    string `json:"back_url"`
-		Note       string `json:"note"`
-		NeededBy   string `json:"needed_by"` // YYYY-MM-DD, optional; the form now asks for Deadline
+		Product  string `json:"product"`
+		Title    string `json:"title"`
+		Finish   string `json:"finish"` // one of the product's finishes; its default when empty
+		Program  string `json:"program"`
+		Deadline string `json:"deadline"`
+		Quantity int    `json:"quantity"`
+		FrontURL string `json:"front_url"`
+		BackURL  string `json:"back_url"`
+		Note     string `json:"note"`
+		NeededBy string `json:"needed_by"` // YYYY-MM-DD, optional; the form now asks for Deadline
 		// How many to send them once it's stocked, and where (at least one: everyone sees their run in person).
 		InitialQuantity int           `json:"initial_quantity"`
 		Address         *swag.Address `json:"address"`
 		FrontPreviewURL string        `json:"front_preview_url"`
 		BackPreviewURL  string        `json:"back_preview_url"`
 		Landscape       bool          `json:"landscape"`
+		SlackOptIn      bool          `json:"slack_opt_in"`
 	}
 	if !readJSON(w, r, &body) {
 		return
@@ -285,18 +285,18 @@ func (s *server) createPrintRequest(w http.ResponseWriter, r *http.Request, v vi
 		return
 	}
 	pr, err := s.Store.CreatePrintRequest(r.Context(), store.PrintRequest{
-		SlackOptIn: body.SlackOptIn && s.PrintSlack != nil && v.user.SlackID != "",
-		UserID:     v.user.ID, Product: p.Key, Title: title, Finish: finish, Program: program, Deadline: deadline, Quantity: body.Quantity, FrontURL: strings.TrimSpace(body.FrontURL),
+		UserID: v.user.ID, Product: p.Key, Title: title, Finish: finish, Program: program, Deadline: deadline, Quantity: body.Quantity, FrontURL: strings.TrimSpace(body.FrontURL),
 		BackURL: strings.TrimSpace(body.BackURL), Note: note, NeededBy: due, EstimateCents: e.TotalCents,
 		InitialQuantity: body.InitialQuantity, Address: body.Address, FrontPreviewURL: body.FrontPreviewURL,
 		BackPreviewURL: body.BackPreviewURL, Landscape: body.Landscape,
+		SlackOptIn: body.SlackOptIn && s.PrintSlack != nil && v.user.SlackID != "",
 	})
 	if err != nil {
 		s.serverErr(w, err)
 		return
 	}
 	props := map[string]any{"print_request_id": pr.ID, "product": p.Key, "finish": pr.Finish, "quantity": pr.Quantity, "estimate_cents": pr.EstimateCents,
-		"slack_opt_in": pr.SlackOptIn, "has_back": pr.BackURL != "", "same_back": pr.BackURL == pr.FrontURL, "has_needed_by": due != nil, "initial_quantity": pr.InitialQuantity}
+		"has_back": pr.BackURL != "", "same_back": pr.BackURL == pr.FrontURL, "has_needed_by": due != nil, "initial_quantity": pr.InitialQuantity, "slack_opt_in": pr.SlackOptIn}
 	if pr.Address != nil {
 		props["country"] = pr.Address.Country
 	}
@@ -335,41 +335,4 @@ func (s *server) adminPrintRequests(w http.ResponseWriter, r *http.Request, v vi
 func (s *server) adminUpdatePrintRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 	s.trackAdmin(r, v, "print_request_updated", map[string]any{"refused": true})
 	writeErr(w, http.StatusConflict, "Use the Print requests queue for versioned actions; direct status changes are no longer supported.")
-}
-
-// printItem is the shop item a stocked print run is listed as: the one under
-// its SKU, or a new one made from the run's art, open to everyone.
-func (s *server) printItem(ctx context.Context, pr *store.PrintRequest) (swag.Item, error) {
-	items, err := s.Store.ItemsBySKU(ctx, []string{pr.SKU})
-	if err != nil || len(items) > 0 {
-		return firstItem(items), err
-	}
-	p, _ := swag.PrintProductByKey(pr.Product)
-	it := p.Item(pr.SKU, pr.Title, pr.Finish, pr.Landscape)
-	it.Visible = false
-	images := []string{}
-	for _, u := range []string{pr.FrontPreviewURL, pr.BackPreviewURL} {
-		if u != "" {
-			images = append(images, u)
-		}
-	}
-	if len(images) == 0 {
-		images = []string{pr.FrontURL}
-	}
-	it.Images = images
-	created, err := s.Store.CreateItem(ctx, it)
-	if errors.Is(err, store.ErrConflict) {
-		items, err := s.Store.ItemsBySKU(ctx, []string{pr.SKU})
-		if err == nil && len(items) == 1 {
-			return items[0], nil
-		}
-	}
-	return created, err
-}
-
-func firstItem(items []swag.Item) swag.Item {
-	if len(items) == 0 {
-		return swag.Item{}
-	}
-	return items[0]
 }

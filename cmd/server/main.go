@@ -126,9 +126,7 @@ func run(log *slog.Logger) error {
 		poReader = reader
 	}
 	warehouse.BillingProfileID = cfg.TheseusBillingProfileID
-	var slackSender interface {
-		Send(context.Context, string, string, string) error
-	}
+	var slackSender httpapi.SlackDM
 	if cfg.PrintSlackToken != "" {
 		slackSender = slackdm.New("https://slack.com/api", cfg.PrintSlackToken, nil)
 	}

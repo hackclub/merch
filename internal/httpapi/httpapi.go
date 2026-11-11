@@ -56,25 +56,24 @@ type ImageStore interface {
 }
 
 type Deps struct {
-	PrintPOs   PrintPOReader
-	PrintSlack interface {
-		Send(context.Context, string, string, string) error
-	}
-	WorkerContext context.Context // production lifecycle; nil in tests
-	Config        *config.Config
-	Store         *store.Store
-	Provider      auth.Provider
-	Authors       authors.Directory
-	Warehouse     Warehouse
-	Images        ImageStore    // nil disables image uploads
-	Places        AddressFinder // nil disables address autocomplete
-	Payments      Payments      // card payments for international shipping (Stripe)
-	Mailer        Mailer        // nil sends no emails
-	Static        fs.FS         // built PWA (web/build); nil disables static serving
-	Now           func() time.Time
-	Log           *slog.Logger
-	Warm          bool // load caches (shipping history) in the background at start
-	RateLimit     bool // per-client limits on /api and /auth (guard.go)
+	Config    *config.Config
+	Store     *store.Store
+	Provider  auth.Provider
+	Authors   authors.Directory
+	Warehouse Warehouse
+	Images    ImageStore    // nil disables image uploads
+	Places    AddressFinder // nil disables address autocomplete
+	Payments  Payments      // card payments for international shipping (Stripe)
+	Mailer    Mailer        // nil sends no emails
+	Static    fs.FS         // built PWA (web/build); nil disables static serving
+	Now       func() time.Time
+	Log       *slog.Logger
+	Warm      bool // load caches (shipping history) in the background at start
+	RateLimit bool // per-client limits on /api and /auth (guard.go)
+
+	PrintPOs      PrintPOReader   // nil disables PO linking
+	PrintSlack    SlackDM         // nil sends no Slack DMs
+	WorkerContext context.Context // runs the print workers; nil in tests
 }
 
 type server struct {
@@ -392,9 +391,9 @@ func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 }
 
 type meResponse struct {
-	PrintSlackAvailable bool        `json:"print_slack_available"`
 	User                *store.User `json:"user"`
 	Roles               roles       `json:"roles"`
+	PrintSlackAvailable bool        `json:"print_slack_available"`
 }
 
 func (s *server) me(w http.ResponseWriter, r *http.Request) {
@@ -1469,6 +1468,8 @@ func (s *server) adminUpdateSubmission(w http.ResponseWriter, r *http.Request, v
 	s.trackAdmin(r, v, "submission_updated", map[string]any{"refused": true})
 	writeErr(w, http.StatusConflict, "Use the Print requests queue for versioned actions; old submissions remain available there.")
 }
+
+// ---- static PWA ----
 
 func (s *server) static(w http.ResponseWriter, r *http.Request) {
 	if s.Static == nil {

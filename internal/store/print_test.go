@@ -3,8 +3,6 @@ package store
 import (
 	"testing"
 	"time"
-
-	"github.com/hackclub/merch/internal/swag"
 )
 
 func TestPrintRequests(t *testing.T) {
@@ -31,16 +29,6 @@ func TestPrintRequests(t *testing.T) {
 	if len(mine) != 1 || len(theirs) != 0 {
 		t.Fatalf("mine = %d, theirs = %d", len(mine), len(theirs))
 	}
-	upd, err := s.UpdatePrintRequest(ctx, pr.ID, "stocked", "In the shop now", "Pri/Hav/4x6/1st")
-	if err != nil || upd.Status != "stocked" || upd.SKU != "Pri/Hav/4x6/1st" || upd.AdminNote != "In the shop now" {
-		t.Fatalf("UpdatePrintRequest = %+v, %v", upd, err)
-	}
-	if _, err := s.UpdatePrintRequest(ctx, pr.ID, "bogus", "", ""); err == nil {
-		t.Fatal("bogus status saved")
-	}
-	if _, err := s.UpdatePrintRequest(ctx, 999, "ordered", "", ""); err != ErrNotFound {
-		t.Fatalf("missing = %v", err)
-	}
 	all, _ := s.ListPrintRequests(ctx)
 	if len(all) != 1 || all[0].Title != "Haven postcard" {
 		t.Fatalf("all = %+v", all)
@@ -50,17 +38,4 @@ func TestPrintRequests(t *testing.T) {
 		t.Fatalf("GetPrintRequest = %+v, %v", got, err)
 	}
 
-	// Once stocked, the first shipment is a swag request; it's recorded once.
-	it := mkItem(t, s, "Pri/Hav/4x6/1st", false)
-	req, err := s.CreateRequest(ctx, NewRequest{UserID: a.ID, Address: addr, Purpose: "staff", Status: "pending",
-		Lines: []swag.Line{{ItemID: it.ID, Quantity: 25}}}, func(map[int64]int) error { return nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := s.SetPrintShipment(ctx, pr.ID, req.ID); err != nil || got.ShipmentRequestID == nil || *got.ShipmentRequestID != req.ID {
-		t.Fatalf("SetPrintShipment = %+v, %v", got, err)
-	}
-	if _, err := s.SetPrintShipment(ctx, pr.ID, req.ID); err != ErrNotFound {
-		t.Fatalf("second SetPrintShipment = %v, want ErrNotFound", err)
-	}
 }

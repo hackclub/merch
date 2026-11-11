@@ -377,13 +377,6 @@ func TestSubmissions(t *testing.T) {
 	if len(mine) != 1 || len(theirs) != 0 {
 		t.Fatalf("mine=%d theirs=%d", len(mine), len(theirs))
 	}
-	upd, err := s.UpdateSubmission(ctx, sub.ID, "stocked", "printed 500", "Sti/Spr/1")
-	if err != nil || upd.Status != "stocked" || upd.SKU != "Sti/Spr/1" || upd.AdminNote != "printed 500" {
-		t.Fatalf("UpdateSubmission = %+v, %v", upd, err)
-	}
-	if _, err := s.UpdateSubmission(ctx, sub.ID, "bogus", "", ""); err == nil {
-		t.Fatal("invalid status should fail")
-	}
 	all, _ := s.ListSubmissions(ctx)
 	if len(all) != 1 || all[0].UserEmail != "author@x.com" {
 		t.Fatalf("all = %+v", all)

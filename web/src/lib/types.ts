@@ -49,8 +49,6 @@ export type APIKey = {
 
 // One email the site sent (or tried to), word for word.
 export type SentEmail = {
-	print_run_id?:number;
-	print_event_id?:number;
 	id: number;
 	at: string;
 	kind: 'received' | 'dispatched' | 'rejected';
@@ -61,6 +59,8 @@ export type SentEmail = {
 	body: string;
 	status: 'sent' | 'failed' | 'unsent';
 	error: string;
+	print_run_id?: number; // a print run's notification
+	print_event_id?: number;
 };
 
 export type Settings = {
@@ -98,7 +98,6 @@ export type Line = { item_id: number; quantity: number; sku?: string };
 export type RequestStatus = 'awaiting_payment' | 'pending' | 'dispatched' | 'rejected' | 'cancelled';
 
 export type SwagRequest = {
-	print_run_id?: number;
 	id: number;
 	user_id: number;
 	user_email?: string;
@@ -127,6 +126,7 @@ export type SwagRequest = {
 	estimate?: ShippingEstimate; // while it waits to ship; postage only for admins
 	costs?: Costs; // admins: what it costs Hack Club to send; once shipped, with the warehouse's charges where it has them
 	costs_actual?: string[]; // which parts of a shipped request's costs are the warehouse's own charges
+	print_run_id?: number; // the print run whose first shipment this is
 };
 
 export type SubmissionStatus = 'submitted' | 'approved' | 'printing' | 'stocked' | 'rejected';
@@ -147,7 +147,7 @@ export type Submission = {
 };
 
 export type User = { id: number; email: string; name: string; slack_id: string; address?: Address };
-export type Me = { user: User | null; roles: { author: boolean; admin: boolean };print_slack_available?:boolean };
+export type Me = { user: User | null; roles: { author: boolean; admin: boolean }; print_slack_available?: boolean };
 
 export type WarehouseSKU = {
 	sku: string;

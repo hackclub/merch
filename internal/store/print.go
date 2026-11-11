@@ -13,27 +13,24 @@ import (
 // PrintRequest is staff asking for postcards or posters to be printed and
 // stocked in the warehouse (swag.PrintProducts).
 type PrintRequest struct {
-	PrintRunID    *int64          `json:"print_run_id,omitempty"`
-	PrintStage    swag.PrintStage `json:"print_stage,omitempty"`
-	SlackOptIn    bool            `json:"slack_opt_in"`
-	ID            int64           `json:"id"`
-	UserID        int64           `json:"user_id"`
-	UserEmail     string          `json:"user_email,omitempty"`
-	UserName      string          `json:"user_name,omitempty"`
-	Product       string          `json:"product"`
-	Title         string          `json:"title"`    // what it's called in the warehouse and the shop
-	Finish        string          `json:"finish"`   // the paper; '' on older requests (the product's default)
-	Program       string          `json:"program"`  // the program it's for
-	Deadline      string          `json:"deadline"` // the program's final deadline, in their words
-	Quantity      int             `json:"quantity"`
-	FrontURL      string          `json:"front_url"`
-	BackURL       string          `json:"back_url"`
-	Note          string          `json:"note"`
-	NeededBy      *time.Time      `json:"needed_by"` // older requests only
-	EstimateCents int             `json:"estimate_cents"`
-	Status        string          `json:"status"` // submitted → ordered → stocked, or rejected
-	AdminNote     string          `json:"admin_note"`
-	SKU           string          `json:"sku"`
+	ID            int64      `json:"id"`
+	UserID        int64      `json:"user_id"`
+	UserEmail     string     `json:"user_email,omitempty"`
+	UserName      string     `json:"user_name,omitempty"`
+	Product       string     `json:"product"`
+	Title         string     `json:"title"`    // what it's called in the warehouse and the shop
+	Finish        string     `json:"finish"`   // the paper; '' on older requests (the product's default)
+	Program       string     `json:"program"`  // the program it's for
+	Deadline      string     `json:"deadline"` // the program's final deadline, in their words
+	Quantity      int        `json:"quantity"`
+	FrontURL      string     `json:"front_url"`
+	BackURL       string     `json:"back_url"`
+	Note          string     `json:"note"`
+	NeededBy      *time.Time `json:"needed_by"` // older requests only
+	EstimateCents int        `json:"estimate_cents"`
+	Status        string     `json:"status"` // submitted → ordered → stocked, or rejected
+	AdminNote     string     `json:"admin_note"`
+	SKU           string     `json:"sku"`
 	// The first shipment to them once it's stocked: how many, where, and the
 	// swag request it became.
 	InitialQuantity   int           `json:"initial_quantity"`
@@ -45,6 +42,11 @@ type PrintRequest struct {
 	Landscape       bool      `json:"landscape"` // the art is wider than tall
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+
+	// Its canonical print run (print_runs), and whether they want Slack DMs about it.
+	PrintRunID *int64          `json:"print_run_id,omitempty"`
+	PrintStage swag.PrintStage `json:"print_stage,omitempty"`
+	SlackOptIn bool            `json:"slack_opt_in"`
 }
 
 const printRequestSelect = `
@@ -98,32 +100,4 @@ func (s *Store) ListPrintRequests(ctx context.Context) ([]*PrintRequest, error) 
 		return nil, err
 	}
 	return collect(rows, func(r pgx.Rows) (*PrintRequest, error) { return scanPrintRequest(r) })
-}
-
-// UpdatePrintRequest is an admin moving a print request along, with a note the
-// requester sees and, once stocked, the warehouse SKU it's under.
-func (s *Store) UpdatePrintRequest(ctx context.Context, id int64, status, adminNote, sku string) (*PrintRequest, error) {
-	tag, err := s.pool.Exec(ctx, `UPDATE print_requests SET status = $2, admin_note = $3, sku = $4, updated_at = now() WHERE id = $1`,
-		id, status, adminNote, sku)
-	if err != nil {
-		return nil, mapErr(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return nil, ErrNotFound
-	}
-	return s.GetPrintRequest(ctx, id)
-}
-
-// SetPrintShipment records the swag request a print run's first shipment
-// became. It's set once: ErrNotFound when it already has one.
-func (s *Store) SetPrintShipment(ctx context.Context, id, requestID int64) (*PrintRequest, error) {
-	tag, err := s.pool.Exec(ctx, `UPDATE print_requests SET shipment_request_id = $2, updated_at = now()
-		WHERE id = $1 AND shipment_request_id IS NULL`, id, requestID)
-	if err != nil {
-		return nil, mapErr(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return nil, ErrNotFound
-	}
-	return s.GetPrintRequest(ctx, id)
 }

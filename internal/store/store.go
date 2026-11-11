@@ -318,7 +318,6 @@ type RequestLine struct {
 }
 
 type Request struct {
-	PrintRunID       *int64        `json:"print_run_id,omitempty"`
 	ID               int64         `json:"id"`
 	UserID           int64         `json:"user_id"`
 	UserEmail        string        `json:"user_email,omitempty"`
@@ -345,6 +344,7 @@ type Request struct {
 
 	// Stripe: the request's card payment (paid once paid_at is set).
 	StripePaymentIntent string `json:"stripe_payment_intent,omitempty"`
+	PrintRunID          *int64 `json:"print_run_id,omitempty"`
 }
 
 type NewRequest struct {
@@ -729,25 +729,27 @@ func (s *Store) SetTracking(ctx context.Context, id int64, tracking, carrier str
 // ---- author submissions ----
 
 type Submission struct {
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"user_id"`
+	UserEmail   string    `json:"user_email,omitempty"`
+	Program     string    `json:"program"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Kind        string    `json:"kind"`
+	FileURL     string    `json:"file_url"`
+	Quantity    int       `json:"quantity"`
+	Status      string    `json:"status"`
+	AdminNote   string    `json:"admin_note"`
+	SKU         string    `json:"sku"`
+	CreatedAt   time.Time `json:"created_at"`
+
+	// Its canonical print run, Slack DMs, and the first shipment (how many, where), as on print requests.
 	PrintRunID      *int64          `json:"print_run_id,omitempty"`
 	PrintStage      swag.PrintStage `json:"print_stage,omitempty"`
 	SlackOptIn      bool            `json:"slack_opt_in"`
 	InitialQuantity int             `json:"initial_quantity"`
 	Address         *swag.Address   `json:"address"`
 	Deadline        string          `json:"deadline"`
-	ID              int64           `json:"id"`
-	UserID          int64           `json:"user_id"`
-	UserEmail       string          `json:"user_email,omitempty"`
-	Program         string          `json:"program"`
-	Title           string          `json:"title"`
-	Description     string          `json:"description"`
-	Kind            string          `json:"kind"`
-	FileURL         string          `json:"file_url"`
-	Quantity        int             `json:"quantity"`
-	Status          string          `json:"status"`
-	AdminNote       string          `json:"admin_note"`
-	SKU             string          `json:"sku"`
-	CreatedAt       time.Time       `json:"created_at"`
 }
 
 const submissionSelect = `
@@ -791,22 +793,6 @@ func (s *Store) ListSubmissions(ctx context.Context) ([]*Submission, error) {
 		return nil, err
 	}
 	return collect(rows, func(r pgx.Rows) (*Submission, error) { return scanSubmission(r) })
-}
-
-func (s *Store) GetSubmission(ctx context.Context, id int64) (*Submission, error) {
-	return scanSubmission(s.pool.QueryRow(ctx, submissionSelect+` WHERE s.id = $1`, id))
-}
-
-func (s *Store) UpdateSubmission(ctx context.Context, id int64, status, adminNote, sku string) (*Submission, error) {
-	tag, err := s.pool.Exec(ctx, `UPDATE author_submissions SET status = $2, admin_note = $3, sku = $4, updated_at = now() WHERE id = $1`,
-		id, status, adminNote, sku)
-	if err != nil {
-		return nil, mapErr(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return nil, ErrNotFound
-	}
-	return scanSubmission(s.pool.QueryRow(ctx, submissionSelect+` WHERE s.id = $1`, id))
 }
 
 // ---- helpers ----

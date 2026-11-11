@@ -10,11 +10,8 @@ import (
 )
 
 type Config struct {
-	PrintPODatabaseURL string
-	PrintPOAutomatic   bool
-	PrintSlackToken    string
-	Port               string
-	BaseURL            string // public origin, e.g. https://swag.hackclub.com
+	Port    string
+	BaseURL string // public origin, e.g. https://swag.hackclub.com
 	// Other origins the app is reachable at (e.g. http://porygon:5173 over
 	// Tailscale). Each one's /auth/callback must be registered with Hack Club Auth.
 	ExtraBaseURLs []string
@@ -65,6 +62,12 @@ type Config struct {
 
 	// Directory holding the built PWA (web/build). Empty disables static serving.
 	StaticDir string
+
+	// Print runs: the dedicated read-only PO login, whether PO evidence moves
+	// runs on its own, and an optional Slack bot for opted-in DMs.
+	PrintPODatabaseURL string
+	PrintPOAutomatic   bool
+	PrintSlackToken    string
 }
 
 // Load builds a Config from getenv (usually os.Getenv).

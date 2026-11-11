@@ -3,7 +3,7 @@
 // the estimate's wording. The server checks uploads again (swag.CheckArt).
 
 import { dateRange, spanText } from './shipping';
-import type {Address} from './types';
+import type { Address } from './types';
 
 export type PrintProduct = {
 	key: string;
@@ -50,7 +50,6 @@ export type PrintEstimate = {
 };
 
 export type PrintRequest = {
-	address?: Address|null;
 	id: number;
 	user_email?: string;
 	user_name?: string;
@@ -71,6 +70,7 @@ export type PrintRequest = {
 	initial_quantity: number; // sent to them once it's stocked
 	shipment_request_id: number | null; // the request that became
 	created_at: string;
+	address?: Address | null; // where the first shipment goes
 };
 
 export const printStatusLabel: Record<PrintRequest['status'], string> = {
