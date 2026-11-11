@@ -128,9 +128,23 @@ export function nextOwner(r: Pick<PrintRun, 'stage' | 'legacy_review' | 'reconci
 	);
 }
 export function poState(p: PO, now = Date.now()): string {
-	if (!p.synced_at || now - new Date(p.synced_at).getTime() > 3600000) return 'Not yet confirmed in latest copy';
+	if (
+		!p.synced_at ||
+		!Number.isFinite(Date.parse(p.synced_at)) ||
+		Date.parse(p.synced_at) > now ||
+		now - new Date(p.synced_at).getTime() > 3600000
+	)
+		return 'Not yet confirmed in latest copy';
 	if (p.draft || p.deleted) return 'Needs HQ review: draft or deleted PO';
 	return p.completed ? 'PO complete (whole order)' : 'Received quantity unavailable';
+}
+export function printPOStatus(r: Pick<PrintRun, 'poll_error' | 'links'>, now = Date.now()): string {
+	if (r.poll_error) return 'Not yet confirmed in latest copy';
+	if (!r.links.length) return 'Not linked';
+	const states = r.links.map((p) => poState(p, now));
+	if (states.includes('Not yet confirmed in latest copy')) return 'Not yet confirmed in latest copy';
+	if (states.some((s) => s.startsWith('Needs HQ review'))) return 'Needs HQ review';
+	return r.links.every((p) => p.completed) ? 'PO complete (whole order)' : 'Received quantity unavailable';
 }
 export function actionPreview(
 	r: PrintRun,
@@ -139,7 +153,8 @@ export function actionPreview(
 	note: string,
 	eta: string,
 	now = Date.now(),
-	automatic = true
+	automatic = true,
+	updateSource = 'HQ update'
 ): string {
 	const item = r.request.title;
 	switch (action) {
@@ -157,6 +172,8 @@ export function actionPreview(
 						p.po_id > 0 &&
 						p.line_id > 0 &&
 						p.sku === r.sku &&
+						p.quantity > 0 &&
+						Date.parse(p.synced_at) === Date.parse(r.links[0].synced_at) &&
 						!p.draft &&
 						!p.deleted &&
 						!!p.created_at &&
@@ -184,7 +201,7 @@ export function actionPreview(
 		case 'reject':
 			return `Your ${item} request was rejected: ${note}. No order was placed.`;
 		case 'cancel':
-			return `Your ${item} print request was cancelled. ${note}. ${['ordered', 'in_transit'].includes(r.stage) ? 'Printer confirmed cancellation.' : 'No order was placed.'}`;
+			return `Your ${item} print request was cancelled. ${note}. ${['ordered', 'in_transit'].includes(r.stage) || r.links?.some((p) => !p.draft && !p.deleted && !!p.created_at) ? 'Printer confirmed cancellation.' : 'No order was placed.'}`;
 		case 'dispatch':
 			return `Your print run has shipped from the printer to the warehouse. Estimated arrival: ${eta || r.eta || 'not confirmed'}. This is not your first parcel.`;
 		case 'release':
@@ -192,11 +209,15 @@ export function actionPreview(
 		case 'audit_legacy':
 			return 'Records verified legacy evidence without replaying historical email or creating a second parcel.';
 		case 'review_receipt':
-			return note + ' Source: warehouse confirmation. Received quantity unavailable. The current stage and first parcel stay linked.';
+			return note + ' Source: ' + updateSource + '. Received quantity unavailable.';
 		case 'refresh_po':
 			return 'Checks the latest PO copy. A newly confirmed stage sends its corresponding requester update; stale evidence does not advance receipt.';
 		case 'update':
-			return note + (eta ? ` Expected warehouse arrival: ${eta} (HQ update). This is not a delivery promise.` : '');
+			return (
+				note + (eta ? ` Expected warehouse arrival: ${eta} (${updateSource}). This is not a delivery promise.` : '')
+			);
+		case 'review_order':
+			return note;
 		default:
 			return 'This saves a timeline event. No stage email is sent until the stage changes.';
 	}

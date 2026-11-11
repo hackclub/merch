@@ -297,7 +297,7 @@
 
 		<form bind:this={formEl} onsubmit={submit}>
 			<p>Email at every stage. No printer order is placed on submission.</p>
-			{#if session.me?.print_slack_available}<label class="inline"><input type="checkbox" name="print_slack_opt_in" bind:checked={slackOptIn}/>Also send me Slack DMs (optional; off by default)</label>{/if}
+			{#if session.me?.print_slack_available}<label class="slack-opt-in"><input type="checkbox" name="print_slack_opt_in" bind:checked={slackOptIn}/>Also send me Slack DMs (optional; off by default)</label>{/if}
 			<h3>Your art</h3>
 			<fieldset class="inline-choices">
 				<legend>Back</legend>
@@ -391,7 +391,7 @@
 			</div>
 
 			<h3>How many should we send you first?</h3>
-			<p>When the print run reaches our warehouse, we'll send you this many so you can see them in person. It goes out as a request on your account, like any other.</p>
+			<p>After warehouse receipt and HQ shop release, we'll create a shipment request for this many on your account. It still needs shipment review, and outside the US you'll pay its postage.</p>
 			<label>First shipment
 				<select name="initial_quantity" bind:value={initial}>
 					{#each firstShipmentOptions(product, quantity) as n (n)}<option value={n}>{n.toLocaleString('en-US')}</option>{/each}
@@ -443,6 +443,8 @@
 </section>
 
 <style>
+	form label.slack-opt-in { display: flex; align-items: baseline; gap: 0.5rem; }
+	.slack-opt-in input { width: auto; }
 	.print p { margin: 0 0 0.75rem; }
 	h2 { margin: 2rem 0 1rem; padding-top: 1.5rem; border-top: 1px solid var(--smoke); font-size: 1.25rem; line-height: 1.3; }
 	h3 { margin: 1.75rem 0 0.5rem; font-size: 1rem; line-height: 1.3; }

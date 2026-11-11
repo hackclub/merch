@@ -634,13 +634,13 @@ picked for printing, checked in the browser: `product`, `side`, `fit` = `bleed`,
   postage, `postage_basis` (the country's rate card, or `international` without one), sample counts, `restock` when a line is backordered, or `error` when it won't pack; over 3 lb abroad also `weight_oz`, `over_oz` and `package`), `request_created`, `request_refused` (the
   rule it broke), `request_cancelled`, `customs_invoice` (someone downloaded a request's customs
   invoice PDF: `request_id`, `country`, `status`, `lines`, `value_cents`, `admin` when an admin got
-  someone else's), `submission_created`,
+  someone else's), `submission_created` (`submission_id`, `kind`, `quantity`, `initial_quantity`, `slack_opt_in`; no program text),
   `print_file_uploaded` (print art stored on the CDN: `product`, `kind` = `print` or `preview`, `bytes`,
   `type`, and for print files `fit` and `dpi`),
   `print_request_created` (`print_request_id`, `product`, `finish`, `quantity`, `estimate_cents`, `has_back`,
   `same_back` (the same art on both sides, the default), `has_needed_by` (always false since the
   form asks for a written deadline; older requests with a date also have `days_until_needed` against
-  the estimate's `max_days`); `initial_quantity` and the first shipment's `country`; never the item
+  the estimate's `max_days`); `slack_opt_in`, `initial_quantity` and the first shipment's `country`; never the item
   name, program, deadline, note or address). They carry the page's `visit` (the
   `X-Merch-Visit` header) and `path` (from `Referer`), so they line up with browser events.
 - Admin events (`internal/httpapi/insights.go`). Request events belong to the requester's
@@ -765,21 +765,48 @@ and where, so they see it in person once it arrives.
   transit from shipping history for that package and country, `to_you_days`, `arrive_from`/`arrive_by`),
   and the form lists each leg and the arrival dates. When Vistaprint prices change, add the new orders to
   `prices` and keep `TestEstimatePrintPrices` in step.
-- **Requests** (`print_requests`; `POST /api/print-requests`, `GET /api/print-requests` on My requests):
-  product, the item's warehouse name (`title`), the `program` it's for, quantity, front and back URLs
-  (the same art on both sides by default, so `back_url` = `front_url`; or a different back), how
-  they'll use it (required; the form asks for detail because people tend to print too few), the
-  program's final `deadline` in their words (required; replaced the optional needed-by date on
-  2026-10-23), the first shipment (`initial_quantity`, required since 2026-10-23: at least 1, postcards in the shop's packs; and `address`,
-  whose line 1 has the Places autocomplete), and the estimate when sent. Status: `submitted → ordered → stocked`, or `rejected`; admins move it and
-  add a note the requester sees on the Admin page's submissions tab (`/api/admin/print-requests`).
-  **Stocked needs the SKU** and does two things (`sendFirstShipment`, once; saving again retries): lists
-  the SKU in the shop if no item has it (visible, named after the request, its trimmed previews as images,
-  landscape when the art was, postcards packed as postcards), and makes the first shipment a `pending`
-  swag request on the requester's account (`purpose` staff, a note naming the print request; per-person
-  limits and stock holds don't apply). It's reviewed and shipped like any request, and abroad it starts in
-  `awaiting_payment`: they pay its postage. Anyone signed in can send one, like the staff purpose, so
-  reviewers check the email.
+- **Canonical print runs** (`print_runs`): both entry paths insert a shared run atomically,
+  with origin `staff` or `author`; migrated rows use `legacy`. The Admin **Print requests**
+  queue replaces Submissions; `/admin?tab=submissions` and the old read APIs still work.
+  `/print-requests/{id}` and My requests show the same timeline and real first-parcel state.
+  Author material outside standard products uses custom specification review.
+- **Actions and history:** Submitted → Approved → Ordered from printer → In transit →
+  Received at warehouse → Available, plus Rejected and Cancelled. PO completion may skip
+  unrecorded dispatch. HQ approves quantity/specifications/budget and selects exact PO/line/SKU
+  links plus printer confirmation. SKU matches only suggest candidates. A row lock and required
+  version prevent lost updates (409 asks the reviewer to reload). Request, approval, immutable
+  artwork revision, PO evidence, public updates and private HQ notes stay separate. Reorders
+  create a fresh run for the same item/SKU; they do not reuse a PO.
+- **PO copy:** `internal/printpo` reads only the needed purchase-order columns through
+  `PRINT_PO_DATABASE_URL`, a dedicated column-scoped login; startup rejects broad effective
+  table privileges. Never configure an agent warehouse login in merch. `PRINT_PO_AUTOMATIC`
+  defaults false and requires that URL when enabled. The bounded poller uses exact identities,
+  current source snapshot and a one-hour freshness limit; split links must cover the approved
+  quantity and all complete. Draft/deleted/wrong/old evidence never advances a run. Show source
+  sync, poll and completion times separately. Missing or stale evidence says **Not yet confirmed
+  in latest copy**. Carrier scans and stock changes never confirm receipt.
+- **Receipt and release:** completion is whole-PO evidence, so always say **Received quantity
+  unavailable**. Reopened/corrected POs raise reconciliation without reversing receipt or release;
+  HQ records a sourced receipt review to clear a correction. New listings remain hidden until
+  explicit release with complete images/SKU and fresh positive sellable stock. Existing visible
+  restocks keep their listing. Release atomically publishes and creates/links one first shipment,
+  returning that same parcel on retries. US parcels are pending review; international parcels
+  await their own postage payment. Existing shipment review, payment and dispatch own fulfillment.
+  Available to request is zero while hidden, otherwise max(0, warehouse sellable − open merch
+  holds). Dispatched warehouse allocations are already excluded from sellable stock.
+- **Notifications:** each transition and its durable outbox job commit together; failures never
+  undo a stage. The worker persists a sending lease before transport, uses a stable per-event
+  idempotency key, retries with backoff, and logs the saved wording in sent-emails with run/event
+  references. A delivery left unresolved beyond the provider deduplication window becomes
+  uncertain; HQ must audit the provider before retrying. Notification retry is independent of
+  stage actions. Optional `PRINT_SLACK_BOT_TOKEN` enables verified-account DMs only after the
+  requester opts in; off by default. Slack sends stage facts and the request link, without
+  addresses, invoice details or free-text notes. Opt-out cancels pending DMs.
+- **Migration 00037:** source IDs, original artwork, known history and existing parcel links are
+  preserved. Unknown dates stay null. Printing without order evidence needs review; stocked is
+  legacy receipt pending listing/parcel audit. Migration queues no old emails and creates no
+  parcels. Audit must verify an existing parcel belongs to the requester and contains the SKU.
+  Renumber the migration if main has taken its number before landing.
 
 ## Agent API
 
@@ -804,7 +831,8 @@ A scheduled agent (about every 3 hours) reviews pending requests through `/api/a
   `POST …/lines` records a change AGH has already made and confirmed to a dispatched, unmailed
   request (see "Backorders"); it requires `warehouse_confirmed_by` and never touches the
   warehouse order. Agents never edit warehouse orders themselves.
-  `GET /api/agent/print-requests` lists staff print requests read-only, so the agent can
+  `GET /api/agent/print-runs` lists the unified queue read-only; the compatible
+  `GET /api/agent/print-requests` still lists staff source records, so the agent can
   tell Zach about new ones and remind him when one sits unanswered; only admins act on them.
   `POST …/refresh` pulls tracking from mail.hackclub.com (the admin refresh handler); nothing
   pulls it automatically. `POST /api/agent/requests/refresh` pulls up to 60 dispatched requests

@@ -1,6 +1,10 @@
 import { it, expect } from 'vitest';
 import { nextOwner, poState, actionPreview, type PO, type PrintRun } from './print-run';
-import { filterPrintRuns } from './print-run';
+import { filterPrintRuns, printPOStatus } from './print-run';
+it('does not report a retained completed flag as confirmation when the latest poll failed', () => {
+	const r = { poll_error: 'Not yet confirmed in latest copy', links: [{ completed: true }] } as PrintRun;
+	expect(printPOStatus(r)).toBe('Not yet confirmed in latest copy');
+});
 it('keeps reopened released runs in the needs-action queue', () => {
 	const r = {
 		id: 1,
@@ -25,6 +29,9 @@ it('separates receipt, release and parcel dispatch', () => {
 	const r = { stage: 'received', request: { title: 'Demo cards', initial_quantity: 25 } } as PrintRun;
 	expect(actionPreview(r, 'release', 800, '', '')).toContain('Your first parcel has not shipped');
 	expect(actionPreview(r, 'approve', 800, '', '')).toContain('HQ will place the printer order next');
+	expect(actionPreview(r, 'review_order', 800, 'Quantity reviewed with printer', '')).toBe(
+		'Quantity reviewed with printer'
+	);
 });
 it('previews only confirmed linked PO stage updates', () => {
 	const now = Date.parse('2026-11-11T15:00:00Z');
@@ -48,6 +55,14 @@ it('previews only confirmed linked PO stage updates', () => {
 	} as PrintRun;
 	expect(actionPreview(r, 'link', 800, '', '', now, false)).toContain('Automatic confirmation is off');
 	expect(actionPreview(r, 'link', 800, '', '', now, true)).toContain('marked your linked purchase order complete');
+	const split = {
+		...r,
+		links: [
+			{ ...p, quantity: 400 },
+			{ ...p, po_id: 43, line_id: 11, quantity: 400, synced_at: '2026-11-11T14:58:00Z' }
+		]
+	};
+	expect(actionPreview(split, 'link', 800, '', '', now, true)).toContain('does not confirm ordering');
 	expect(actionPreview({ ...r, links: [{ ...p, draft: true }] }, 'link', 800, '', '', now, true)).toContain(
 		'does not confirm ordering'
 	);

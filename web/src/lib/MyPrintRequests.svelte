@@ -24,6 +24,12 @@
 					?.inbound ?? 'Unknown'} inbound
 			</p>
 			<p>Requested {r.request.quantity.toLocaleString()} · Approved {r.approved_quantity || 'Not yet approved'}</p>
+			<p class="muted">
+				Stock synced: {r.stock?.synced_at ? new Date(r.stock.synced_at).toLocaleString() : 'Unknown'}{r.stock
+					?.synced_at && Date.now() - Date.parse(r.stock.synced_at) > 60000
+					? ' (stale; availability is not promised)'
+					: ''}
+			</p>
 			{#if r.shipment_request_id}<p>
 					<a href={`/requests#request-${r.shipment_request_id}`}>First shipment request #{r.shipment_request_id}</a> · {r.shipment_status ===
 					'pending'
@@ -38,3 +44,9 @@
 				</p>{/if}
 		</div>{/each}
 	<h2>Shipment requests</h2>{/if}
+
+<style>
+	.card {
+		margin-bottom: 16px;
+	}
+</style>

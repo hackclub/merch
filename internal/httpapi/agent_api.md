@@ -60,7 +60,8 @@ One request, with the same fields, plus:
 Every email the site sent, word for word, newest first (100 by default): `id`, `at`, `kind`
 (`received`, `dispatched`, `rejected` or `changed`), `request_id`, `to`, `subject`, `preview`, `body`
 (plain text), `status` (`sent`, `failed`, or `unsent` when no mailer is set up) and `error`.
-Filter with `?request_id=`, `?kind=`, `?status=`; page with `?before=<id>` and `?limit=` (up
+Print updates also include `print_run_id` and `print_event_id`.
+Filter with `?request_id=`, `?print_run_id=`, `?kind=`, `?status=`; page with `?before=<id>` and `?limit=` (up
 to 500). Use it to audit what people are told: wording that's confusing, wrong, or reads oddly.
 
 ### `GET /api/agent/items`
@@ -69,16 +70,34 @@ Every item: its limits (`max_per_request`, `max_per_user`, `min_per_request`), w
 for (`club_only`: clubs, events and staff; `staff_only`: staff alone, like the Orpheus
 plushie, so check the requester's `@hackclub.com` email), `visible`, sizes (`variants`) and what it `ships_with`.
 
+### `GET /api/agent/print-runs`
+
+The unified print queue, newest first (at most 500), read-only. Includes staff, author and
+legacy runs: `id`, `origin`, `stage`, `version`, `request` (original quantity, artwork,
+program and deadline), `approved_quantity`, `sku`, `item_id`, `links` (exact PO/line
+evidence), `stock`, `reconcile`, `legacy_review`, `public_note`, `internal_note`,
+`shipment_request_id` and `shipment_status`. HQ acts through the Print requests tab;
+this API cannot approve, order, release or dispatch a print run.
+
+Stages are `submitted`, `approved`, `ordered`, `in_transit`, `received`, `available`,
+`rejected`, `cancelled`. Printing, catalog visibility and outbound parcel status are separate.
+A received run can intentionally remain hidden. An available run's first parcel still needs
+normal shipment review and international postage payment. Never tell someone it shipped
+because the print run became available.
+
+`links` expose ordered quantities, not received quantities: completion covers the entire PO.
+Unknown completion dates remain null. Check source `synced_at`, `polled_at` and run
+`last_poll_at` separately; stale/missing evidence means “Not yet confirmed in latest copy.”
+Stock has warehouse sellable, inbound, open merch holds and available-to-request quantities;
+the latter is zero while hidden. Reconciliation requires HQ evidence, not a guessed partial count.
+
 ### `GET /api/agent/print-requests`
 
-Every staff print request (postcards and posters HQ orders from Vistaprint), newest first,
-read-only: `id`, `user_id`, `user_email`, `user_name`, `product`, `title`, `finish`,
-`program`, `deadline` (in their words), `quantity`, `initial_quantity` and `address` (the
-first shipment), `note` (how they'll use it), `estimate_cents`, `front_url`/`back_url`,
-`status` (`submitted` → `ordered` → `stocked`, or `rejected`), `admin_note` (what an admin
-told them), `sku`, `shipment_request_id` (the swag request made when it's stocked),
-`created_at` and `updated_at`. Only admins act on these, on the Admin page's submissions tab;
-the agent API can't change them. A `submitted` request with no `admin_note` hasn't had a reply.
+Compatible staff source records, with `print_run_id` and `print_stage` linking the canonical
+run. Original entry metadata stays available; `status`, `sku`, `admin_note` and
+`shipment_request_id` reflect current canonical state. Legacy status `stocked` covers both
+Received and Available, so use `print_stage` for decisions. Old writes are refused; HQ uses
+specific versioned actions in the new queue.
 
 ### `POST /api/agent/requests/{id}/notes`
 

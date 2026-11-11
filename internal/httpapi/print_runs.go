@@ -302,6 +302,8 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 	}
 	if !admin {
 		a.InternalNote = ""
+		a.ConfirmationURL = ""
+		a.CancellationDisposition = ""
 	}
 	if a.Action == "preferences" {
 		a.Note = ""

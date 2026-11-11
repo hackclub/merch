@@ -154,7 +154,14 @@
 <svelte:head><title>Print request · Hack Club Merch</title></svelte:head>
 <div class="print-page">
 	<a href={admin ? '/admin?tab=submissions' : '/requests'}>← {admin ? 'Print requests' : 'My requests'}</a>
-	{#if error}<p class="error">{error}</p>{/if}
+	{#if error}<p class="error">{error}</p>
+		<button
+			class="secondary"
+			onclick={() => {
+				error = '';
+				load().catch((e) => (error = e.message));
+			}}>Reload current request</button
+		>{/if}
 	{#if data && run}
 		<h1 data-private>{run.request.title}</h1>
 		<p class="meta">
@@ -372,7 +379,8 @@
 									note,
 									eta,
 									Date.now(),
-									data.po_automation
+									data.po_automation,
+									updateSource
 								)}
 							</p>
 							<label class="candidate"
@@ -416,7 +424,7 @@
 						<dt>Requested</dt>
 						<dd>{run.request.quantity}</dd>
 						<dt>Approved</dt>
-						<dd>{run.approved_quantity || 'Not yet approved'}</dd>
+						<dd>{run.approved_quantity || (run.origin === 'legacy' ? 'Unknown (legacy)' : 'Not yet approved')}</dd>
 						<dt>PO line ordered</dt>
 						<dd>{run.links.length ? run.links.reduce((n, p) => n + p.quantity, 0) : 'Not linked'}</dd>
 						<dt>Inbound stock</dt>
@@ -456,7 +464,7 @@
 						{#if data.shipment.tracking_number}<p>
 								{data.shipment.carrier} · {data.shipment.tracking_number}
 							</p>{/if}{:else}<p>
-							First {run.request.initial_quantity || 0} · Awaiting shop release. No parcel has been created.
+							{#if ['rejected', 'cancelled'].includes(run.stage)}No parcel has been created.{:else}First {run.request.initial_quantity || 0} · Awaiting shop release. No parcel has been created.{/if}
 						</p>{/if}
 				</div>
 				<div class="card">

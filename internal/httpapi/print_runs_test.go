@@ -112,4 +112,12 @@ func TestPrintRunAccessAndActions(t *testing.T) {
 	if c := h.do(admin, "PUT", fmt.Sprintf("/api/admin/print-requests/%d", p.ID), map[string]any{"status": "stocked", "sku": "Demo/Card"}, nil); c != 409 {
 		t.Fatalf("old unsafe update %d", c)
 	}
+	r, _ = h.store.PrintRun(context.Background(), r.ID)
+	if c := h.do(owner, "POST", path+"/actions", map[string]any{"action": "cancel", "version": r.Version, "note": "Plans changed", "confirmation_url": "https://example.com/unverified-claim", "internal_note": "Should not be saved"}, nil); c != 200 {
+		t.Fatalf("owner cancellation %d", c)
+	}
+	confirmations, _ := h.store.PrintConfirmations(context.Background(), r.ID)
+	if len(confirmations) != 0 {
+		t.Fatal("requester recorded a printer confirmation reserved for HQ")
+	}
 }
