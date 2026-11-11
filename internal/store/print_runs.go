@@ -89,7 +89,7 @@ func (s *Store) PrintRunsForSources(ctx context.Context, prints, authors []int64
 // Poll fairly across all linked runs, including releases that may later need
 // reconciliation. Closed newer requests must not starve old active runs.
 func (s *Store) PrintRunsToPoll(ctx context.Context, now time.Time) ([]*PrintRun, error) {
-	rows, err := s.pool.Query(ctx, printRunSelect+` WHERE EXISTS(SELECT 1 FROM print_run_po_links l WHERE l.run_id=r.id) ORDER BY r.data->>'last_poll_at' NULLS FIRST,r.id`)
+	rows, err := s.pool.Query(ctx, printRunSelect+` WHERE r.stage=ANY($1) AND EXISTS(SELECT 1 FROM print_run_po_links l WHERE l.run_id=r.id) ORDER BY r.data->>'last_poll_at' NULLS FIRST,r.id`, swag.PrintPollStages)
 	if err != nil {
 		return nil, err
 	}
@@ -398,11 +398,11 @@ func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64, messages
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
-	if p.Version != version {
-		return nil, ErrPrintConflict
-	}
 	if err = swag.CheckPrintReorder(p.Stage); err != nil {
 		return nil, err
+	}
+	if p.Version != version {
+		return nil, ErrPrintConflict
 	}
 	r := p.Request
 	r.UserID, r.SlackOptIn = p.UserID, p.SlackOptIn

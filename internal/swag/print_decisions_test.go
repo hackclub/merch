@@ -2,6 +2,7 @@ package swag
 
 import (
 	"errors"
+	"slices"
 	"testing"
 	"time"
 )
@@ -47,6 +48,14 @@ func TestPrintRunNeedsPoll(t *testing.T) {
 	}
 	if err := CheckPrintReorder(PrintAvailable); err != nil {
 		t.Fatal(err)
+	}
+	// The store's SQL prefilter must keep every stage that can need a poll.
+	for _, stage := range []PrintStage{PrintSubmitted, PrintApproved, PrintOrdered, PrintInTransit, PrintReceived, PrintAvailable, PrintRejected, PrintCancelled} {
+		r := base
+		r.Stage, r.LastPollAt, r.PollError = stage, nil, "source unavailable"
+		if PrintRunNeedsPoll(r, now) != slices.Contains(PrintPollStages, stage) {
+			t.Fatalf("PrintPollStages and PrintRunNeedsPoll disagree on %s", stage)
+		}
 	}
 }
 

@@ -420,6 +420,10 @@ func TestCanonicalPrintRunApprovalAndConcurrency(t *testing.T) {
 	if len(ev) != 1 || ev[0].Stage != swag.PrintSubmitted {
 		t.Fatalf("history %+v", ev)
 	}
+	// An unfinished run can't be reordered at any version; reloading wouldn't help.
+	if _, err := s.ReorderPrintRun(ctx, r.ID, r.Version+1, testPrintMessages); !errors.Is(err, ErrPrintAction) {
+		t.Fatalf("reorder of an unfinished run at a stale version: %v", err)
+	}
 	var wg sync.WaitGroup
 	errs := make(chan error, 2)
 	for i := 0; i < 2; i++ {

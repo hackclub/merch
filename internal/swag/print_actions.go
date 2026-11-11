@@ -502,6 +502,10 @@ func CheckPrintReorder(stage PrintStage) error {
 	return &PrintActionError{Reason: "finish the current run first"}
 }
 
+// PrintPollStages are the only stages PrintRunNeedsPoll can pick; the store
+// filters on them in SQL so closed runs aren't scanned every minute.
+var PrintPollStages = []PrintStage{PrintApproved, PrintOrdered, PrintInTransit, PrintReceived, PrintAvailable}
+
 func PrintRunNeedsPoll(r PrintRunState, now time.Time) bool {
 	if len(r.Links) == 0 {
 		return false
