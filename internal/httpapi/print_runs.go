@@ -409,16 +409,6 @@ func (s *server) printRunAction(w http.ResponseWriter, r *http.Request, v viewer
 		if a.SKU == "" {
 			a.SKU = body.Links[0].SKU
 		}
-		if p.Request.Product != "custom" {
-			tmp := p.Request
-			tmp.SKU = a.SKU
-			it, err := s.printItem(r.Context(), &tmp)
-			if err != nil {
-				s.serverErr(w, err)
-				return
-			}
-			a.ItemID = it.ID
-		}
 	}
 	if a.Action == "release" && !(p.Stage == swag.PrintAvailable && p.ShipmentRequestID != nil) {
 		items, err := s.Store.ItemsBySKU(r.Context(), []string{p.SKU})
@@ -503,7 +493,7 @@ func (s *server) pollPrintRun(ctx context.Context, p *store.PrintRun) {
 	if err != nil {
 		return
 	}
-	changed := updated.Version != p.Version || updated.PollError != p.PollError
+	changed := updated.Version != p.Version || updated.PollError != p.PollError || updated.SourceStale != p.SourceStale
 	if changed || a.PollError != "" {
 		s.track(&http.Request{URL: &url.URL{Path: "/internal/print-poll"}, Header: http.Header{}}, &store.User{ID: p.UserID}, "print_po_polled", map[string]any{"print_run_id": p.ID, "from": p.Stage, "to": updated.Stage, "reconcile": updated.Reconcile, "failed": a.PollError != "", "changed": changed})
 	}

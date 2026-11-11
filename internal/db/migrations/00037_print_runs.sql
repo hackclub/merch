@@ -91,14 +91,18 @@ INSERT INTO print_run_events(run_id,stage,action,event_at,note,source,version)
  WHERE stage<>'submitted' OR data->>'legacy_status'<>'submitted';
 -- Recover only transitions whose event times were actually saved. Negative
 -- versions distinguish imported audit records from the new optimistic version.
-INSERT INTO print_run_events(run_id,stage,action,event_at,note,source,version)
- SELECT r.id,CASE e.props->>'to' WHEN 'stocked' THEN 'received' WHEN 'printing' THEN 'approved' ELSE e.props->>'to' END,
- 'legacy_status_change',e.at,'Original status: '||(e.props->>'to'),'usage_events',
- -row_number() over(partition by r.id order by e.at,e.id)
+WITH transitions AS (
+ SELECT DISTINCT ON (r.id,e.props->>'to',e.at) r.id AS run_id,e.props->>'to' AS original_stage,e.at,e.id AS event_id
  FROM usage_events e JOIN print_runs r ON
  (e.name='print_request_updated' AND e.props->>'print_request_id'=r.source_print_id::text) OR
  (e.name='submission_updated' AND e.props->>'submission_id'=r.source_author_id::text)
- WHERE e.props->>'to' IN ('submitted','approved','ordered','printing','stocked','rejected');
+ WHERE e.props->>'to' IN ('submitted','approved','ordered','printing','stocked','rejected')
+ ORDER BY r.id,e.props->>'to',e.at,e.id
+)
+INSERT INTO print_run_events(run_id,stage,action,event_at,note,source,version)
+ SELECT run_id,CASE original_stage WHEN 'stocked' THEN 'received' WHEN 'printing' THEN 'approved' ELSE original_stage END,
+ 'legacy_status_change',at,'Original status: '||original_stage,'usage_events',
+ -row_number() over(partition by run_id order by at,event_id) FROM transitions;
 
 -- Inserts through either established entry path get a canonical identity in the
 -- same transaction. The snapshot is immutable; reorders are distinct source rows.

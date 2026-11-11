@@ -33,7 +33,7 @@ func printRunView(p *store.PrintRun, admin bool, now time.Time) any {
 	for _, proof := range p.Links {
 		status := "Received quantity unavailable"
 		switch {
-		case p.PollError != "" || proof.SyncedAt.IsZero() || proof.SyncedAt.After(now) || now.Sub(proof.SyncedAt) > time.Hour:
+		case p.SourceStale || p.PollError != "" || proof.SyncedAt.IsZero() || proof.SyncedAt.After(now) || now.Sub(proof.SyncedAt) > time.Hour:
 			status = "Not yet confirmed in latest copy"
 		case proof.Draft || proof.Deleted:
 			status = "Needs HQ review: draft or deleted PO"
@@ -58,12 +58,13 @@ func requesterPrintHistory(history []store.PrintRunEvent) []store.PrintRunEvent 
 		e := history[i]
 		changed := e.Stage != previous
 		previous = e.Stage
-		update := e.Action == "update" || e.Action == "eta_update" || e.Action == "review_order" || e.Action == "review_receipt"
+		etaChanged, _ := e.Details["eta_changed"].(bool)
+		update := e.Note != "" || e.Action == "eta_update" || etaChanged
 		if !changed && !update {
 			continue
 		}
 		details := map[string]any{}
-		for _, key := range []string{"specifications", "approved_quantity", "art_revision", "update_source"} {
+		for _, key := range []string{"specifications", "approved_quantity", "art_revision", "update_source", "eta", "eta_changed"} {
 			if value, ok := e.Details[key]; ok {
 				details[key] = value
 			}

@@ -63,12 +63,17 @@ type PrintPOEvidence struct {
 func (p PrintPOEvidence) Confirms(link PrintPOLink, now time.Time, maxAge time.Duration) bool {
 	return p.PrintPOLink == link && link.POID > 0 && link.LineID > 0 && link.SKU != "" &&
 		!p.Draft && !p.Deleted && p.Quantity > 0 && p.CreatedAt != nil && !p.CreatedAt.After(now) &&
-		!p.SyncedAt.IsZero() && !p.SyncedAt.After(now) && maxAge > 0 && now.Sub(p.SyncedAt) <= maxAge
+		p.Fresh(now, maxAge)
+}
+
+func (p PrintPOEvidence) Fresh(now time.Time, maxAge time.Duration) bool {
+	return !p.SyncedAt.IsZero() && !p.SyncedAt.After(now) && maxAge > 0 && now.Sub(p.SyncedAt) <= maxAge
 }
 
 type PrintObservationResult struct {
 	Stage     PrintStage
 	Reconcile bool
+	Stale     bool
 }
 
 type PrintApproval struct {
@@ -104,6 +109,9 @@ func ObservePrintPOs(stage PrintStage, approval PrintApproval, links []PrintPOLi
 				}
 				found = &observations[i]
 			}
+		}
+		if found != nil && !found.Fresh(now, maxAge) {
+			return PrintObservationResult{Stale: true}
 		}
 		if found == nil || !found.Confirms(link, now, maxAge) {
 			return PrintObservationResult{Reconcile: true}

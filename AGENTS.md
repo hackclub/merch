@@ -535,7 +535,7 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
 Print-run events: `print_run_action` (`print_run_id`, `action`, `from`, `to`,
 `version`, `has_note`; reorder adds `new_run_id`), `print_po_polled`
 (`print_run_id`, `from`, `to`, `reconcile`, `failed`, `changed`; only material
-evidence/workflow changes, error-state changes or failed attempts, never successful
+evidence/workflow changes, source freshness/error-state changes or failed attempts, never successful
 metadata-only polling), and
 `print_notification_attempted` (`print_run_id`, `event_id`, `channel`, `failed`).
 No artwork URLs, notes, specifications, addresses or PO details go in these events.
@@ -787,8 +787,11 @@ and where, so they see it in person once it arrives.
   quantity and all complete. Draft/deleted/wrong/old evidence never advances a run. Show source
   sync, poll and completion times separately. Missing or stale evidence says **Not yet confirmed
   in latest copy**. Carrier scans and stock changes never confirm receipt.
-  Poll timestamps and transport errors do not bump the action version. Material
-  evidence or workflow changes write an event and bump it; completed Available
+  Poll timestamps, stale source copies and transport errors do not bump the action version.
+  Staleness is saved separately from reconciliation; old copies cannot correct
+  business evidence or confirm receipt/release. Show the copy's sync age and
+  **Not yet confirmed in latest copy**, not a reopened/corrected-PO warning.
+  Material evidence or workflow changes write an event and bump it; completed Available
   runs poll every 15 minutes while other linked active runs remain on the minute
   loop. Failure or reconciliation returns a released run to the faster cadence.
   Create and verify the dedicated role and set its Orchard environment before pushing

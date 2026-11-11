@@ -74,6 +74,9 @@ func TestPrintPOEvidence(t *testing.T) {
 	if got := ObservePrintPOs(PrintOrdered, approval, links, []PrintPOEvidence{base, b}, now, time.Hour); got.Stage != PrintReceived {
 		t.Fatalf("split complete: %+v", got)
 	}
+	if got := ObservePrintPOs(PrintOrdered, approval, links, []PrintPOEvidence{base, b}, now.Add(2*time.Hour), time.Hour); got.Stage != "" || got.Reconcile {
+		t.Fatalf("source staleness is not a warehouse discrepancy: %+v", got)
+	}
 	mismatch := approval
 	older := b
 	older.SyncedAt = b.SyncedAt.Add(-time.Minute)

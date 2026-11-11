@@ -41,6 +41,13 @@ func TestPrintPOLinkReceiptAndReleaseAPI(t *testing.T) {
 	runs, _ := h.store.PrintRuns(context.Background(), 0)
 	p := runs[0]
 	path := fmt.Sprintf("/api/print-runs/%d/actions", p.ID)
+	po.p = swag.PrintPOEvidence{PrintPOLink: swag.PrintPOLink{POID: 42, LineID: 10, SKU: "Pri/A"}}
+	if c := h.do(admin, "POST", path, map[string]any{"action": "link", "version": p.Version, "sku": "Pri/A", "confirmation_url": "https://example.com/confirmation", "links": []swag.PrintPOLink{po.p.PrintPOLink}}, nil); c != 422 {
+		t.Fatalf("link before approval: %d", c)
+	}
+	if items, err := h.store.ItemsBySKU(context.Background(), []string{"Pri/A"}); err != nil || len(items) != 0 {
+		t.Fatalf("refused link created a listing: %+v %v", items, err)
+	}
 	if c := h.do(admin, "POST", path, map[string]any{"action": "approve", "version": p.Version, "approved_quantity": 100, "specifications": "Gloss; artwork and budget checked"}, &p); c != 200 {
 		t.Fatal(c)
 	}
@@ -104,6 +111,20 @@ func TestPrintPOLinkReceiptAndReleaseAPI(t *testing.T) {
 	now = now.Add(2 * time.Minute)
 	if c := h.do(admin, "POST", path, map[string]any{"action": "release", "version": 1}, &p); c != 200 || p.ShipmentRequestID == nil {
 		t.Fatalf("idempotent stale-stock release %d", c)
+	}
+}
+
+func TestRequesterPrintHistoryHidesPrivateOnlyUpdates(t *testing.T) {
+	history := []store.PrintRunEvent{
+		{ID: 5, Stage: swag.PrintApproved, Action: "update", Details: map[string]any{"eta": "2026-12-04", "eta_changed": true}},
+		{ID: 4, Stage: swag.PrintApproved, Action: "update", Note: "New public update"},
+		{ID: 3, Stage: swag.PrintApproved, Action: "update", Details: map[string]any{"specifications": "Same approved specification"}},
+		{ID: 2, Stage: swag.PrintApproved, Action: "approve"},
+		{ID: 1, Stage: swag.PrintSubmitted, Action: "submit"},
+	}
+	got := requesterPrintHistory(history)
+	if len(got) != 4 || got[0].ID != 5 || got[1].ID != 4 || got[2].ID != 2 || got[3].ID != 1 {
+		t.Fatalf("private-only update leaked into requester activity: %+v", got)
 	}
 }
 

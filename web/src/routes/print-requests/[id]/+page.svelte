@@ -13,6 +13,8 @@
 		actionLabel,
 		printEventLabel,
 		approvalReviewer,
+		releaseBlockedReason,
+		poSyncAge,
 		approvedQuantityLabel,
 		stockStale,
 		poLinkingMessage,
@@ -262,9 +264,10 @@
 								>{/if}
 							{#if run.stage === 'ordered'}<button onclick={() => choose('dispatch')}>Record printer dispatch</button
 								>{/if}
-							{#if run.stage === 'received' && !run.legacy_review}<button onclick={() => choose('release')}
-									>Make available in shop</button
-								>{/if}
+							{#if run.stage === 'received' && !run.legacy_review}<button
+									disabled={!!releaseBlockedReason(run)}
+									onclick={() => choose('release')}>Make available in shop</button
+								>{#if releaseBlockedReason(run)}<p class="muted" role="status">{releaseBlockedReason(run)}</p>{/if}{/if}
 							{#if (run.reconcile || run.links.length > 0) && ['approved', 'ordered', 'in_transit'].includes(run.stage)}<button
 									class="secondary"
 									onclick={() => choose('review_order')}>Review order discrepancy</button
@@ -430,6 +433,8 @@
 									data-private
 								>
 									{e.note}
+								</p>{/if}{#if e.details?.eta_changed}<p>
+									Expected warehouse arrival: {e.details.eta || 'Not confirmed'}
 								</p>{/if}{#if e.details?.update_source}<p data-private>
 									Source: {e.details.update_source}
 								</p>{/if}{#if e.details?.specifications}<details>
@@ -507,14 +512,13 @@
 					<p>Last merch poll: {fmt(run.last_poll_at)}</p>
 					{#if run.poll_error}<p>{run.poll_error}</p>{/if}{#each run.links as p}<article>
 							{#if admin}<strong>{p.order_number || 'Purchase order'} · PO ID {p.po_id} · line {p.line_id}</strong>{/if}
-							<p>{poState(p)}</p>
+							<p>{run.source_stale ? 'Not yet confirmed in latest copy' : poState(p)}</p>
 							{#if admin}<p>{p.supplier || 'Supplier unknown'}</p>
 								<p>Exact SKU: {p.sku} · PO line ordered: {p.quantity}</p>{/if}
 							<p>
 								Created: {fmt(p.created_at)}<br />Required-by: {p.required_by?.slice(0, 10) || 'Unknown'} (expected date)<br
-								/>Completed: {fmt(p.completed_at)}<br />Source sync: {fmt(p.synced_at)}<br />Last poll: {fmt(
-									p.polled_at
-								)}
+								/>Completed: {fmt(p.completed_at)}<br />Source sync: {fmt(p.synced_at)} ({poSyncAge(p.synced_at)})<br
+								/>Last poll: {fmt(p.polled_at)}
 							</p>
 						</article>{/each}
 					<p class="muted">

@@ -41,6 +41,9 @@ func TestLegacyPrintMigrationPreservesLinksAndUnknownDates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err = s.pool.Exec(ctx, `insert into usage_events(source,name,at,props) select 'server','print_request_updated','2026-11-01T12:00:00Z'::timestamptz,jsonb_build_object('print_request_id',$1::bigint,'to','approved') from generate_series(1,2)`, p.ID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.pool.Exec(ctx, parts[0]); err != nil {
 		t.Fatal(err)
 	}
@@ -57,10 +60,17 @@ func TestLegacyPrintMigrationPreservesLinksAndUnknownDates(t *testing.T) {
 				t.Fatalf("legacy print %+v", r)
 			}
 			events, _ := s.PrintRunHistory(ctx, r.ID)
+			var recovered int
 			for _, e := range events {
+				if e.Action == "legacy_status_change" {
+					recovered++
+				}
 				if e.Action == "legacy_import" && e.At != nil {
 					t.Fatal("invented stocked date")
 				}
+			}
+			if recovered != 1 {
+				t.Fatalf("identical legacy audit events must be deduplicated: %d", recovered)
 			}
 		} else {
 			if r.Stage != swag.PrintApproved {
@@ -220,6 +230,12 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			if err != nil || r.Stage != swag.PrintOrdered {
 				t.Fatalf("ordered %+v %v", r, err)
 			}
+			formVersionBeforeStale := r.Version
+			staleAt := time.Now().Add(2 * time.Hour)
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}, Now: staleAt})
+			if err != nil || r.Version != formVersionBeforeStale || !r.SourceStale || r.Reconcile || r.Stage != swag.PrintOrdered {
+				t.Fatalf("stale feed must preserve version and avoid reconciliation: %+v %v", r, err)
+			}
 			if r.ETA != "2026-11-30" {
 				t.Fatalf("ETA must use UTC date: %s", r.ETA)
 			}
@@ -264,6 +280,17 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 				fee = 1200
 			}
 			a := PrintAction{Version: r.Version, Action: "release", ActorID: u.ID, Sellable: 800, ReleaseStatus: state, ReleaseFee: fee}
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}, Now: staleAt})
+			if err != nil || !r.SourceStale || r.Reconcile || r.Version != a.Version {
+				t.Fatalf("stale receipt must remain separate from correction: %+v %v", r, err)
+			}
+			if _, err = s.ActPrintRun(ctx, r.ID, a); !errors.Is(err, ErrPrintAction) {
+				t.Fatalf("release must wait for a fresh source copy: %v", err)
+			}
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "observe", Auto: true, Evidence: []swag.PrintPOEvidence{p}})
+			if err != nil || r.SourceStale || r.Reconcile || r.Version != a.Version {
+				t.Fatalf("refresh must clear staleness without invalidating forms: %+v %v", r, err)
+			}
 			var wg sync.WaitGroup
 			out := make(chan *PrintRun, 2)
 			errs := make(chan error, 2)
@@ -351,9 +378,16 @@ func TestPrintRunReceiptAndAtomicRelease(t *testing.T) {
 			if err != nil || r.Stage != swag.PrintAvailable || r.Reconcile {
 				t.Fatalf("receipt review %+v %v", r, err)
 			}
+			r, err = s.ActPrintRun(ctx, r.ID, PrintAction{Version: r.Version, Action: "preferences", ActorID: u.ID, SlackOptIn: true})
+			if err != nil {
+				t.Fatal(err)
+			}
 			next, err := s.ReorderPrintRun(ctx, r.ID, r.Version)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if !next.SlackOptIn || !next.Request.SlackOptIn {
+				t.Fatal("reorder lost requester Slack preference")
 			}
 			again, err := s.ReorderPrintRun(ctx, r.ID, r.Version)
 			if err != nil || next.ID != again.ID {

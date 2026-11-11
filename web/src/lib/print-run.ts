@@ -72,6 +72,7 @@ export type PrintRun = {
 	parent_id: number;
 	last_poll_at: string | null;
 	poll_error: string;
+	source_stale?: boolean;
 	stock?: PrintDetail['stock'];
 	shipment_status: string;
 	shipment_request_id: number | null;
@@ -81,6 +82,8 @@ export type PrintRun = {
 export type PrintEvent = {
 	details?: {
 		stage_changed?: boolean;
+		eta?: string;
+		eta_changed?: boolean;
 		specifications?: string;
 		approved_quantity?: number;
 		art_revision?: number;
@@ -211,8 +214,24 @@ export function printEventLabel(event: PrintEvent, previousStage: string | undef
 export function approvalReviewer(admin: boolean, id: number): string {
 	return admin ? `reviewer #${id}` : 'HQ';
 }
-export function printPOStatus(r: Pick<PrintRun, 'poll_error' | 'links'>, now = Date.now()): string {
-	if (r.poll_error) return 'Not yet confirmed in latest copy';
+export function poSyncAge(syncedAt: string, now = Date.now()): string {
+	const at = Date.parse(syncedAt);
+	if (!Number.isFinite(at) || at > now) return 'Sync age unknown';
+	const minutes = Math.floor((now - at) / 60000);
+	return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} old`;
+}
+export function releaseBlockedReason(
+	r: Pick<PrintRun, 'reconcile' | 'legacy_review' | 'poll_error' | 'source_stale' | 'links'>,
+	now = Date.now()
+): string {
+	if (r.legacy_review) return 'Audit the legacy run before releasing this listing.';
+	if (r.reconcile) return 'Review and reconcile the warehouse evidence before releasing this listing.';
+	if (r.source_stale || r.poll_error || r.links.some((p) => poState(p, now) === 'Not yet confirmed in latest copy'))
+		return 'Not yet confirmed in latest copy. Refresh the PO copy before releasing.';
+	return '';
+}
+export function printPOStatus(r: Pick<PrintRun, 'poll_error' | 'links' | 'source_stale'>, now = Date.now()): string {
+	if (r.source_stale || r.poll_error) return 'Not yet confirmed in latest copy';
 	if (!r.links.length) return 'Not linked';
 	const states = r.links.map((p) => poState(p, now));
 	if (states.includes('Not yet confirmed in latest copy')) return 'Not yet confirmed in latest copy';

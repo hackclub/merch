@@ -42,6 +42,7 @@ type PrintRunData struct {
 	ParentVersion         int64         `json:"parent_version"`
 	LastPollAt            *time.Time    `json:"last_poll_at"`
 	PollError             string        `json:"poll_error"`
+	SourceStale           bool          `json:"source_stale"`
 }
 type PrintRun struct {
 	ShipmentStatus swag.Status `json:"shipment_status"`
@@ -117,7 +118,7 @@ func (s *Store) PrintRunsForSources(ctx context.Context, prints, authors []int64
 // reconciliation. Closed newer requests must not starve old active runs.
 func (s *Store) PrintRunsToPoll(ctx context.Context) ([]*PrintRun, error) {
 	rows, err := s.pool.Query(ctx, printRunSelect+` WHERE r.stage IN ('approved','ordered','in_transit','received','available') AND EXISTS(SELECT 1 FROM print_run_po_links l WHERE l.run_id=r.id)
- AND (r.stage<>'available' OR r.data->>'reconcile'='true' OR coalesce(r.data->>'poll_error','')<>''
+ AND (r.stage<>'available' OR r.data->>'reconcile'='true' OR r.data->>'source_stale'='true' OR coalesce(r.data->>'poll_error','')<>''
  OR (r.data->>'last_poll_at') IS NULL OR (r.data->>'last_poll_at')::timestamptz<=now()-interval '15 minutes'
  OR EXISTS(SELECT 1 FROM print_run_po_links l WHERE l.run_id=r.id AND (l.evidence->>'completed' IS DISTINCT FROM 'true' OR l.evidence->>'draft'='true' OR l.evidence->>'deleted'='true')))
  ORDER BY r.data->>'last_poll_at' NULLS FIRST,r.id LIMIT 50`)
@@ -245,6 +246,7 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 	}
 	prev := r.Stage
 	previousReconcile := r.Reconcile
+	previousETA := r.ETA
 	previousEvidence := printEvidenceDigest(r.Links)
 	hadShipment := r.ShipmentRequestID != nil
 	notify := false
@@ -412,6 +414,12 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 			}
 		}
 		r.Links = a.Evidence
+		if r.Request.Product != "custom" {
+			r.ItemID, err = preparePrintItem(ctx, tx, r.Request, r.SKU)
+			if err != nil {
+				return nil, err
+			}
+		}
 	case "observe":
 		if !a.Auto {
 			return invalid("only the configured PO adapter records observations")
@@ -419,6 +427,31 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 		r.LastPollAt = &now
 		r.PollError = a.PollError
 		if a.PollError != "" {
+			break
+		}
+		links := []swag.PrintPOLink{}
+		for _, p := range r.Links {
+			links = append(links, p.PrintPOLink)
+		}
+		approval := swag.PrintApproval{Quantity: r.ApprovedQuantity, SKU: r.SKU, ReviewedExistingOrder: r.ReviewedExistingOrder}
+		if r.ApprovedAt != nil {
+			approval.At = *r.ApprovedAt
+		}
+		result := swag.ObservePrintPOs(r.Stage, approval, links, a.Evidence, now, time.Hour)
+		r.SourceStale = result.Stale
+		if result.Stale {
+			// Report the actual copy age without letting an old copy correct
+			// the last confirmed business evidence or invalidate an open form.
+			for i := range r.Links {
+				for _, observed := range a.Evidence {
+					if observed.PrintPOLink == r.Links[i].PrintPOLink {
+						r.Links[i].SyncedAt, r.Links[i].PolledAt = observed.SyncedAt, observed.PolledAt
+						if _, err = tx.Exec(ctx, `update print_run_po_links set evidence=$4 where run_id=$1 and po_id=$2 and line_id=$3`, id, observed.POID, observed.LineID, r.Links[i]); err != nil {
+							return nil, err
+						}
+					}
+				}
+			}
 			break
 		}
 		for _, p := range a.Evidence {
@@ -431,16 +464,6 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 				return nil, err
 			}
 		}
-		links := []swag.PrintPOLink{}
-		for _, p := range r.Links {
-			links = append(links, p.PrintPOLink)
-		}
-		approval := swag.PrintApproval{Quantity: r.ApprovedQuantity, SKU: r.SKU}
-		approval.ReviewedExistingOrder = r.ReviewedExistingOrder
-		if r.ApprovedAt != nil {
-			approval.At = *r.ApprovedAt
-		}
-		result := swag.ObservePrintPOs(r.Stage, approval, links, a.Evidence, now, time.Hour)
 		if (prev == swag.PrintReceived || prev == swag.PrintAvailable) && printEvidenceDigest(r.Links) != printEvidenceDigest(a.Evidence) {
 			r.ReceiptCorrection = true
 			r.ReceiptReviewDigest = ""
@@ -475,7 +498,7 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 			}
 		}
 	case "release":
-		if r.Stage != swag.PrintReceived || r.LegacyReview || r.Reconcile || r.PollError != "" || r.ItemID == 0 || r.SKU == "" || a.Sellable < 1 {
+		if r.Stage != swag.PrintReceived || r.LegacyReview || r.Reconcile || r.SourceStale || r.PollError != "" || r.ItemID == 0 || r.SKU == "" || a.Sellable < 1 {
 			return invalid("receipt, reconciled complete listing and confirmed sellable stock required")
 		}
 		if r.Request.InitialQuantity < 1 && r.Origin != "legacy" {
@@ -589,7 +612,7 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 		} else if a.ActorID == r.UserID {
 			source = "requester"
 		}
-		details := map[string]any{"from_stage": prev, "stage_changed": prev != r.Stage, "approved_quantity": r.ApprovedQuantity, "specifications": r.Specifications, "art_revision": r.Revision, "sku": r.SKU, "item_id": r.ItemID, "update_source": a.ETASource, "po_links": r.Links}
+		details := map[string]any{"from_stage": prev, "stage_changed": prev != r.Stage, "eta": r.ETA, "eta_changed": previousETA != r.ETA, "approved_quantity": r.ApprovedQuantity, "specifications": r.Specifications, "art_revision": r.Revision, "sku": r.SKU, "item_id": r.ItemID, "update_source": a.ETASource, "po_links": r.Links}
 		eventAction := a.Action
 		if a.Action == "observe" && prev == r.Stage && notify {
 			eventAction = "eta_update"
@@ -627,6 +650,42 @@ func (s *Store) ActPrintRun(ctx context.Context, id int64, a PrintAction) (*Prin
 	return s.PrintRun(ctx, id)
 }
 
+// preparePrintItem runs only after link validation, in the link transaction.
+// Reuse an existing listing without changing its content or visibility.
+func preparePrintItem(ctx context.Context, tx pgx.Tx, request PrintRequest, sku string) (int64, error) {
+	var id int64
+	err := tx.QueryRow(ctx, `select id from items where sku=$1`, sku).Scan(&id)
+	if err == nil || !errors.Is(err, pgx.ErrNoRows) {
+		return id, err
+	}
+	var sizeSKU bool
+	err = tx.QueryRow(ctx, `select exists(select 1 from items,jsonb_array_elements(variants) v where v->>'sku'=$1)`, sku).Scan(&sizeSKU)
+	if err != nil {
+		return 0, err
+	}
+	if sizeSKU {
+		return 0, fmt.Errorf("%w: SKU is a size of another item", ErrConflict)
+	}
+	product, ok := swag.PrintProductByKey(request.Product)
+	if !ok {
+		return 0, ErrPrintAction
+	}
+	it := product.Item(sku, request.Title, request.Finish, request.Landscape)
+	images := []string{}
+	for _, u := range []string{request.FrontPreviewURL, request.BackPreviewURL} {
+		if u != "" {
+			images = append(images, u)
+		}
+	}
+	if len(images) == 0 {
+		images = []string{request.FrontURL}
+	}
+	err = tx.QueryRow(ctx, `insert into items(sku,name,images,visible,max_per_request,width_in,height_in,finish,thickness_in,packs)
+ values($1,$2,$3,false,$4,$5,$6,$7,$8,$9) on conflict(sku) do update set sku=excluded.sku returning id`,
+		sku, it.Name, images, it.MaxPerRequest, it.WidthIn, it.HeightIn, it.Finish, it.ThicknessIn, it.Packs).Scan(&id)
+	return id, mapErr(err)
+}
+
 // ReorderPrintRun uses the parent's submitted version as a retry key. A fresh
 // intentional reorder reloads the new parent version, giving a distinct run.
 func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64) (*PrintRun, error) {
@@ -655,7 +714,7 @@ func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64) (*PrintR
 	}
 	r := p.Request
 	var source, idNew int64
-	err = tx.QueryRow(ctx, `insert into print_requests(user_id,product,title,quantity,front_url,back_url,note,initial_quantity,address,front_preview_url,back_preview_url,landscape,program,deadline,finish) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id`, p.UserID, r.Product, r.Title, r.Quantity, r.FrontURL, r.BackURL, r.Note, r.InitialQuantity, r.Address, r.FrontPreviewURL, r.BackPreviewURL, r.Landscape, r.Program, r.Deadline, r.Finish).Scan(&source)
+	err = tx.QueryRow(ctx, `insert into print_requests(user_id,product,title,quantity,front_url,back_url,note,initial_quantity,address,front_preview_url,back_preview_url,landscape,program,deadline,finish,slack_opt_in) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) returning id`, p.UserID, r.Product, r.Title, r.Quantity, r.FrontURL, r.BackURL, r.Note, r.InitialQuantity, r.Address, r.FrontPreviewURL, r.BackPreviewURL, r.Landscape, r.Program, r.Deadline, r.Finish, p.SlackOptIn).Scan(&source)
 	if err != nil {
 		return nil, err
 	}
@@ -666,7 +725,7 @@ func (s *Store) ReorderPrintRun(ctx context.Context, id, version int64) (*PrintR
 			origin = "author"
 		}
 	}
-	err = tx.QueryRow(ctx, `update print_runs set data=jsonb_build_object('parent_id',$2::bigint,'parent_version',$3::bigint,'sku',$5::text,'item_id',$6::bigint),origin=$4 where source_print_id=$1 returning id`, source, id, version, origin, p.SKU, p.ItemID).Scan(&idNew)
+	err = tx.QueryRow(ctx, `update print_runs set data=data||jsonb_build_object('parent_id',$2::bigint,'parent_version',$3::bigint,'sku',$5::text,'item_id',$6::bigint),origin=$4 where source_print_id=$1 returning id`, source, id, version, origin, p.SKU, p.ItemID).Scan(&idNew)
 	if err != nil {
 		return nil, err
 	}

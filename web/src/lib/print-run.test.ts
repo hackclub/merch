@@ -8,8 +8,26 @@ import {
 	stockStale,
 	poLinkingMessage,
 	printEventLabel,
-	approvalReviewer
+	approvalReviewer,
+	releaseBlockedReason,
+	poSyncAge
 } from './print-run';
+it('explains why HQ must reconcile or refresh evidence before releasing', () => {
+	const run = { reconcile: false, legacy_review: false, poll_error: '', source_stale: false, links: [] };
+	expect(releaseBlockedReason(run)).toBe('');
+	expect(releaseBlockedReason({ ...run, reconcile: true })).toBe(
+		'Review and reconcile the warehouse evidence before releasing this listing.'
+	);
+	expect(releaseBlockedReason({ ...run, source_stale: true })).toBe(
+		'Not yet confirmed in latest copy. Refresh the PO copy before releasing.'
+	);
+	expect(releaseBlockedReason({ ...run, poll_error: 'source unavailable' })).toBe(
+		'Not yet confirmed in latest copy. Refresh the PO copy before releasing.'
+	);
+	expect(printPOStatus({ ...run, source_stale: true })).toBe('Not yet confirmed in latest copy');
+	expect(poSyncAge('2026-11-11T10:00:00Z', Date.parse('2026-11-11T12:15:00Z'))).toBe('135 minutes old');
+	expect(poSyncAge('', Date.now())).toBe('Sync age unknown');
+});
 it('labels automatic stage changes separately from evidence-only observations', () => {
 	expect(
 		printEventLabel({ stage: 'ordered', action: 'observe', details: { stage_changed: true } } as any, 'approved', true)
