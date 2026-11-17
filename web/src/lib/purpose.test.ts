@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { forGroups, itemsFor, needsReason, offered, parseNeed, parsePurpose, printing, PURPOSES, purposeLabel, STAFF_NEEDS } from './purpose';
+import { blankClassroom, forGroups, readClassroom, itemsFor, needsReason, offered, parseNeed, parsePurpose, printing, PURPOSES, purposeLabel, STAFF_NEEDS } from './purpose';
 import type { Item } from './types';
 
 const base: Item = { id: 1, sku: 'Sti/A', name: 'Stickers', description: '', images: [], visible: true, sort_order: 0, max_per_request: 3, min_per_request: 1, quick_picks: [], max_per_user: null, width_in: null, height_in: null, variants: [], finish: '', thickness_in: null, weight_oz: null, photos: [], print_files: [], packs: '', binding: '', pages: [], ships_with: [], club_only: false, staff_only: false, model: '', allow_backorder: false, clip: '' };
@@ -76,5 +76,15 @@ describe('purpose', () => {
 		// Only staff get things printed; everyone else always requests swag.
 		expect(printing('club', 'print')).toBe(false);
 		expect(printing('staff', 'swag')).toBe(false);
+	});
+
+	it('starts the classroom questions empty, and reads a saved one safely', () => {
+		// Empty, not 0: the student count is required, and a 0 would show and then be refused.
+		expect(blankClassroom()).toEqual({ school: '', grades: '', students: null });
+		expect(readClassroom({ school: 'Example School', grades: '9–12', students: 30 })).toEqual({ school: 'Example School', grades: '9–12', students: 30 });
+		expect(readClassroom({ school: 7, grades: null, students: '30' })).toEqual({ school: '7', grades: '', students: 30 });
+		expect(readClassroom({ students: 'lots' })).toEqual(blankClassroom());
+		expect(readClassroom('nope')).toBeUndefined();
+		expect(readClassroom(undefined)).toBeUndefined();
 	});
 });

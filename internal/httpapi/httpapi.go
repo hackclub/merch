@@ -684,19 +684,14 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 	status, fee := swag.InitialStatus(st, body.Address.Country, est)
 	avail := s.availableStock(r.Context(), items)
 	requestNote := body.Note
-	if body.Purpose == swag.PurposeTeacher {
-		requestNote, err = body.Teacher.RequestNote(body.Note)
-		if err != nil {
-			s.track(r, v.user, "request_refused", map[string]any{"purpose": body.Purpose, "error": err.Error()})
-			writeErr(w, http.StatusUnprocessableEntity, err.Error())
-			return
-		}
+	if body.Purpose == swag.PurposeTeacher && body.Teacher != nil {
+		requestNote = body.Teacher.Note(body.Note)
 	}
 	req, err := s.Store.CreateRequest(r.Context(), store.NewRequest{
 		UserID: v.user.ID, Address: body.Address, Purpose: body.Purpose, Lines: body.Lines, Status: status, ShippingFeeCents: fee, Note: requestNote,
 	}, func(prior map[int64]int) error {
 		return swag.Validate(swag.ValidateInput{
-			Settings: st, Catalog: cat, Purpose: body.Purpose, Reason: body.Note, Lines: body.Lines, Country: body.Address.Country, CustomsOK: body.CustomsOK, PriorQuantities: prior, Available: avail,
+			Settings: st, Catalog: cat, Purpose: body.Purpose, Reason: body.Note, Classroom: body.Teacher, Lines: body.Lines, Country: body.Address.Country, CustomsOK: body.CustomsOK, PriorQuantities: prior, Available: avail,
 		})
 	})
 	if err != nil {
@@ -723,7 +718,7 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 
 func isRuleErr(err error) bool {
 	for _, e := range []error{swag.ErrRequestsClosed, swag.ErrNoItems, swag.ErrBadQuantity, swag.ErrUnknownItem,
-		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrBadAddress, swag.ErrBadPurpose, swag.ErrNoReason, swag.ErrNoCustoms,
+		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrBadAddress, swag.ErrBadPurpose, swag.ErrNoReason, swag.ErrClassroom, swag.ErrNoCustoms,
 		swag.ErrWontPack, swag.ErrTooHeavy, swag.ErrOutOfStock} {
 		if errors.Is(err, e) {
 			return true

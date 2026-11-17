@@ -1,4 +1,5 @@
 import { prefillAddress } from './address';
+import { readClassroom } from './purpose';
 import type { Address, Classroom, Purpose } from './types';
 
 /** Signed-out people fill the whole request form; Submit has them sign in with Hack Club to verify their email.
@@ -20,7 +21,7 @@ export function readDraft(s: Store): Draft | null {
 	try {
 		const d = JSON.parse(s.getItem(KEY) ?? 'null');
 		if (!d || typeof d !== 'object' || !d.address || typeof d.address.line_1 !== 'string') return null;
-		return { teacher: d.teacher, address: d.address, note: String(d.note ?? ''), understood: !!d.understood, customs_ok: !!d.customs_ok, regroup_ok: !!d.regroup_ok };
+		return { teacher: readClassroom(d.teacher), address: d.address, note: String(d.note ?? ''), understood: !!d.understood, customs_ok: !!d.customs_ok, regroup_ok: !!d.regroup_ok };
 	} catch {
 		return null;
 	}

@@ -90,9 +90,10 @@ export type Address = {
 	phone_number: string;
 };
 
-/** What a request is for: for themselves and friends, a Hack Club they run, or an event. */
-export type Classroom = { school: string; grades: string; students: number };
+/** A teacher request's classroom details (swag.Classroom); students is null until they type it. */
+export type Classroom = { school: string; grades: string; students: number | null };
 
+/** What a request is for: for themselves and friends, a classroom, a Hack Club they run, an event, or staff. */
 export type Purpose = 'personal' | 'teacher' | 'club' | 'event' | 'staff';
 
 export type Line = { item_id: number; quantity: number; sku?: string };

@@ -195,7 +195,9 @@ type ValidateInput struct {
 	// Reason is how a club or event will use what it asks for (the request's
 	// note); personal requests don't need one.
 	Reason string
-	Lines  []Line
+	// Classroom is a teacher request's classroom details (required for them).
+	Classroom *Classroom
+	Lines     []Line
 	// Country is where it ships (alpha-2); outside the US, packages are capped
 	// at 3 lb.
 	Country string
@@ -220,6 +222,11 @@ func Validate(in ValidateInput) error {
 	}
 	if in.Purpose != PurposePersonal && strings.TrimSpace(in.Reason) == "" {
 		return ErrNoReason
+	}
+	if in.Purpose == PurposeTeacher {
+		if err := in.Classroom.Check(); err != nil {
+			return err
+		}
 	}
 	if len(in.Lines) == 0 {
 		return ErrNoItems

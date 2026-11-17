@@ -15,6 +15,8 @@ describe('request draft (signed-out Submit → verify email → back)', () => {
 		const d = { ...draft, teacher: { school: 'Example School', grades: '9–12', students: 30 } };
 		saveDraft(s, d);
 		expect(readDraft(s)).toEqual(d);
+		saveDraft(s, { ...draft, teacher: { school: 'Example School', grades: 'K', students: null } });
+		expect(readDraft(s)?.teacher).toEqual({ school: 'Example School', grades: 'K', students: null });
 		expect(verifyEmailProps(d, { items: 3, intl: false, purpose: 'teacher' })).toEqual({ items: 3, intl: false, purpose: 'teacher', has_note: true });
 	});
 	it('keeps the form through the sign-in round trip', () => {

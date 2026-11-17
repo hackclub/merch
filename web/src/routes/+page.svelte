@@ -13,7 +13,7 @@
 	import { pickedLines } from '$lib/haul';
 	import { clearDraft, readDraft, resumeAddress, resumeStep, saveDraft, VERIFY_EMAIL_URL, verifyEmailProps } from '$lib/draft';
 	import { cardSides, itemPath, previewCount, showsAmountIn3D, thumbnail, tilePreview } from '$lib/items';
-	import { forGroups, itemsFor, needsReason, printing, PURPOSES, STAFF_NEEDS } from '$lib/purpose';
+	import { blankClassroom, forGroups, itemsFor, needsReason, printing, PURPOSES, STAFF_NEEDS } from '$lib/purpose';
 	import PrintRequest from '$lib/PrintRequest.svelte';
 	import { sectionize, tileFact } from '$lib/sections';
 	import { session } from '$lib/session.svelte';
@@ -40,7 +40,7 @@
 	// Signed out, address search isn't offered (lookups cost money), so every field shows.
 	let manual = $state(!!prefilled.line_1.trim() || !session.me?.user);
 	let note = $state('');
-	let teacher = $state<Classroom>({ school: '', grades: '', students: 0 });
+	let teacher = $state<Classroom>(blankClassroom());
 	let understood = $state(false);
 	let customsOK = $state(false); // outside the US: they'll pay their country's customs fees
 	let error = $state('');
@@ -215,7 +215,7 @@
 		if (!d) return false;
 		address = resumeAddress(d.address, session.me?.user?.address);
 		note = d.note;
-		teacher = d.teacher ?? { school: '', grades: '', students: 0 };
+		teacher = d.teacher ?? blankClassroom();
 		understood = d.understood;
 		customsOK = d.customs_ok;
 		regroupOK = d.regroup_ok;

@@ -22,10 +22,18 @@ through the app, not into migrations or seed files. Before every commit, read `g
 
 | Who | How we know | What they do |
 | --- | --- | --- |
-| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. The form asks what it's for: personal, an event, a Hack Club, or Hack Club staff (`items.club_only` items, the sticker-pack nudge and the table haul are for the last three, which also say how they'll use it; `items.staff_only` items, like the Orpheus plushie, are for staff alone; anyone can pick staff, so reviewers check the email). Anyone can fill in the whole form signed out; Submit signs them in with Hack Club to verify their email, then sends it (abroad, they pay by card after). Address search is signed-in only (Places lookups cost money). US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card or Apple Pay on the form (Stripe) before we ship (see "Shipping estimates and packing"). Staff get a second question: request swag (the default) or get postcards / posters made (see "Print requests"). |
+| Hack clubber (anyone signed in) | Hack Club Auth login | Request listed swag. The form asks what it's for: personal, an event, a classroom (teachers), a Hack Club, or Hack Club staff (`items.club_only` items, the sticker-pack nudge and the table haul are for the last four, which also say how they'll use it; `items.staff_only` items, like the Orpheus plushie, are for staff alone; anyone can pick staff, so reviewers check the email). Anyone can fill in the whole form signed out; Submit signs them in with Hack Club to verify their email, then sends it (abroad, they pay by card after). Address search is signed-in only (Places lookups cost money). US shipping is free. Outside the US the request starts in `awaiting_payment`, and the person pays the estimated postage by card or Apple Pay on the form (Stripe) before we ship (see "Shipping estimates and packing"). Staff get a second question: request swag (the default) or get postcards / posters made (see "Print requests"). |
 | YSWS author | Their HCA email matches `Hack Club Auth Email` in the **YSWS Authors** table of the Unified YSWS Projects DB (Airtable `app3A5kJwYqxMLOgh`) | Submit print-ready material (stickers, posters…) to be printed and stocked in the warehouse. |
 | Admin | Email is in `ADMIN_EMAILS` (admins are also authors) | Manage global limits, list warehouse SKUs as items, set visibility and order, review requests (ship → tracking), and review author submissions. |
 | Review agent | An API key an admin made (`Authorization: Bearer merch_…`) | Read pending requests, the requester and their history, add notes, ship (with changes) or reject. See "Agent API". |
+
+**Teachers** (`swag.PurposeTeacher`) also give their school, grades or ages and about how many
+students (`teacher`: `school`, `grades`, `students`; `swag.Classroom`, checked in `swag.Validate`).
+The server puts a labeled summary of them before the plan in the request note, so admins and the
+review agent see it; no migration. They get club items but not staff-only ones, with the same
+limits, email verification, review and international postage. Analytics get the choice (`purpose`
+`value` = `teacher`) and the field lengths (`teacher_school`, `teacher_grades`; `teacher_students`
+is `data-private`), never the classroom details.
 
 Items can come in **sizes** (`items.variants`, e.g. the red Hack Club T-shirt `Swa/Shirt/HC` with
 S/M/L/XL → `Swa/Shirt/HC/<size>`). Each size ships its own warehouse SKU; limits count the item as a
@@ -531,14 +539,6 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   Loaded 2026-11-10: 48,064 rows (12,802 Zenventory, 33,429 Theseus letters, 1,833 Theseus orders), 2025-01-02–2026-11-10; all 10,198 existing delivery dates preserved.
 
 ## Usage analytics
-
-Teacher requests use the existing `purpose` event (`value` = `teacher`, `from`),
-`field` events (`teacher_school`, `teacher_grades`: type and chars only; `teacher_students`: type only),
-and `request_created` / `request_refused` (`purpose` = `teacher`). Classroom details
-are never analytics props. The API accepts `teacher` (`school`, `grades`, `students`),
-validates it and saves a labeled summary in the request note for admin/agent review;
-no migration is needed. Teachers can request club-only items, but not staff-only items.
-They use the same limits, email verification, review and international postage payment.
 
 Everything people do on the site goes to the `usage_events` table, so agents can see how the shop is
 used and improve it. **Use it as evidence, and keep it complete:**

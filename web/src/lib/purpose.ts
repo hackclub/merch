@@ -1,4 +1,4 @@
-import type { Item, Purpose } from './types';
+import type { Classroom, Item, Purpose } from './types';
 
 const REASON =
 	"In 2-3 sentences, how will you use it? Please include specifics (including estimated # of people you're getting swag for) and links. If you're requesting multiple t-shirts, please include the names of the people they're for.\n\n" +
@@ -27,7 +27,7 @@ export const PURPOSES: { value: Purpose; label: string; short: string; reason: s
 	}
 ];
 
-/** Clubs, events and staff hand swag out to groups: they get every item, the sticker-pack nudge and the table haul. */
+/** Teachers, clubs, events and staff hand swag out to groups: they get every item but staff-only ones, the sticker-pack nudge and the table haul. */
 export const forGroups = (purpose: Purpose | ''): boolean => purpose === 'teacher' || purpose === 'club' || purpose === 'event' || purpose === 'staff';
 
 /** Group requests must say how they'll use what they ask for. Mirrors swag.ErrNoReason. */
@@ -60,3 +60,14 @@ export const parseNeed = (raw: string | null): StaffNeed => (raw === 'print' ? '
 
 /** The print flow replaces the swag list only for staff who asked to get something made. */
 export const printing = (purpose: Purpose | '', need: StaffNeed): boolean => purpose === 'staff' && need === 'print';
+
+/** The teacher's classroom questions, empty. The student count starts blank, not 0: it's required. */
+export const blankClassroom = (): Classroom => ({ school: '', grades: '', students: null });
+
+/** Reads classroom details saved in a draft; undefined when there are none. */
+export function readClassroom(raw: unknown): Classroom | undefined {
+	if (!raw || typeof raw !== 'object') return undefined;
+	const c = raw as Record<string, unknown>;
+	const n = Number(c.students);
+	return { school: String(c.school ?? ''), grades: String(c.grades ?? ''), students: c.students == null || !Number.isFinite(n) ? null : n };
+}

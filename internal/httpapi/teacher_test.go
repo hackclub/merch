@@ -18,6 +18,10 @@ func TestTeacherRequest(t *testing.T) {
 	if code := h.do(user, "POST", "/api/requests", body, nil); code != 422 {
 		t.Fatalf("missing classroom = %d", code)
 	}
+	// Refused like any other rule: same props as the rest of request_refused.
+	if e := h.events("request_refused"); len(e) != 1 || props(t, e[0])["purpose"] != "teacher" || props(t, e[0])["error"] != swag.ErrClassroom.Error() || props(t, e[0])["country"] != "US" {
+		t.Fatalf("refused = %+v", e)
+	}
 	body["teacher"] = map[string]any{"school": "Example School", "grades": "9–12", "students": 30}
 	body["note"] = " "
 	if code := h.do(user, "POST", "/api/requests", body, nil); code != 422 {
