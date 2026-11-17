@@ -86,6 +86,13 @@ describe('describeClick', () => {
 });
 
 describe('describeField', () => {
+	it('keeps teacher details private while recording the purpose choice', () => {
+		el('<input name="teacher_school" value="Example School"><input data-private name="teacher_students" type="number" value="30"><input name="purpose" type="radio" value="teacher" checked>');
+		const fields = document.querySelectorAll('input');
+		expect(describeField(fields[0])).toEqual({ field: 'teacher_school', type: 'text', chars: 14 });
+		expect(describeField(fields[1])).toEqual({ field: 'teacher_students', type: 'number' });
+		expect(describeField(fields[2])).toEqual({ field: 'purpose', type: 'radio', value: 'teacher' });
+	});
 	it('logs choices but only the length of typed text', () => {
 		el(`<label>City <input autocomplete="address-level2" value="Burlington"></label>
 			<input type="radio" name="purpose" value="club" checked>

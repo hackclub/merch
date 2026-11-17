@@ -641,10 +641,11 @@ func (s *server) requestItems(ctx context.Context, rs []*store.Request) ([]swag.
 
 func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer) {
 	var body struct {
-		Purpose swag.Purpose `json:"purpose"`
-		Address swag.Address `json:"address"`
-		Lines   []swag.Line  `json:"lines"`
-		Note    string       `json:"note"`
+		Purpose swag.Purpose    `json:"purpose"`
+		Address swag.Address    `json:"address"`
+		Lines   []swag.Line     `json:"lines"`
+		Note    string          `json:"note"`
+		Teacher *swag.Classroom `json:"teacher"`
 		// Outside the US: they'll pay their country's customs fees.
 		CustomsOK bool `json:"customs_ok"`
 	}
@@ -682,8 +683,17 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 	}
 	status, fee := swag.InitialStatus(st, body.Address.Country, est)
 	avail := s.availableStock(r.Context(), items)
+	requestNote := body.Note
+	if body.Purpose == swag.PurposeTeacher {
+		requestNote, err = body.Teacher.RequestNote(body.Note)
+		if err != nil {
+			s.track(r, v.user, "request_refused", map[string]any{"purpose": body.Purpose, "error": err.Error()})
+			writeErr(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+	}
 	req, err := s.Store.CreateRequest(r.Context(), store.NewRequest{
-		UserID: v.user.ID, Address: body.Address, Purpose: body.Purpose, Lines: body.Lines, Status: status, ShippingFeeCents: fee, Note: body.Note,
+		UserID: v.user.ID, Address: body.Address, Purpose: body.Purpose, Lines: body.Lines, Status: status, ShippingFeeCents: fee, Note: requestNote,
 	}, func(prior map[int64]int) error {
 		return swag.Validate(swag.ValidateInput{
 			Settings: st, Catalog: cat, Purpose: body.Purpose, Reason: body.Note, Lines: body.Lines, Country: body.Address.Country, CustomsOK: body.CustomsOK, PriorQuantities: prior, Available: avail,

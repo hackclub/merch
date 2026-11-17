@@ -1,9 +1,9 @@
 import { prefillAddress } from './address';
-import type { Address, Purpose } from './types';
+import type { Address, Classroom, Purpose } from './types';
 
 /** Signed-out people fill the whole request form; Submit has them sign in with Hack Club to verify their email.
  * The form waits in sessionStorage (this tab only) through the round trip, then the request sends itself. */
-export type Draft = { address: Address; note: string; understood: boolean; customs_ok: boolean; regroup_ok: boolean };
+export type Draft = { teacher?: Classroom; address: Address; note: string; understood: boolean; customs_ok: boolean; regroup_ok: boolean };
 
 type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -20,7 +20,7 @@ export function readDraft(s: Store): Draft | null {
 	try {
 		const d = JSON.parse(s.getItem(KEY) ?? 'null');
 		if (!d || typeof d !== 'object' || !d.address || typeof d.address.line_1 !== 'string') return null;
-		return { address: d.address, note: String(d.note ?? ''), understood: !!d.understood, customs_ok: !!d.customs_ok, regroup_ok: !!d.regroup_ok };
+		return { teacher: d.teacher, address: d.address, note: String(d.note ?? ''), understood: !!d.understood, customs_ok: !!d.customs_ok, regroup_ok: !!d.regroup_ok };
 	} catch {
 		return null;
 	}

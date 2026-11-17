@@ -6,14 +6,17 @@ const base: Item = { id: 1, sku: 'Sti/A', name: 'Stickers', description: '', ima
 const shirt: Item = { ...base, id: 2, sku: 'Swa/Shirt/HC', name: 'T-shirt', club_only: true };
 
 describe('purpose', () => {
-	it('asks the four kinds of request, personal first, staff last', () => {
-		expect(PURPOSES.map((p) => p.value)).toEqual(['personal', 'event', 'club', 'staff']);
+	it('asks the five kinds of request, personal first, staff last', () => {
+		expect(PURPOSES.map((p) => p.value)).toEqual(['personal', 'event', 'teacher', 'club', 'staff']);
 		expect(PURPOSES.find((p) => p.value === 'staff')?.label).toBe("I'm HQ staff");
 		// Staff is the rare pick: it sits on the right of "I run a Hack Club", on one row.
 		expect(PURPOSES.filter((p) => p.beside).map((p) => p.value)).toEqual(['staff']);
 	});
 
 	it('gives staff everything clubs and events get', () => {
+		expect(offered(shirt, 'teacher')).toBe(true);
+		expect(forGroups('teacher')).toBe(true);
+		expect(parsePurpose('teacher')).toBe('teacher');
 		expect(offered(shirt, 'staff')).toBe(true);
 		expect(needsReason('staff')).toBe(true);
 		expect(forGroups('staff')).toBe(true);
@@ -30,8 +33,8 @@ describe('purpose', () => {
 		expect(needsReason('club')).toBe(true);
 		expect(needsReason('event')).toBe(true);
 		expect(PURPOSES.find((p) => p.value === 'personal')?.reason).toBe('');
-		for (const p of PURPOSES.filter((p) => p.value !== 'personal')) expect(p.reason).toMatch(/^In 2-3 sentences, how will you use it\? Please include specifics \(including estimated # of people you're getting swag for\) and links\. If you're requesting multiple t-shirts, please include the names of the people they're for\.\n\n/);
-		for (const p of PURPOSES.filter((p) => p.value !== 'personal')) expect(p.reason).toMatch(/This will be reviewed before we send your shipment, usually with 6-10 hour turnaround\. More detail helps us approve more requests\. We may adjust quantities up or down based on what you put here\. \(For events people often don't request enough stickers, for example\)$/);
+		for (const p of PURPOSES.filter((p) => p.value !== 'personal' && p.value !== 'teacher')) expect(p.reason).toMatch(/^In 2-3 sentences, how will you use it\? Please include specifics \(including estimated # of people you're getting swag for\) and links\. If you're requesting multiple t-shirts, please include the names of the people they're for\.\n\n/);
+		for (const p of PURPOSES.filter((p) => p.value !== 'personal' && p.value !== 'teacher')) expect(p.reason).toMatch(/This will be reviewed before we send your shipment, usually with 6-10 hour turnaround\. More detail helps us approve more requests\. We may adjust quantities up or down based on what you put here\. \(For events people often don't request enough stickers, for example\)$/);
 	});
 
 	it('leaves club-only items out of personal requests', () => {
@@ -47,7 +50,7 @@ describe('purpose', () => {
 	it('offers staff-only items (the plushie) only to staff', () => {
 		const plush: Item = { ...base, id: 3, sku: 'Swa/HC/Plu/Orp', name: 'Orpheus Plushie', staff_only: true };
 		expect(offered(plush, 'staff')).toBe(true);
-		for (const p of ['personal', 'club', 'event', ''] as const) expect(offered(plush, p)).toBe(false);
+		for (const p of ['personal', 'teacher', 'club', 'event', ''] as const) expect(offered(plush, p)).toBe(false);
 		expect(itemsFor([base, shirt, plush], 'club')).toEqual([base, shirt]);
 		expect(itemsFor([base, shirt, plush], 'staff')).toEqual([base, shirt, plush]);
 	});

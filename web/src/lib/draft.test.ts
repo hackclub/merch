@@ -10,6 +10,13 @@ const home = { ...blankAddress(), first_name: 'Orpheus', last_name: 'Dino', line
 const draft: Draft = { address: home, note: 'Club fair, 40 people', understood: true, customs_ok: false, regroup_ok: false };
 
 describe('request draft (signed-out Submit → verify email → back)', () => {
+	it('keeps classroom details through verification without logging them', () => {
+		const s = memory();
+		const d = { ...draft, teacher: { school: 'Example School', grades: '9–12', students: 30 } };
+		saveDraft(s, d);
+		expect(readDraft(s)).toEqual(d);
+		expect(verifyEmailProps(d, { items: 3, intl: false, purpose: 'teacher' })).toEqual({ items: 3, intl: false, purpose: 'teacher', has_note: true });
+	});
 	it('keeps the form through the sign-in round trip', () => {
 		const s = memory();
 		saveDraft(s, draft);

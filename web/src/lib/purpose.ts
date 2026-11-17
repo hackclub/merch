@@ -14,6 +14,7 @@ export const PURPOSES: { value: Purpose; label: string; short: string; reason: s
 		reason: REASON,
 		example: 'e.g. Running https://example-hacks.dev on Nov 8, about 120 hackers expected.'
 	},
+	{ value: 'teacher', label: "I'm a teacher", short: 'Teacher', reason: 'How will you use these materials to introduce your students to Hack Club? Please do not include student names or personal details.', example: 'e.g. Sharing mini-magazines during our high school coding class and putting up a poster with ways to get involved.' },
 	{
 		value: 'club', label: 'I run a Hack Club', short: 'Hack Club',
 		reason: REASON,
@@ -27,7 +28,7 @@ export const PURPOSES: { value: Purpose; label: string; short: string; reason: s
 ];
 
 /** Clubs, events and staff hand swag out to groups: they get every item, the sticker-pack nudge and the table haul. */
-export const forGroups = (purpose: Purpose | ''): boolean => purpose === 'club' || purpose === 'event' || purpose === 'staff';
+export const forGroups = (purpose: Purpose | ''): boolean => purpose === 'teacher' || purpose === 'club' || purpose === 'event' || purpose === 'staff';
 
 /** Group requests must say how they'll use what they ask for. Mirrors swag.ErrNoReason. */
 export const needsReason = forGroups;

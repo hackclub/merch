@@ -532,6 +532,14 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
 
 ## Usage analytics
 
+Teacher requests use the existing `purpose` event (`value` = `teacher`, `from`),
+`field` events (`teacher_school`, `teacher_grades`: type and chars only; `teacher_students`: type only),
+and `request_created` / `request_refused` (`purpose` = `teacher`). Classroom details
+are never analytics props. The API accepts `teacher` (`school`, `grades`, `students`),
+validates it and saves a labeled summary in the request note for admin/agent review;
+no migration is needed. Teachers can request club-only items, but not staff-only items.
+They use the same limits, email verification, review and international postage payment.
+
 Everything people do on the site goes to the `usage_events` table, so agents can see how the shop is
 used and improve it. **Use it as evidence, and keep it complete:**
 

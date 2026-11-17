@@ -28,7 +28,7 @@
 	import { thumb } from '$lib/thumb';
 	import { track } from '$lib/track';
 	import { heavyNote, tooHeavy, weightCrossing, weightLimitProps, weightMeter, type TooHeavy } from '$lib/weight';
-	import type { Address, Catalog, Item, Purpose, SwagRequest } from '$lib/types';
+	import type { Address, Classroom, Catalog, Item, Purpose, SwagRequest } from '$lib/types';
 
 	let catalog = $state<Catalog | null>(null);
 	// Prefilled from the person's Hack Club Auth address when they have one.
@@ -40,6 +40,7 @@
 	// Signed out, address search isn't offered (lookups cost money), so every field shows.
 	let manual = $state(!!prefilled.line_1.trim() || !session.me?.user);
 	let note = $state('');
+	let teacher = $state<Classroom>({ school: '', grades: '', students: 0 });
 	let understood = $state(false);
 	let customsOK = $state(false); // outside the US: they'll pay their country's customs fees
 	let error = $state('');
@@ -214,6 +215,7 @@
 		if (!d) return false;
 		address = resumeAddress(d.address, session.me?.user?.address);
 		note = d.note;
+		teacher = d.teacher ?? { school: '', grades: '', students: 0 };
 		understood = d.understood;
 		customsOK = d.customs_ok;
 		regroupOK = d.regroup_ok;
@@ -259,7 +261,7 @@
 		}
 		blockedReason = null;
 		if (!signedIn) {
-			const d = { address, note: needsReason(purpose) ? note : '', understood, customs_ok: customsOK, regroup_ok: regroupOK };
+			const d = { teacher: purpose === 'teacher' ? teacher : undefined, address, note: needsReason(purpose) ? note : '', understood, customs_ok: customsOK, regroup_ok: regroupOK };
 			saveDraft(sessionStorage, d);
 			track('verify_email', verifyEmailProps(d, { items: count, intl, purpose }));
 			location.href = VERIFY_EMAIL_URL;
@@ -276,6 +278,7 @@
 			}
 			const r = await api.post<SwagRequest>('/api/requests', {
 				purpose,
+				teacher: purpose === 'teacher' ? teacher : undefined,
 				address: { ...address, country: address.country.trim().toUpperCase() },
 				lines: cartLines(cart, catalog.items, sizes),
 				note: needsReason(purpose) ? note : '',
@@ -302,8 +305,8 @@
 <!-- One simple column, top to bottom, like the old Fillout request forms: intro, gallery, questions, shipping, submit. -->
 <div class="sheet">
 	<div class="intro">
-		<p>Teenager and want to spread <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a> in your community?</p>
-		<p>Get some awesome hand-designed swag made by your fellow Hack Clubbers!</p>
+		<p>Want to spread <a href="https://hackclub.com" target="_blank" rel="noreferrer">Hack Club</a> in your community or classroom?</p>
+		<p>Get some awesome hand-designed swag made by Hack Clubbers!</p>
 		<p>Free shipping in the US.{#if fee > 0}{' '}Globally you cover the postage, usually <span class="fee" title={feeTooltip}>{roughFee(summary?.international.fee_cents || fee)}</span>.{/if}</p>
 		<p>Shipped next day Mon–Fri. {summaryText(summary) || '2–5 day delivery in the US. 2–4 weeks globally.'}</p>
 	</div>
@@ -423,7 +426,7 @@
 				<h3 id="group-{section.key}">{title}</h3>
 				{#if section.blurb}<p class="blurb">{section.blurb}</p>{/if}
 				{#if section.key === 'stickers' && forGroups(purpose) && !nudge}
-					<p class="blurb">For clubs and events: pick a few favorite designs in packs of 50. They're much easier for our team to ship than a few each of many designs.</p>
+					<p class="blurb">For classrooms, clubs and events: pick a few favorite designs in packs of 50. They're much easier for our team to ship than a few each of many designs.</p>
 				{/if}
 				{#each rows as { item } (item.id)}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -516,6 +519,12 @@
 					{:else}
 						<button type="button" class="link" onclick={() => (manual = true)}>Can’t find it? Type it in yourself</button>
 					{/if}
+				{/if}
+				{#if purpose === 'teacher'}
+					<p>Tell us about your classroom. These details help us review your request. Please leave out student names.</p>
+					<label>School or learning community<input name="teacher_school" bind:value={teacher.school} maxlength="200" required /></label>
+					<label>Grades or ages you teach<input name="teacher_grades" bind:value={teacher.grades} maxlength="100" required placeholder="e.g. Grades 9–12" /></label>
+					<label>About how many students will you share this with?<input data-private name="teacher_students" type="number" min="1" max="100000" step="1" bind:value={teacher.students} required /></label>
 				{/if}
 				{#if needsReason(purpose)}
 					<label><span class="reason">{purposeInfo?.reason}</span>

@@ -91,7 +91,9 @@ export type Address = {
 };
 
 /** What a request is for: for themselves and friends, a Hack Club they run, or an event. */
-export type Purpose = 'personal' | 'club' | 'event' | 'staff';
+export type Classroom = { school: string; grades: string; students: number };
+
+export type Purpose = 'personal' | 'teacher' | 'club' | 'event' | 'staff';
 
 export type Line = { item_id: number; quantity: number; sku?: string };
 
