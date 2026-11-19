@@ -409,6 +409,65 @@ func TestValidateStock(t *testing.T) {
 	}
 }
 
+// An item that names an older item to use up first (the Heidi T-shirt after the
+// Hack Club T-shirt) takes a size only once the older item is out of it.
+func TestValidateUseUpFirst(t *testing.T) {
+	old := Item{ID: 4, SKU: "Swa/Shirt/HC", Name: "Hack Club T-Shirt", Visible: true, MaxPerRequest: 15, ClubOnly: true, Variants: []Variant{
+		{Label: "S", SKU: "Swa/Shirt/HC/S"}, {Label: "M", SKU: "Swa/Shirt/HC/M"},
+	}}
+	pred := int64(4)
+	heidi := Item{ID: 5, SKU: "Swa/Shirt/HHw", Name: "Heidi T-Shirt", Visible: true, MaxPerRequest: 15, ClubOnly: true, AllowBackorder: true, UseUpFirst: &pred, Variants: []Variant{
+		{Label: "S", SKU: "Swa/Shirt/HHw/S"}, {Label: "M", SKU: "Swa/Shirt/HHw/M"}, {Label: "XXL", SKU: "Swa/Shirt/HHw/XXL"},
+	}}
+	cat := map[int64]Item{4: old, 5: heidi}
+	hiddenOld := old
+	hiddenOld.Visible = false
+	personalOld := old
+	personalOld.ClubOnly = false
+	heidiPersonal := heidi
+	heidiPersonal.ClubOnly = false
+	sizeless := Item{ID: 6, SKU: "Sti/New", Name: "New sticker", Visible: true, MaxPerRequest: 5, UseUpFirst: intp64(7)}
+	sizelessOld := Item{ID: 7, SKU: "Sti/Old", Name: "Old sticker", Visible: true, MaxPerRequest: 5}
+	// The old shirt has 38 small left (less what open requests hold) and no mediums.
+	avail := map[string]int{"Swa/Shirt/HC/S": 38, "Swa/Shirt/HC/M": 0, "Swa/Shirt/HHw/S": 0, "Swa/Shirt/HHw/M": -3}
+	line := func(id int64, sku string) []Line { return []Line{{ItemID: id, Quantity: 1, SKU: sku}} }
+	cases := []struct {
+		name    string
+		cat     map[int64]Item
+		purpose Purpose
+		lines   []Line
+		avail   map[string]int
+		want    string // "" = ok
+	}{
+		{"old shirt out of M: Heidi M ok (backordered)", cat, PurposeClub, line(5, "Swa/Shirt/HHw/M"), avail, ""},
+		{"old shirt has S: Heidi S refused", cat, PurposeClub, line(5, "Swa/Shirt/HHw/S"), avail,
+			"use up older stock first: Hack Club T-Shirt still has size S, so request that instead"},
+		{"old shirt never came in XXL", cat, PurposeClub, line(5, "Swa/Shirt/HHw/XXL"), avail, ""},
+		{"old shirt S held by open requests", cat, PurposeClub, line(5, "Swa/Shirt/HHw/S"), map[string]int{"Swa/Shirt/HC/S": 0}, ""},
+		{"old shirt S over-held", cat, PurposeClub, line(5, "Swa/Shirt/HHw/S"), map[string]int{"Swa/Shirt/HC/S": -2}, ""},
+		{"warehouse unknown: not checked", cat, PurposeClub, line(5, "Swa/Shirt/HHw/S"), nil, ""},
+		{"old shirt hidden", map[int64]Item{4: hiddenOld, 5: heidi}, PurposeClub, line(5, "Swa/Shirt/HHw/S"), avail, ""},
+		{"old shirt not listed", map[int64]Item{5: heidi}, PurposeClub, line(5, "Swa/Shirt/HHw/S"), avail, ""},
+		{"old shirt not offered to them", map[int64]Item{4: old, 5: heidiPersonal}, PurposePersonal, line(5, "Swa/Shirt/HHw/S"), avail, ""},
+		{"old shirt offered to them", map[int64]Item{4: personalOld, 5: heidiPersonal}, PurposePersonal, line(5, "Swa/Shirt/HHw/S"), avail,
+			"use up older stock first: Hack Club T-Shirt still has size S, so request that instead"},
+		{"old shirt itself", cat, PurposeClub, line(4, "Swa/Shirt/HC/S"), avail, ""},
+		{"no sizes: old in stock", map[int64]Item{6: sizeless, 7: sizelessOld}, PurposeClub, line(6, ""), map[string]int{"Sti/Old": 3, "Sti/New": 9}, "use up older stock first: Old sticker is still in stock, so request that instead"},
+		{"no sizes: old gone", map[int64]Item{6: sizeless, 7: sizelessOld}, PurposeClub, line(6, ""), map[string]int{"Sti/Old": 0, "Sti/New": 9}, ""},
+	}
+	for _, tc := range cases {
+		err := Validate(ValidateInput{Settings: settings(), Catalog: tc.cat, Purpose: tc.purpose, Reason: "club", Lines: tc.lines, Available: tc.avail})
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s: %v", tc.name, err)
+		case tc.want != "" && (!errors.Is(err, ErrUseUpFirst) || err.Error() != tc.want):
+			t.Errorf("%s: %v, want %q", tc.name, err, tc.want)
+		}
+	}
+}
+
+func intp64(i int64) *int64 { return &i }
+
 // Hack Club staff get everything clubs and events get.
 func TestStaffRequests(t *testing.T) {
 	if !Purposes[PurposeStaff] || PurposeStaff != "staff" {

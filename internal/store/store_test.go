@@ -120,6 +120,39 @@ func TestItems(t *testing.T) {
 	}
 }
 
+// An item can name an older item to use up first; it must be another item that
+// exists, and deleting the older one clears the link.
+func TestItemUseUpFirst(t *testing.T) {
+	s := newStore(t)
+	old := mkItem(t, s, "Swa/Shirt/HC", true)
+	heidi := mkItem(t, s, "Swa/Shirt/HHw", true)
+	if heidi.UseUpFirst != nil {
+		t.Fatalf("new item use_up_first = %v, want nil", *heidi.UseUpFirst)
+	}
+	heidi.UseUpFirst = &old.ID
+	upd, err := s.UpdateItem(ctx, heidi)
+	if err != nil || upd.UseUpFirst == nil || *upd.UseUpFirst != old.ID {
+		t.Fatalf("UpdateItem = %+v, %v", upd.UseUpFirst, err)
+	}
+	if got, _ := s.GetItem(ctx, heidi.ID); got.UseUpFirst == nil || *got.UseUpFirst != old.ID {
+		t.Fatalf("GetItem use_up_first = %v", got.UseUpFirst)
+	}
+	self := upd
+	self.UseUpFirst = &self.ID
+	if _, err := s.UpdateItem(ctx, self); !errors.Is(err, ErrConflict) {
+		t.Fatalf("use up itself first: err = %v, want conflict", err)
+	}
+	missing := int64(99999)
+	upd.UseUpFirst = &missing
+	if _, err := s.UpdateItem(ctx, upd); !errors.Is(err, ErrConflict) {
+		t.Fatalf("use up a missing item first: err = %v, want conflict", err)
+	}
+	upd.UseUpFirst = nil
+	if got, err := s.UpdateItem(ctx, upd); err != nil || got.UseUpFirst != nil {
+		t.Fatalf("clear use_up_first = %v, %v", got.UseUpFirst, err)
+	}
+}
+
 func TestItemImages(t *testing.T) {
 	s := newStore(t)
 	it := mkItem(t, s, "Pri/A", true)

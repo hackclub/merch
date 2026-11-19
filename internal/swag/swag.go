@@ -107,6 +107,10 @@ type Item struct {
 	// AllowBackorder lets requests take more than the warehouse has; they ship
 	// once the restock arrives. Without it, requests stop at what's in stock.
 	AllowBackorder bool `json:"allow_backorder"`
+	// UseUpFirst names an older item to give out first (the Heidi T-shirt names
+	// the Hack Club T-shirt): a size of this item can be requested only once
+	// that item is out of the same size (see UseUpFirstBlocks). nil = none.
+	UseUpFirst *int64 `json:"use_up_first"`
 
 	// Variants are the sizes of an item, each its own warehouse SKU. When an
 	// item has variants, every request line for it must pick one; limits still
@@ -186,6 +190,7 @@ var (
 	ErrNoReason       = errors.New("tell us in a sentence or two how you'll use it")
 	ErrNoCustoms      = errors.New("confirm you'll pay any customs fees your country charges")
 	ErrOutOfStock     = errors.New("out of stock")
+	ErrUseUpFirst     = errors.New("use up older stock first")
 )
 
 type ValidateInput struct {
@@ -280,6 +285,12 @@ func Validate(in ValidateInput) error {
 		if err := checkStock(in.Available, item, l); err != nil {
 			return err
 		}
+		if old, label, ok := UseUpFirstBlocks(in.Catalog, item, l.SKU, in.Available, in.Purpose); ok {
+			if label != "" {
+				return fmt.Errorf("%w: %s still has size %s, so request that instead", ErrUseUpFirst, old.Name, label)
+			}
+			return fmt.Errorf("%w: %s is still in stock, so request that instead", ErrUseUpFirst, old.Name)
+		}
 	}
 	for id, q := range perItem {
 		if item := in.Catalog[id]; q < item.MinPerRequest {
@@ -313,6 +324,44 @@ func checkStock(avail map[string]int, item Item, l Line) error {
 	default:
 		return fmt.Errorf("%w: only %d %s left", ErrOutOfStock, n, name)
 	}
+}
+
+// UseUpFirstBlocks reports whether item's size sku (its own SKU when it has no
+// sizes) waits on the older item it names in UseUpFirst: that item is listed,
+// offered for the purpose, comes in the same size (by label), and requests can
+// still take some of it (avail: the warehouse's stock less open holds). It
+// returns the older item and the size's label. Nothing blocks when the
+// warehouse can't be reached (avail nil); every request is reviewed anyway.
+// web/src/lib/useup.ts mirrors this.
+func UseUpFirstBlocks(cat map[int64]Item, item Item, sku string, avail map[string]int, p Purpose) (Item, string, bool) {
+	if item.UseUpFirst == nil || avail == nil {
+		return Item{}, "", false
+	}
+	old, ok := cat[*item.UseUpFirst]
+	if !ok || !old.Visible || old.ID == item.ID || !old.Offered(p) {
+		return Item{}, "", false
+	}
+	oldSKU, label := old.SKU, ""
+	if len(item.Variants) > 0 {
+		v, ok := item.Variant(sku)
+		if !ok {
+			return Item{}, "", false
+		}
+		label = v.Label
+		oldSKU = ""
+		for _, ov := range old.Variants {
+			if strings.EqualFold(ov.Label, v.Label) {
+				oldSKU = ov.SKU
+			}
+		}
+		if oldSKU == "" {
+			return Item{}, "", false // the older item never came in this size
+		}
+	}
+	if avail[oldSKU] <= 0 {
+		return Item{}, "", false
+	}
+	return old, label, true
 }
 
 // Packs lists the small pack sizes for each kind of pack; past the last one,

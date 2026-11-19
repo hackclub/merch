@@ -719,7 +719,7 @@ func (s *server) createRequest(w http.ResponseWriter, r *http.Request, v viewer)
 func isRuleErr(err error) bool {
 	for _, e := range []error{swag.ErrRequestsClosed, swag.ErrNoItems, swag.ErrBadQuantity, swag.ErrUnknownItem,
 		swag.ErrDuplicateItem, swag.ErrBadVariant, swag.ErrItemLimit, swag.ErrBadAddress, swag.ErrBadPurpose, swag.ErrNoReason, swag.ErrClassroom, swag.ErrNoCustoms,
-		swag.ErrWontPack, swag.ErrTooHeavy, swag.ErrOutOfStock} {
+		swag.ErrWontPack, swag.ErrTooHeavy, swag.ErrOutOfStock, swag.ErrUseUpFirst} {
 		if errors.Is(err, e) {
 			return true
 		}
@@ -1184,6 +1184,9 @@ func validItem(it swag.Item) string {
 
 // conflictMsg explains which SKU clashed with an existing item.
 func conflictMsg(err error) string {
+	if strings.Contains(err.Error(), "use up") || strings.Contains(err.Error(), "used up") {
+		return strings.TrimPrefix(err.Error(), store.ErrConflict.Error()+": ")
+	}
 	if strings.Contains(err.Error(), "size of another item") {
 		return err.Error()
 	}
