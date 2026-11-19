@@ -444,6 +444,11 @@
 							<label class="row" title="Hidden from personal requests"><input type="checkbox" style="width: auto" bind:checked={it.club_only} /> Clubs &amp; events only</label>
 							<label class="row" title="Offered only to requests from Hack Club staff"><input type="checkbox" style="width: auto" bind:checked={it.staff_only} /> Staff only</label>
 							<label class="row" title="Requests can take more than the warehouse has; they ship once the restock arrives"><input type="checkbox" style="width: auto" bind:checked={it.allow_backorder} /> Can be backordered</label>
+							<label title="Each size opens only once this older item is out of the same size (the Heidi shirt waits on the Hack Club T-shirt)">Use up first
+								<select value={it.use_up_first ?? ''} onchange={(e) => (it.use_up_first = e.currentTarget.value === '' ? null : +e.currentTarget.value)}>
+									<option value="">Nothing</option>
+									{#each items.filter((o) => o.id !== it.id) as o (o.id)}<option value={o.id}>{o.name}</option>{/each}
+								</select></label>
 							<label>Sort order <input type="number" bind:value={it.sort_order} /></label>
 							<label>Printed size, inches (for the 3D preview)
 								<span class="row size">

@@ -21,6 +21,7 @@
 	import CardField from '$lib/CardField.svelte';
 	import { arrivalText, costRows, summaryText, costToYou, usd, worthText, type CostSides, type Packing, type ShippingEstimate, type ShippingSummary } from '$lib/shipping';
 	import SizeSteppers from '$lib/SizeSteppers.svelte';
+	import { lockedSizes, newerNote, useUpBlock, useUpErrors, useUpNote } from '$lib/useup';
 	import Haul3D from '$lib/Haul3D.svelte';
 	import QuantityPicker from '$lib/QuantityPicker.svelte';
 	import Tile3D from '$lib/Tile3D.svelte';
@@ -96,7 +97,7 @@
 	const open = $derived(!!catalog?.settings.requests_open);
 	const signedIn = $derived(!!session.me?.user);
 	const count = $derived(totalQuantity(cart));
-	const problems = $derived(catalog ? [...cartErrors(cart, catalog.items, sizes), ...stockErrors(cart, catalog.items, sizes, catalog.stock)] : []);
+	const problems = $derived(catalog ? [...cartErrors(cart, catalog.items, sizes), ...stockErrors(cart, catalog.items, sizes, catalog.stock), ...useUpErrors(cart, catalog.items, sizes, catalog.stock, purpose)] : []);
 	const intl = $derived(isInternational(address.country));
 	// Clubs and events asking for a few each of many sticker designs: suggest packs of 50 (never blocks).
 	const nudge = $derived(catalog ? stickerNudge(cart, shown, purpose) : null);
@@ -363,9 +364,11 @@
 		{#snippet add(item: Item)}
 			<div class="add">
 				{#if item.variants.length}
-					<SizeSteppers {item} {sizes} onchange={(sku, n) => setSize(item, sku, n)} />
+					<SizeSteppers {item} {sizes} locked={lockedSizes(item, catalog?.items ?? [], catalog?.stock, purpose)} onchange={(sku, n) => setSize(item, sku, n)} />
 				{:else if soldOut(item, catalog?.stock) && !cart[item.id]}
 					<!-- Nothing to add: the note under its name says it's out of stock. -->
+				{:else if useUpBlock(item, catalog?.items ?? [], catalog?.stock, undefined, purpose) && !cart[item.id]}
+					<!-- Nothing to add yet: the note under its name says to get the older item. -->
 				{:else if expanded(item)}
 					<QuantityPicker {item} value={cart[item.id] ?? 0} onchange={(n) => setAmount(item, n)} />
 				{:else}
@@ -440,6 +443,8 @@
 							<span class="muted">{tileFact(item)}{#if sizesSummary(item, sizes)}{tileFact(item) ? ' · ' : ''}<strong class="in">{sizesSummary(item, sizes)}</strong>{/if}</span>
 							{#if backorderNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="backorder">{backorderNote(item, catalog.stock, cart, sizes)}</span>{/if}
 							{#if shortNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="out_of_stock">{shortNote(item, catalog.stock, cart, sizes)}</span>{/if}
+							{#if useUpNote(item, catalog.items, catalog.stock, purpose)}<span class="backorder" data-track="use_up_first">{useUpNote(item, catalog.items, catalog.stock, purpose)}</span>{/if}
+							{#if newerNote(item, catalog.items, catalog.stock, purpose)}<span class="backorder" data-track="use_up_newer">{newerNote(item, catalog.items, catalog.stock, purpose)}</span>{/if}
 							{#if heavyNote(meter, item.id)}<span class="backorder" data-track="weight_heavy">{heavyNote(meter, item.id)}</span>{/if}
 						</div>
 						{#if open}{@render add(item)}{/if}
@@ -460,6 +465,8 @@
 								<a href={itemPath(item)} class="name">{item.name}</a>
 								{#if backorderNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="backorder">{backorderNote(item, catalog.stock, cart, sizes)}</span>{/if}
 							{#if shortNote(item, catalog.stock, cart, sizes)}<span class="backorder" data-track="out_of_stock">{shortNote(item, catalog.stock, cart, sizes)}</span>{/if}
+								{#if useUpNote(item, catalog.items, catalog.stock, purpose)}<span class="backorder" data-track="use_up_first">{useUpNote(item, catalog.items, catalog.stock, purpose)}</span>{/if}
+								{#if newerNote(item, catalog.items, catalog.stock, purpose)}<span class="backorder" data-track="use_up_newer">{newerNote(item, catalog.items, catalog.stock, purpose)}</span>{/if}
 								{#if heavyNote(meter, item.id)}<span class="backorder" data-track="weight_heavy">{heavyNote(meter, item.id)}</span>{/if}
 								{#if open}{@render add(item)}{/if}
 								{#if peek === item.id}{@render peekPanel(item)}{/if}

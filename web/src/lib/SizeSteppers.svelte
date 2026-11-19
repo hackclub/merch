@@ -1,10 +1,11 @@
 <script lang="ts">
 	// One quantity per size of an item ("S − 1 +  M − 2 +"), so a request can mix sizes.
-	// The item's per-request max counts every size together.
+	// The item's per-request max counts every size together. Locked sizes wait on an
+	// older item ($lib/useup): they can be lowered but not raised.
 	import type { Sizes } from './cart';
 	import Stepper from './Stepper.svelte';
 	import type { Item } from './types';
-	let { item, sizes, onchange }: { item: Item; sizes: Sizes; onchange: (sku: string, n: number) => void } = $props();
+	let { item, sizes, onchange, locked }: { item: Item; sizes: Sizes; onchange: (sku: string, n: number) => void; locked?: Set<string> } = $props();
 
 	const counts = $derived(sizes[item.id] ?? {});
 	const total = $derived(Object.values(counts).reduce((a, b) => a + b, 0));
@@ -13,9 +14,10 @@
 <div class="sizes" role="group" aria-label="Sizes of {item.name}">
 	{#each item.variants as v (v.sku)}
 		{@const n = counts[v.sku] ?? 0}
-		<div class="size" class:on={n > 0}>
+		{@const off = locked?.has(v.sku) ?? false}
+		<div class="size" class:on={n > 0} class:off>
 			<span>{v.label}</span>
-			<Stepper value={n} max={item.max_per_request - total + n} label="{item.name}, size {v.label}" onchange={(q) => onchange(v.sku, q)} />
+			<Stepper value={n} max={off ? n : item.max_per_request - total + n} label="{item.name}, size {v.label}{off ? ' (not yet)' : ''}" onchange={(q) => onchange(v.sku, q)} />
 		</div>
 	{/each}
 </div>
@@ -26,6 +28,7 @@
 	.size { display: grid; gap: 0.2rem; }
 	.size span { font-weight: 700; font-size: 0.9rem; color: var(--muted); }
 	.size.on span { color: var(--dark); }
+	.size.off span { text-decoration: line-through; }
 	.size :global(.stepper button) { width: 2.1rem; }
 	.size :global(.stepper input) { width: 2.2rem; }
 </style>

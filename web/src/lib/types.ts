@@ -29,6 +29,7 @@ export type Item = {
 	staff_only: boolean; // offered only to Hack Club staff requests (the Orpheus plushie)
 	model: string; // a 3D model (GLB URL) of something that isn't printed, like the plushie
 	allow_backorder: boolean; // requests can take more than the warehouse has; they ship once the restock arrives
+	use_up_first?: number | null; // an older item to give out first: each size opens once it's out of that size ($lib/useup)
 	clip: string; // looping video, GIF or photo of the real thing, shown on its shop tile; '' = none
 };
 

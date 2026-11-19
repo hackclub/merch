@@ -405,6 +405,16 @@ letter mail (in the US and abroad). Other US parcels go USPS Ground Advantage or
   backordered (Zach decided against the pins on 2026-10-20 and the Haven postcard on
   2026-11-10). The flag is data, set on the admin Items tab; migration 00030 only
   set its starting values. Admin shipping doesn't check stock.
+  **Use up first:** an item can name an older one (`items.use_up_first`, "Use up first" on the
+  admin Items tab; Zach, 2026-11-19: the Heidi T-shirt waits on the Hack Club T-shirt, item 603,
+  to get through the old shirts first). A size of the newer item can be requested only once the
+  older item has none of that size left by the rules above (in stock less open holds; a size the
+  older item never came in, like XXL, is always open). Nothing waits when the older item is
+  hidden or not offered for the purpose, or the warehouse can't be reached. `swag.UseUpFirstBlocks`
+  decides; `swag.Validate` refuses the rest (`ErrUseUpFirst`, logged as `request_refused`), and
+  `$lib/useup` mirrors it: the newer item's locked sizes can't be raised, its note
+  (`data-track` `use_up_first`) says which sizes are open and to get the rest from the older
+  item, and the older item's sold-out sizes point to the newer one (`use_up_newer`).
   **Never edit or combine an order the warehouse has** (mail.hackclub.com's back office,
   Zenventory's web or API): AGH places, allocates and picks it in Zenventory, which never sees
   the edit. On 2026-10-26 those back-office cuts shipped 10 orders with the old contents and put 5

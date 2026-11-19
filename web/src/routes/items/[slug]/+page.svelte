@@ -6,6 +6,7 @@
 	import { pruneCart, pruneSizes, quantityOptions, setQuantity, setSizeQuantity, sizesSummary, totalQuantity } from '$lib/cart';
 	import { itemsFor, offered } from '$lib/purpose';
 	import { shortNote, soldOut } from '$lib/backorder';
+	import { lockedSizes, newerNote, useUpBlock, useUpNote } from '$lib/useup';
 	import { isBooklet, itemIdFromParam, itemPath, previewCount, printFileText, productPreview, shipsWith, sizeStockLabel, thumbnail, unitCostLabel } from '$lib/items';
 	import { sheetThickness, finishInfo } from '$lib/paper';
 	import { programFor } from '$lib/programs';
@@ -174,11 +175,19 @@
 			{:else if !offered(item, bag.purpose)}
 				<p class="muted">This is only for {item.staff_only ? 'Hack Club staff' : 'people running a Hack Club or an event'}. <a href="/">Change what your request is for</a>.</p>
 			{:else}
+				{#if useUpNote(item, catalog?.items ?? [], catalog?.stock, bag.purpose)}
+					<p class="use-up" data-track="use_up_first">{useUpNote(item, catalog?.items ?? [], catalog?.stock, bag.purpose)}</p>
+				{/if}
+				{#if newerNote(item, catalog?.items ?? [], catalog?.stock, bag.purpose)}
+					<p class="use-up" data-track="use_up_newer">{newerNote(item, catalog?.items ?? [], catalog?.stock, bag.purpose)}</p>
+				{/if}
 				{#if soldOut(item, catalog?.stock)}
 					<p class="error" data-track="out_of_stock">Out of stock.</p>
+				{:else if !item.variants.length && useUpBlock(item, catalog?.items ?? [], catalog?.stock, undefined, bag.purpose) && inCart === 0}
+					<!-- Nothing to add yet: the note above says to get the older item. -->
 				{:else if item.variants.length}
 					<p class="size-label">How many of each size?</p>
-					<SizeSteppers {item} sizes={bag.sizes} onchange={(sku, n) => {
+					<SizeSteppers {item} sizes={bag.sizes} locked={lockedSizes(item, catalog?.items ?? [], catalog?.stock, bag.purpose)} onchange={(sku, n) => {
 						const next = setSizeQuantity(bag.cart, bag.sizes, item, sku, n);
 						setSizes(next.sizes);
 						setCart(next.cart);
@@ -293,4 +302,5 @@
 	.comes-with img { width: 4.5rem; aspect-ratio: 3 / 2; object-fit: cover; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15); transform: rotate(-4deg); }
 	.comes-with p { margin: 0; line-height: 1.4; }
 	.buy { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 1.25rem 0 0.5rem; }
+	.use-up { color: var(--red); }
 </style>
